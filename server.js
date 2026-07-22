@@ -3,11 +3,13 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const OpenAI = require("openai");
+const webhookRouter = require("./routes/webhook");
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use("/webhook", webhookRouter);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -55,15 +57,6 @@ app.get("/test-whatsapp", async (req, res) => {
       details: error.response?.data || error.message,
     });
   }
-});
-app.post("/webhook", (req, res) => {
-  console.log("📩 התקבל Webhook מ-Whapi:");
-  console.log(JSON.stringify(req.body, null, 2));
-
-  res.status(200).json({
-    success: true,
-    message: "Webhook received",
-  });
 });
 
 app.listen(port, () => {

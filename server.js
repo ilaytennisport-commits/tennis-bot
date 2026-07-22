@@ -56,6 +56,15 @@ app.get("/test-whatsapp", async (req, res) => {
     });
   }
 });
+app.post("/webhook", (req, res) => {
+  console.log("📩 התקבל Webhook מ-Whapi:");
+  console.log(JSON.stringify(req.body, null, 2));
+
+  res.status(200).json({
+    success: true,
+    message: "Webhook received",
+  });
+});
 
 app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);

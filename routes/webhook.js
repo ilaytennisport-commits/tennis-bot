@@ -151,7 +151,7 @@ router.post("/", async (req, res) => {
 
       if (userMessage === "איפוס שיחה") {
         clearConversation(userId);
-        clearUser(userId);
+        await clearUser(userId);
 
         await sendWhatsAppMessage(
           userId,
@@ -161,13 +161,13 @@ router.post("/", async (req, res) => {
         continue;
       }
 
-      const currentUser = getUser(userId);
+      const currentUser = await getUser(userId);
       const extractedDetails = extractUserDetails(
         userMessage,
         currentUser
       );
 
-      const updatedUser = saveUser(userId, extractedDetails);
+      const updatedUser = await saveUser(userId, extractedDetails);
 
       console.log("👤 פרטי המשתמש שנשמרו:", updatedUser);
 

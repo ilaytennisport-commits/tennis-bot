@@ -1,5 +1,7 @@
 require("dotenv").config();
-
+const {
+  initializeDatabase,
+} = require("./services/databaseService");
 const express = require("express");
 const axios = require("axios");
 const OpenAI = require("openai");
@@ -59,6 +61,21 @@ app.get("/test-whatsapp", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server started on port ${port}`);
-});
+async function startServer() {
+  try {
+    await initializeDatabase();
+
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`🚀 Server started on port ${port}`);
+    });
+  } catch (error) {
+    console.error(
+      "❌ Failed to initialize the database:",
+      error.message
+    );
+
+    process.exit(1);
+  }
+}
+
+startServer();

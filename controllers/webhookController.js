@@ -10,6 +10,7 @@ const {
 const {
   getUser,
   saveUser,
+  markSummarySent,
   clearUser,
 } = require("../prompts/memory/usermemory");
 
@@ -19,6 +20,56 @@ const {
   getMissingLeadFields,
   formatLeadSummary,
 } = require("../utils/leadUtils");
+
+const processedMessageIds = new Set();
+const MAX_PROCESSED_MESSAGE_IDS = 2000;
+
+const userQueues = new Map();
+
+function getMessageId(message) {
+  return (
+    message?.id ||
+    message?.message_id ||
+    message?.key?.id ||
+    null
+  );
+}
+
+function rememberProcessedMessage(messageId) {
+  if (!messageId) {
+    return;
+  }
+
+  processedMessageIds.add(messageId);
+
+  if (processedMessageIds.size > MAX_PROCESSED_MESSAGE_IDS) {
+    const oldestMessageId =
+      processedMessageIds.values().next().value;
+
+    processedMessageIds.delete(oldestMessageId);
+  }
+}
+
+function enqueueUserMessage(userId, task) {
+  const previousTask =
+    userQueues.get(userId) || Promise.resolve();
+
+  const currentTask = previousTask
+    .catch(() => {
+      // שגיאה בהודעה קודמת לא תעצור את התור.
+    })
+    .then(task);
+
+  userQueues.set(userId, currentTask);
+
+  currentTask.finally(() => {
+    if (userQueues.get(userId) === currentTask) {
+      userQueues.delete(userId);
+    }
+  });
+
+  return currentTask;
+}
 
 async function processIncomingMessage(message) {
   if (!message || message.from_me === true) {
@@ -31,20 +82,20 @@ async function processIncomingMessage(message) {
 
   const userMessage = message.text?.body?.trim();
 
-const userId =
-  message.chat_id ||
-  message.from;
+  const userId =
+    message.chat_id ||
+    message.from;
 
-if (!userMessage || !userId) {
-  return;
-}
+  if (!userMessage || !userId) {
+    return;
+  }
 
-console.log("🔍 מזהי Whapi:", {
-  from: message.from,
-  chat_id: message.chat_id,
-  selectedUserId: userId,
-  detectedPhone: whatsappIdToPhone(userId),
-});
+  console.log("🔍 מזהי Whapi:", {
+    from: message.from,
+    chat_id: message.chat_id,
+    selectedUserId: userId,
+    detectedPhone: whatsappIdToPhone(userId),
+  });
 
   console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
 
@@ -52,10 +103,15 @@ console.log("🔍 מזהי Whapi:", {
     clearConversation(userId);
     await clearUser(userId);
 
+    const resetReply =
+      "השיחה והפרטים שנשמרו אופסו בהצלחה 😊";
+
     await sendWhatsAppMessage(
       userId,
-      "השיחה והפרטים שנשמרו אופסו בהצלחה 😊"
+      resetReply
     );
+
+    console.log(`✅ השיחה אופסה עבור ${userId}`);
 
     return;
   }
@@ -67,8 +123,12 @@ console.log("🔍 מזהי Whapi:", {
     currentUser
   );
 
-  if (!currentUser.phone && !extractedDetails.phone) {
-    extractedDetails.phone = whatsappIdToPhone(userId);
+  if (
+    !currentUser.phone &&
+    !extractedDetails.phone
+  ) {
+    extractedDetails.phone =
+      whatsappIdToPhone(userId);
   }
 
   const updatedUser = await saveUser(
@@ -76,19 +136,31 @@ console.log("🔍 מזהי Whapi:", {
     extractedDetails
   );
 
-  console.log("👤 פרטי המשתמש שנשמרו:", updatedUser);
+  console.log(
+    "👤 פרטי המשתמש שנשמרו:",
+    updatedUser
+  );
 
-  addMessage(userId, "user", userMessage);
+  addMessage(
+    userId,
+    "user",
+    userMessage
+  );
 
-  const conversationHistory = getConversation(userId);
-  const missingFields = getMissingLeadFields(updatedUser);
+  const conversationHistory =
+    getConversation(userId);
+
+  const missingFields =
+    getMissingLeadFields(updatedUser);
+
+  const shouldSendLeadSummary =
+    updatedUser.goal === "שיעור ניסיון" &&
+    missingFields.length === 0 &&
+    updatedUser.summary_sent !== true;
 
   let reply;
 
-  if (
-    updatedUser.goal === "שיעור ניסיון" &&
-    missingFields.length === 0
-  ) {
+  if (shouldSendLeadSummary) {
     reply = formatLeadSummary(updatedUser);
   } else {
     reply = await generateReply(
@@ -97,13 +169,39 @@ console.log("🔍 מזהי Whapi:", {
     );
   }
 
-  addMessage(userId, "assistant", reply);
+  if (
+    !reply ||
+    typeof reply !== "string"
+  ) {
+    throw new Error(
+      "The bot generated an empty reply"
+    );
+  }
+
+  addMessage(
+    userId,
+    "assistant",
+    reply
+  );
 
   console.log(`🤖 תשובת הבוט: ${reply}`);
 
-  await sendWhatsAppMessage(userId, reply);
+  await sendWhatsAppMessage(
+    userId,
+    reply
+  );
 
-  console.log(`✅ התשובה נשלחה ל-${userId}`);
+  if (shouldSendLeadSummary) {
+    await markSummarySent(userId);
+
+    console.log(
+      `📋 סיכום הליד סומן כנשלח עבור ${userId}`
+    );
+  }
+
+  console.log(
+    `✅ התשובה נשלחה ל-${userId}`
+  );
 }
 
 async function handleWebhook(req, res) {
@@ -113,7 +211,9 @@ async function handleWebhook(req, res) {
   });
 
   try {
-    if (req.body?.event?.type !== "messages") {
+    if (
+      req.body?.event?.type !== "messages"
+    ) {
       return;
     }
 
@@ -124,12 +224,52 @@ async function handleWebhook(req, res) {
     }
 
     for (const message of messages) {
-      await processIncomingMessage(message);
+      const messageId =
+        getMessageId(message);
+
+      if (
+        messageId &&
+        processedMessageIds.has(messageId)
+      ) {
+        console.log(
+          `♻️ הודעה כפולה דולגה: ${messageId}`
+        );
+
+        continue;
+      }
+
+      rememberProcessedMessage(messageId);
+
+      const userId =
+        message?.chat_id ||
+        message?.from;
+
+      if (!userId) {
+        continue;
+      }
+
+      enqueueUserMessage(
+        userId,
+        async () => {
+          try {
+            await processIncomingMessage(
+              message
+            );
+          } catch (error) {
+            console.error(
+              `❌ שגיאה בעיבוד הודעה עבור ${userId}:`,
+              error.response?.data ||
+                error.message
+            );
+          }
+        }
+      );
     }
   } catch (error) {
     console.error(
       "❌ שגיאה בטיפול ב-Webhook:",
-      error.response?.data || error.message
+      error.response?.data ||
+        error.message
     );
   }
 }

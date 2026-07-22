@@ -21,9 +21,15 @@ async function initializeDatabase() {
       branch TEXT,
       phone TEXT,
       goal TEXT,
+      summary_sent BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS summary_sent BOOLEAN NOT NULL DEFAULT FALSE
   `);
 
   console.log("✅ PostgreSQL users table is ready");

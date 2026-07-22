@@ -46,7 +46,6 @@ console.log("🔍 מזהי Whapi:", {
   detectedPhone: whatsappIdToPhone(userId),
 });
 
-console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
   console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
 
   if (userMessage === "איפוס שיחה") {

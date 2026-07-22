@@ -1,31 +1,71 @@
-const conversations = new Map();
+const { pool } = require("./databaseService");
 
 const MAX_MESSAGES = 12;
 
-function getConversation(userId) {
-  return conversations.get(userId) || [];
+async function getConversation(userId) {
+  if (!userId) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+      SELECT role, content
+      FROM conversation_messages
+      WHERE user_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT $2
+    `,
+    [userId, MAX_MESSAGES]
+  );
+
+  return result.rows.reverse();
 }
 
-function addMessage(userId, role, content) {
-  if (!userId || !content) {
+async function addMessage(userId, role, content) {
+  if (!userId || !role || !content) {
     return;
   }
 
-  const history = getConversation(userId);
+  await pool.query(
+    `
+      INSERT INTO conversation_messages (
+        user_id,
+        role,
+        content
+      )
+      VALUES ($1, $2, $3)
+    `,
+    [userId, role, content]
+  );
 
-  history.push({
-    role,
-    content,
-  });
-
-  // שומרים רק את ההודעות האחרונות כדי לא להעמיס
-  const trimmedHistory = history.slice(-MAX_MESSAGES);
-
-  conversations.set(userId, trimmedHistory);
+  await pool.query(
+    `
+      DELETE FROM conversation_messages
+      WHERE user_id = $1
+        AND id NOT IN (
+          SELECT id
+          FROM conversation_messages
+          WHERE user_id = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT $2
+        )
+    `,
+    [userId, MAX_MESSAGES]
+  );
 }
 
-function clearConversation(userId) {
-  conversations.delete(userId);
+async function clearConversation(userId) {
+  if (!userId) {
+    return;
+  }
+
+  await pool.query(
+    `
+      DELETE FROM conversation_messages
+      WHERE user_id = $1
+    `,
+    [userId]
+  );
 }
 
 module.exports = {

@@ -13,6 +13,7 @@ pool.on("error", (error) => {
 });
 
 async function initializeDatabase() {
+  // טבלת משתמשים
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       user_id TEXT PRIMARY KEY,
@@ -32,7 +33,24 @@ async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS summary_sent BOOLEAN NOT NULL DEFAULT FALSE
   `);
 
-  console.log("✅ PostgreSQL users table is ready");
+  // טבלת היסטוריית שיחות
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // אינדקס לשיפור הביצועים
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_conversation_user
+    ON conversation_messages(user_id, created_at DESC)
+  `);
+
+  console.log("✅ PostgreSQL tables are ready");
 }
 
 module.exports = {

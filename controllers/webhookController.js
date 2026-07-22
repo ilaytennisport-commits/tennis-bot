@@ -100,7 +100,7 @@ async function processIncomingMessage(message) {
   console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
 
   if (userMessage === "איפוס שיחה") {
-    clearConversation(userId);
+    await clearConversation(userId);
     await clearUser(userId);
 
     const resetReply =
@@ -141,14 +141,14 @@ async function processIncomingMessage(message) {
     updatedUser
   );
 
-  addMessage(
+  await addMessage(
     userId,
     "user",
     userMessage
   );
 
   const conversationHistory =
-    getConversation(userId);
+    await getConversation(userId);
 
   const missingFields =
     getMissingLeadFields(updatedUser);
@@ -178,7 +178,7 @@ async function processIncomingMessage(message) {
     );
   }
 
-  addMessage(
+  await addMessage(
     userId,
     "assistant",
     reply

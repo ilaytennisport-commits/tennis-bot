@@ -1,11 +1,26 @@
 function whatsappIdToPhone(userId) {
-  const digits = String(userId || "").replace(/\D/g, "");
+  const rawId = String(userId || "");
 
-  if (digits.startsWith("972") && digits.length >= 11) {
-    return `0${digits.slice(3)}`;
+  // מזהה מספר ישראלי בתוך מזהה WhatsApp
+  // למשל:
+  // 972501234567@s.whatsapp.net
+  // 972501234567@c.us
+  // 501234567
+  const phoneMatch = rawId.match(/(?:972|0)?5\d{8}/);
+
+  if (!phoneMatch) {
+    return null;
   }
 
-  return digits || null;
+  let phone = phoneMatch[0];
+
+  if (phone.startsWith("972")) {
+    phone = `0${phone.slice(3)}`;
+  } else if (phone.startsWith("5")) {
+    phone = `0${phone}`;
+  }
+
+  return phone;
 }
 
 function extractUserDetails(message, currentUser = {}) {
@@ -29,7 +44,17 @@ function extractUserDetails(message, currentUser = {}) {
   );
 
   if (phoneMatch) {
-    updates.phone = phoneMatch[0].replace(/[-\s]/g, "");
+    let phone = phoneMatch[0].replace(/[-\s]/g, "");
+
+    if (phone.startsWith("+972")) {
+      phone = `0${phone.slice(4)}`;
+    } else if (phone.startsWith("972")) {
+      phone = `0${phone.slice(3)}`;
+    } else if (phone.startsWith("5")) {
+      phone = `0${phone}`;
+    }
+
+    updates.phone = phone;
   }
 
   // סניף
@@ -60,7 +85,7 @@ function extractUserDetails(message, currentUser = {}) {
     updates.goal = "אימון אישי";
   }
 
-  // שם
+  // זיהוי שם
   const namePatterns = [
     /קוראים לי\s+([א-תA-Za-z"-]{2,20})/,
     /קוראים לו\s+([א-תA-Za-z"-]{2,20})/,
@@ -108,7 +133,7 @@ function extractUserDetails(message, currentUser = {}) {
   return updates;
 }
 
-function getMissingLeadFields(user) {
+function getMissingLeadFields(user = {}) {
   const missing = [];
 
   if (!user.name) {

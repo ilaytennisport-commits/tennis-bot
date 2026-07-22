@@ -30,12 +30,23 @@ async function processIncomingMessage(message) {
   }
 
   const userMessage = message.text?.body?.trim();
-  const userId = message.from;
 
-  if (!userMessage || !userId) {
-    return;
-  }
+const userId =
+  message.chat_id ||
+  message.from;
 
+if (!userMessage || !userId) {
+  return;
+}
+
+console.log("🔍 מזהי Whapi:", {
+  from: message.from,
+  chat_id: message.chat_id,
+  selectedUserId: userId,
+  detectedPhone: whatsappIdToPhone(userId),
+});
+
+console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
   console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
 
   if (userMessage === "איפוס שיחה") {

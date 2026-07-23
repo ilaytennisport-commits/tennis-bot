@@ -309,11 +309,19 @@ async function processIncomingMessage(
   const missingFields =
     getMissingLeadFields(updatedUser);
 
-  const shouldSendLeadSummary =
-    updatedUser.goal === "שיעור ניסיון" &&
-    missingFields.length === 0 &&
-    updatedUser.summary_sent !== true;
+ const leadGoals = [
+  "שיעור ניסיון",
+  "חוג טניס",
+  "אימון אישי",
+  "אימון זוגי",
+  "אימוני מבוגרים",
+  "אימוני ילדים",
+];
 
+const shouldSendLeadSummary =
+  leadGoals.includes(updatedUser.goal) &&
+  missingFields.length === 0 &&
+  updatedUser.summary_sent !== true;
   let reply;
 
   if (shouldSendLeadSummary) {

@@ -413,7 +413,14 @@ async function processIncomingMessage(
       userMessage,
       currentUser
     );
-
+console.log(
+  "🧩 פרטים שחולצו מההודעה:",
+  {
+    userMessage,
+    currentUser,
+    extractedDetails,
+  }
+);
   /**
    * אם לא התקבל מספר טלפון מפורש,
    * משתמשים במספר שממנו נשלחה ההודעה.

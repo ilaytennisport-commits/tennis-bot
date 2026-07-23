@@ -26,6 +26,71 @@ const MAX_PROCESSED_MESSAGE_IDS = 2000;
 
 const userQueues = new Map();
 
+const CLUB_MANAGER_PHONE = process.env.CLUB_MANAGER_PHONE;
+function formatManagerLeadMessage(user, conversationHistory = []) {
+  const cleanPhone = String(user.phone || "")
+    .replace(/\D/g, "");
+
+  let internationalPhone = cleanPhone;
+
+  if (cleanPhone.startsWith("0")) {
+    internationalPhone =
+      `972${cleanPhone.substring(1)}`;
+  }
+
+  const whatsappLink = internationalPhone
+    ? `https://wa.me/${internationalPhone}`
+    : "לא זמין";
+
+  const formattedConversation =
+    conversationHistory
+      .filter(
+        (message) =>
+          message?.content &&
+          ["user", "assistant"].includes(message.role)
+      )
+      .map((message) => {
+        const speaker =
+          message.role === "user"
+            ? "👤 לקוח"
+            : "🤖 בוט";
+
+        return `${speaker}:\n${message.content}`;
+      })
+      .join("\n\n");
+
+  const receivedAt =
+    new Intl.DateTimeFormat("he-IL", {
+      timeZone: "Asia/Jerusalem",
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(new Date());
+
+  return [
+    "🎾 ליד חדש - Tennis Sport",
+    "",
+    "━━━━━━━━━━━━━━━━━━",
+    "",
+    `👤 שם: ${user.name || "לא נמסר"}`,
+    `🎂 גיל: ${user.age || "לא נמסר"}`,
+    `📍 סניף: ${user.branch || "לא נמסר"}`,
+    `📞 טלפון: ${user.phone || "לא נמסר"}`,
+    `🎯 מטרה: ${user.goal || "לא נמסרה"}`,
+    `🕒 התקבל: ${receivedAt}`,
+    "",
+    "━━━━━━━━━━━━━━━━━━",
+    "",
+    "💬 השיחה עם הלקוח:",
+    "",
+    formattedConversation ||
+      "לא קיימת היסטוריית שיחה.",
+    "",
+    "━━━━━━━━━━━━━━━━━━",
+    "",
+    "📲 לפתיחת שיחה עם הלקוח:",
+    whatsappLink,
+  ].join("\n");
+}
 function getMessageId(message) {
   return (
     message?.id ||
@@ -191,13 +256,63 @@ async function processIncomingMessage(message) {
     reply
   );
 
-  if (shouldSendLeadSummary) {
-    await markSummarySent(userId);
+if (shouldSendLeadSummary) {
+  await markSummarySent(userId);
 
-    console.log(
-      `📋 סיכום הליד סומן כנשלח עבור ${userId}`
+  console.log(
+    `📋 סיכום הליד סומן כנשלח עבור ${userId}`
+  );
+
+  if (!CLUB_MANAGER_PHONE) {
+    console.warn(
+      "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
     );
+  } else {
+    try {
+      const updatedConversationHistory =
+        await getConversation(userId);
+
+      const managerMessage =
+        formatManagerLeadMessage(
+          updatedUser,
+          updatedConversationHistory
+        );
+
+      await sendWhatsAppMessage(
+        CLUB_MANAGER_PHONE,
+        managerMessage
+      );
+
+      console.log(
+        `✅ פרטי הליד נשלחו למנהל: ${CLUB_MANAGER_PHONE}`
+      );
+    } catch (error) {
+      console.error(
+        "❌ שגיאה בשליחת הליד למנהל:",
+        error.response?.data ||
+          error.message
+      );
+    }
   }
+}
+  if (CLUB_MANAGER_PHONE) {
+    try {
+      await sendWhatsAppMessage(
+        CLUB_MANAGER_PHONE,
+        formatManagerLeadMessage(updatedUser)
+      );
+
+      console.log(
+        `✅ הליד נשלח למנהל המועדון`
+      );
+    } catch (error) {
+      console.error(
+        "❌ שגיאה בשליחת הליד למנהל:",
+        error.response?.data || error.message
+      );
+    }
+  }
+}
 
   console.log(
     `✅ התשובה נשלחה ל-${userId}`

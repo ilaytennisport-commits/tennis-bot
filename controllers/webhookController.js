@@ -1,4 +1,6 @@
-const { generateReply } = require("../services/openaiService");
+const {
+  generateReply,
+} = require("../services/openaiService");
 
 const {
   sendWhatsAppMessage,
@@ -20,7 +22,6 @@ const {
 const {
   whatsappIdToPhone,
   extractUserDetails,
-  getMissingLeadFields,
   formatLeadSummary,
 } = require("../utils/leadUtils");
 
@@ -32,12 +33,50 @@ const userQueues = new Map();
 const CLUB_MANAGER_PHONE =
   process.env.CLUB_MANAGER_PHONE;
 
+/**
+ * בודק האם כל פרטי הליד הנדרשים נאספו.
+ */
+function hasCompleteLeadDetails(user) {
+  const hasName =
+    typeof user.name === "string" &&
+    user.name.trim().length > 0;
+
+  const hasAge =
+    user.age !== null &&
+    user.age !== undefined &&
+    String(user.age).trim().length > 0;
+
+  const hasBranch =
+    typeof user.branch === "string" &&
+    user.branch.trim().length > 0;
+
+  const hasPhone =
+    typeof user.phone === "string" &&
+    user.phone.trim().length > 0;
+
+  const hasGoal =
+    typeof user.goal === "string" &&
+    user.goal.trim().length > 0;
+
+  return (
+    hasName &&
+    hasAge &&
+    hasBranch &&
+    hasPhone &&
+    hasGoal
+  );
+}
+
+/**
+ * יוצר הודעה מסודרת למנהל המועדון.
+ */
 function formatManagerLeadMessage(
   user,
   conversationHistory = []
 ) {
-  const cleanPhone = String(user.phone || "")
-    .replace(/\D/g, "");
+  const cleanPhone = String(
+    user.phone || ""
+  ).replace(/\D/g, "");
 
   let internationalPhone = cleanPhone;
 
@@ -53,19 +92,22 @@ function formatManagerLeadMessage(
   const formattedConversation =
     conversationHistory
       .filter(
-        (message) =>
-          message?.content &&
+        (conversationMessage) =>
+          conversationMessage?.content &&
           ["user", "assistant"].includes(
-            message.role
+            conversationMessage.role
           )
       )
-      .map((message) => {
+      .map((conversationMessage) => {
         const speaker =
-          message.role === "user"
+          conversationMessage.role === "user"
             ? "👤 לקוח"
             : "🤖 בוט";
 
-        return `${speaker}:\n${message.content}`;
+        return (
+          `${speaker}:\n` +
+          conversationMessage.content
+        );
       })
       .join("\n\n");
 
@@ -81,11 +123,11 @@ function formatManagerLeadMessage(
     "",
     "━━━━━━━━━━━━━━━━━━",
     "",
-    `👤 שם: ${user.name || "לא נמסר"}`,
-    `🎂 גיל: ${user.age || "לא נמסר"}`,
-    `📍 סניף: ${user.branch || "לא נמסר"}`,
-    `📞 טלפון: ${user.phone || "לא נמסר"}`,
-    `🎯 מטרה: ${user.goal || "לא נמסרה"}`,
+    `👤 שם: ${user.name}`,
+    `🎂 גיל: ${user.age}`,
+    `📍 סניף: ${user.branch}`,
+    `📞 טלפון: ${user.phone}`,
+    `🎯 תחום התעניינות: ${user.goal}`,
     `🕒 התקבל: ${receivedAt}`,
     "",
     "━━━━━━━━━━━━━━━━━━",
@@ -102,6 +144,9 @@ function formatManagerLeadMessage(
   ].join("\n");
 }
 
+/**
+ * מחלץ את מזהה ההודעה שהגיע מ־Whapi.
+ */
 function getMessageId(message) {
   return (
     message?.id ||
@@ -111,6 +156,10 @@ function getMessageId(message) {
   );
 }
 
+/**
+ * שומר מזהי הודעות שכבר עובדו,
+ * כדי למנוע טיפול כפול באותו Webhook.
+ */
 function rememberProcessedMessage(messageId) {
   if (!messageId) {
     return;
@@ -123,7 +172,9 @@ function rememberProcessedMessage(messageId) {
     MAX_PROCESSED_MESSAGE_IDS
   ) {
     const oldestMessageId =
-      processedMessageIds.values().next().value;
+      processedMessageIds
+        .values()
+        .next().value;
 
     processedMessageIds.delete(
       oldestMessageId
@@ -131,6 +182,10 @@ function rememberProcessedMessage(messageId) {
   }
 }
 
+/**
+ * מפעיל תור נפרד לכל משתמש,
+ * כדי שהודעות מאותו משתמש יעובדו לפי הסדר.
+ */
 function enqueueUserMessage(userId, task) {
   const previousTask =
     userQueues.get(userId) ||
@@ -138,7 +193,7 @@ function enqueueUserMessage(userId, task) {
 
   const currentTask = previousTask
     .catch(() => {
-      // שגיאה בהודעה קודמת לא תעצור את התור.
+      // שגיאה קודמת לא תעצור את התור.
     })
     .then(task);
 
@@ -155,6 +210,9 @@ function enqueueUserMessage(userId, task) {
   return currentTask;
 }
 
+/**
+ * שולח את פרטי הליד למנהל המועדון.
+ */
 async function sendLeadToManager(
   userId,
   updatedUser
@@ -180,9 +238,18 @@ async function sendLeadToManager(
     console.log(
       "📨 מנסה לשלוח ליד למנהל:",
       {
-        managerPhone: CLUB_MANAGER_PHONE,
-        customerPhone: updatedUser.phone,
-        messageLength: managerMessage.length,
+        managerPhone:
+          CLUB_MANAGER_PHONE,
+        customerPhone:
+          updatedUser.phone,
+        customerName:
+          updatedUser.name,
+        customerAge:
+          updatedUser.age,
+        goal:
+          updatedUser.goal,
+        messageLength:
+          managerMessage.length,
       }
     );
 
@@ -202,10 +269,14 @@ async function sendLeadToManager(
     console.error(
       "❌ שליחת הליד למנהל נכשלה:",
       {
-        managerPhone: CLUB_MANAGER_PHONE,
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
+        managerPhone:
+          CLUB_MANAGER_PHONE,
+        status:
+          error.response?.status,
+        data:
+          error.response?.data,
+        message:
+          error.message,
       }
     );
 
@@ -213,6 +284,9 @@ async function sendLeadToManager(
   }
 }
 
+/**
+ * מעבד הודעת WhatsApp נכנסת.
+ */
 async function processIncomingMessage(
   message
 ) {
@@ -250,6 +324,9 @@ async function processIncomingMessage(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
+  /**
+   * איפוס פרטי המשתמש והשיחה.
+   */
   if (userMessage === "איפוס שיחה") {
     await clearConversation(userId);
     await clearUser(userId);
@@ -268,57 +345,66 @@ async function processIncomingMessage(
 
     return;
   }
-if (userMessage === "בדיקת מנהל") {
-  if (!CLUB_MANAGER_PHONE) {
-    await sendWhatsAppMessage(
-      userId,
-      "❌ מספר מנהל המועדון לא מוגדר."
-    );
+
+  /**
+   * בדיקה ישירה של שליחה למנהל.
+   */
+  if (userMessage === "בדיקת מנהל") {
+    if (!CLUB_MANAGER_PHONE) {
+      await sendWhatsAppMessage(
+        userId,
+        "❌ מספר מנהל המועדון לא מוגדר."
+      );
+
+      return;
+    }
+
+    try {
+      console.log(
+        `🧪 בדיקת שליחה ישירה למנהל: ${CLUB_MANAGER_PHONE}`
+      );
+
+      const testResult =
+        await sendWhatsAppMessage(
+          CLUB_MANAGER_PHONE,
+          "🧪 הודעת בדיקה מהבוט של Tennis Sport"
+        );
+
+      console.log(
+        "✅ הודעת הבדיקה למנהל נשלחה:",
+        testResult
+      );
+
+      await sendWhatsAppMessage(
+        userId,
+        "✅ Whapi אישר את שליחת הודעת הבדיקה למנהל."
+      );
+    } catch (error) {
+      console.error(
+        "❌ הודעת הבדיקה למנהל נכשלה:",
+        {
+          status:
+            error.response?.status,
+          data:
+            error.response?.data,
+          message:
+            error.message,
+        }
+      );
+
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message;
+
+      await sendWhatsAppMessage(
+        userId,
+        `❌ הבדיקה נכשלה: ${errorMessage}`
+      );
+    }
 
     return;
   }
 
-  try {
-    console.log(
-      `🧪 בדיקת שליחה ישירה למנהל: ${CLUB_MANAGER_PHONE}`
-    );
-
-    const testResult =
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        "🧪 הודעת בדיקה מהבוט של Tennis Sport"
-      );
-
-    console.log(
-      "✅ הודעת הבדיקה למנהל נשלחה:",
-      testResult
-    );
-
-    await sendWhatsAppMessage(
-      userId,
-      "✅ Whapi אישר את שליחת הודעת הבדיקה למנהל."
-    );
-  } catch (error) {
-    console.error(
-      "❌ הודעת הבדיקה למנהל נכשלה:",
-      {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-      }
-    );
-
-    await sendWhatsAppMessage(
-      userId,
-      `❌ הבדיקה נכשלה: ${
-        error.response?.data?.message ||
-        error.message
-      }`
-    );
-  }
-
-  return;
-}
   const currentUser =
     await getUser(userId);
 
@@ -328,6 +414,10 @@ if (userMessage === "בדיקת מנהל") {
       currentUser
     );
 
+  /**
+   * אם לא התקבל מספר טלפון מפורש,
+   * משתמשים במספר שממנו נשלחה ההודעה.
+   */
   if (
     !currentUser.phone &&
     !extractedDetails.phone
@@ -356,22 +446,30 @@ if (userMessage === "בדיקת מנהל") {
   const conversationHistory =
     await getConversation(userId);
 
-  const missingFields =
-    getMissingLeadFields(updatedUser);
+  const completeLead =
+    hasCompleteLeadDetails(
+      updatedUser
+    );
 
- const leadGoals = [
-  "שיעור ניסיון",
-  "חוג טניס",
-  "אימון אישי",
-  "אימון זוגי",
-  "אימוני מבוגרים",
-  "אימוני ילדים",
-];
+  const shouldSendLeadSummary =
+    completeLead &&
+    updatedUser.summary_sent !== true;
 
-const shouldSendLeadSummary =
-  leadGoals.includes(updatedUser.goal) &&
-  missingFields.length === 0 &&
-  updatedUser.summary_sent !== true;
+  console.log(
+    "📋 בדיקת מוכנות הליד:",
+    {
+      name: updatedUser.name,
+      age: updatedUser.age,
+      branch: updatedUser.branch,
+      phone: updatedUser.phone,
+      goal: updatedUser.goal,
+      summarySent:
+        updatedUser.summary_sent,
+      completeLead,
+      shouldSendLeadSummary,
+    }
+  );
+
   let reply;
 
   if (shouldSendLeadSummary) {
@@ -408,6 +506,10 @@ const shouldSendLeadSummary =
     reply
   );
 
+  /**
+   * לאחר שהלקוח קיבל את הסיכום,
+   * שולחים את הליד למנהל.
+   */
   if (shouldSendLeadSummary) {
     const managerMessageSent =
       await sendLeadToManager(
@@ -423,7 +525,7 @@ const shouldSendLeadSummary =
       );
     } else {
       console.warn(
-        `⚠️ הליד לא סומן כנשלח, כדי שיהיה אפשר לנסות שוב עבור ${userId}`
+        `⚠️ הליד לא סומן כנשלח משום שהשליחה למנהל נכשלה: ${userId}`
       );
     }
   }
@@ -433,6 +535,9 @@ const shouldSendLeadSummary =
   );
 }
 
+/**
+ * מקבל את ה־Webhook מ־Whapi.
+ */
 async function handleWebhook(req, res) {
   res.status(200).json({
     success: true,

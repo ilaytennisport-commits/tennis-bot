@@ -1,4 +1,5 @@
 const { generateReply } = require("../services/openaiService");
+
 const {
   sendWhatsAppMessage,
 } = require("../services/whapiService");
@@ -154,6 +155,64 @@ function enqueueUserMessage(userId, task) {
   return currentTask;
 }
 
+async function sendLeadToManager(
+  userId,
+  updatedUser
+) {
+  if (!CLUB_MANAGER_PHONE) {
+    console.warn(
+      "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
+    );
+
+    return false;
+  }
+
+  try {
+    const updatedConversationHistory =
+      await getConversation(userId);
+
+    const managerMessage =
+      formatManagerLeadMessage(
+        updatedUser,
+        updatedConversationHistory
+      );
+
+    console.log(
+      "📨 מנסה לשלוח ליד למנהל:",
+      {
+        managerPhone: CLUB_MANAGER_PHONE,
+        customerPhone: updatedUser.phone,
+        messageLength: managerMessage.length,
+      }
+    );
+
+    const managerResult =
+      await sendWhatsAppMessage(
+        CLUB_MANAGER_PHONE,
+        managerMessage
+      );
+
+    console.log(
+      "✅ תשובת Whapi בשליחת הליד למנהל:",
+      managerResult
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "❌ שליחת הליד למנהל נכשלה:",
+      {
+        managerPhone: CLUB_MANAGER_PHONE,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      }
+    );
+
+    return false;
+  }
+}
+
 async function processIncomingMessage(
   message
 ) {
@@ -251,8 +310,7 @@ async function processIncomingMessage(
     getMissingLeadFields(updatedUser);
 
   const shouldSendLeadSummary =
-    updatedUser.goal ===
-      "שיעור ניסיון" &&
+    updatedUser.goal === "שיעור ניסיון" &&
     missingFields.length === 0 &&
     updatedUser.summary_sent !== true;
 
@@ -293,42 +351,22 @@ async function processIncomingMessage(
   );
 
   if (shouldSendLeadSummary) {
-    await markSummarySent(userId);
+    const managerMessageSent =
+      await sendLeadToManager(
+        userId,
+        updatedUser
+      );
 
-    console.log(
-      `📋 סיכום הליד סומן כנשלח עבור ${userId}`
-    );
+    if (managerMessageSent) {
+      await markSummarySent(userId);
 
-    if (!CLUB_MANAGER_PHONE) {
-      console.warn(
-        "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
+      console.log(
+        `📋 הליד סומן כנשלח עבור ${userId}`
       );
     } else {
-      try {
-        const updatedConversationHistory =
-          await getConversation(userId);
-
-        const managerMessage =
-          formatManagerLeadMessage(
-            updatedUser,
-            updatedConversationHistory
-          );
-
-        await sendWhatsAppMessage(
-          CLUB_MANAGER_PHONE,
-          managerMessage
-        );
-
-        console.log(
-          `✅ פרטי הליד נשלחו למנהל: ${CLUB_MANAGER_PHONE}`
-        );
-      } catch (error) {
-        console.error(
-          "❌ שגיאה בשליחת הליד למנהל:",
-          error.response?.data ||
-            error.message
-        );
-      }
+      console.warn(
+        `⚠️ הליד לא סומן כנשלח, כדי שיהיה אפשר לנסות שוב עבור ${userId}`
+      );
     }
   }
 

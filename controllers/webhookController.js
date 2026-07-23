@@ -450,7 +450,24 @@ async function processIncomingMessage(
     hasCompleteLeadDetails(
       updatedUser
     );
+console.log("🔍 בדיקת שדות ליד:", {
+  name: updatedUser.name,
+  hasName: !!updatedUser.name,
 
+  age: updatedUser.age,
+  hasAge:
+    updatedUser.age !== null &&
+    updatedUser.age !== undefined,
+
+  branch: updatedUser.branch,
+  hasBranch: !!updatedUser.branch,
+
+  phone: updatedUser.phone,
+  hasPhone: !!updatedUser.phone,
+
+  goal: updatedUser.goal,
+  hasGoal: !!updatedUser.goal,
+});
   const shouldSendLeadSummary =
     completeLead &&
     updatedUser.summary_sent !== true;

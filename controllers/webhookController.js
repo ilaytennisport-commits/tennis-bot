@@ -1,5 +1,7 @@
 const { generateReply } = require("../services/openaiService");
-const { sendWhatsAppMessage } = require("../services/whapiService");
+const {
+  sendWhatsAppMessage,
+} = require("../services/whapiService");
 
 const {
   getConversation,
@@ -26,8 +28,13 @@ const MAX_PROCESSED_MESSAGE_IDS = 2000;
 
 const userQueues = new Map();
 
-const CLUB_MANAGER_PHONE = process.env.CLUB_MANAGER_PHONE;
-function formatManagerLeadMessage(user, conversationHistory = []) {
+const CLUB_MANAGER_PHONE =
+  process.env.CLUB_MANAGER_PHONE;
+
+function formatManagerLeadMessage(
+  user,
+  conversationHistory = []
+) {
   const cleanPhone = String(user.phone || "")
     .replace(/\D/g, "");
 
@@ -47,7 +54,9 @@ function formatManagerLeadMessage(user, conversationHistory = []) {
       .filter(
         (message) =>
           message?.content &&
-          ["user", "assistant"].includes(message.role)
+          ["user", "assistant"].includes(
+            message.role
+          )
       )
       .map((message) => {
         const speaker =
@@ -91,6 +100,7 @@ function formatManagerLeadMessage(user, conversationHistory = []) {
     whatsappLink,
   ].join("\n");
 }
+
 function getMessageId(message) {
   return (
     message?.id ||
@@ -107,17 +117,23 @@ function rememberProcessedMessage(messageId) {
 
   processedMessageIds.add(messageId);
 
-  if (processedMessageIds.size > MAX_PROCESSED_MESSAGE_IDS) {
+  if (
+    processedMessageIds.size >
+    MAX_PROCESSED_MESSAGE_IDS
+  ) {
     const oldestMessageId =
       processedMessageIds.values().next().value;
 
-    processedMessageIds.delete(oldestMessageId);
+    processedMessageIds.delete(
+      oldestMessageId
+    );
   }
 }
 
 function enqueueUserMessage(userId, task) {
   const previousTask =
-    userQueues.get(userId) || Promise.resolve();
+    userQueues.get(userId) ||
+    Promise.resolve();
 
   const currentTask = previousTask
     .catch(() => {
@@ -128,7 +144,9 @@ function enqueueUserMessage(userId, task) {
   userQueues.set(userId, currentTask);
 
   currentTask.finally(() => {
-    if (userQueues.get(userId) === currentTask) {
+    if (
+      userQueues.get(userId) === currentTask
+    ) {
       userQueues.delete(userId);
     }
   });
@@ -136,8 +154,13 @@ function enqueueUserMessage(userId, task) {
   return currentTask;
 }
 
-async function processIncomingMessage(message) {
-  if (!message || message.from_me === true) {
+async function processIncomingMessage(
+  message
+) {
+  if (
+    !message ||
+    message.from_me === true
+  ) {
     return;
   }
 
@@ -145,7 +168,8 @@ async function processIncomingMessage(message) {
     return;
   }
 
-  const userMessage = message.text?.body?.trim();
+  const userMessage =
+    message.text?.body?.trim();
 
   const userId =
     message.chat_id ||
@@ -159,10 +183,13 @@ async function processIncomingMessage(message) {
     from: message.from,
     chat_id: message.chat_id,
     selectedUserId: userId,
-    detectedPhone: whatsappIdToPhone(userId),
+    detectedPhone:
+      whatsappIdToPhone(userId),
   });
 
-  console.log(`📨 הודעה מ-${userId}: ${userMessage}`);
+  console.log(
+    `📨 הודעה מ-${userId}: ${userMessage}`
+  );
 
   if (userMessage === "איפוס שיחה") {
     await clearConversation(userId);
@@ -176,17 +203,21 @@ async function processIncomingMessage(message) {
       resetReply
     );
 
-    console.log(`✅ השיחה אופסה עבור ${userId}`);
+    console.log(
+      `✅ השיחה אופסה עבור ${userId}`
+    );
 
     return;
   }
 
-  const currentUser = await getUser(userId);
+  const currentUser =
+    await getUser(userId);
 
-  const extractedDetails = extractUserDetails(
-    userMessage,
-    currentUser
-  );
+  const extractedDetails =
+    extractUserDetails(
+      userMessage,
+      currentUser
+    );
 
   if (
     !currentUser.phone &&
@@ -196,10 +227,11 @@ async function processIncomingMessage(message) {
       whatsappIdToPhone(userId);
   }
 
-  const updatedUser = await saveUser(
-    userId,
-    extractedDetails
-  );
+  const updatedUser =
+    await saveUser(
+      userId,
+      extractedDetails
+    );
 
   console.log(
     "👤 פרטי המשתמש שנשמרו:",
@@ -219,14 +251,16 @@ async function processIncomingMessage(message) {
     getMissingLeadFields(updatedUser);
 
   const shouldSendLeadSummary =
-    updatedUser.goal === "שיעור ניסיון" &&
+    updatedUser.goal ===
+      "שיעור ניסיון" &&
     missingFields.length === 0 &&
     updatedUser.summary_sent !== true;
 
   let reply;
 
   if (shouldSendLeadSummary) {
-    reply = formatLeadSummary(updatedUser);
+    reply =
+      formatLeadSummary(updatedUser);
   } else {
     reply = await generateReply(
       conversationHistory,
@@ -249,70 +283,54 @@ async function processIncomingMessage(message) {
     reply
   );
 
-  console.log(`🤖 תשובת הבוט: ${reply}`);
+  console.log(
+    `🤖 תשובת הבוט: ${reply}`
+  );
 
   await sendWhatsAppMessage(
     userId,
     reply
   );
 
-if (shouldSendLeadSummary) {
-  await markSummarySent(userId);
+  if (shouldSendLeadSummary) {
+    await markSummarySent(userId);
 
-  console.log(
-    `📋 סיכום הליד סומן כנשלח עבור ${userId}`
-  );
-
-  if (!CLUB_MANAGER_PHONE) {
-    console.warn(
-      "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
+    console.log(
+      `📋 סיכום הליד סומן כנשלח עבור ${userId}`
     );
-  } else {
-    try {
-      const updatedConversationHistory =
-        await getConversation(userId);
 
-      const managerMessage =
-        formatManagerLeadMessage(
-          updatedUser,
-          updatedConversationHistory
+    if (!CLUB_MANAGER_PHONE) {
+      console.warn(
+        "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
+      );
+    } else {
+      try {
+        const updatedConversationHistory =
+          await getConversation(userId);
+
+        const managerMessage =
+          formatManagerLeadMessage(
+            updatedUser,
+            updatedConversationHistory
+          );
+
+        await sendWhatsAppMessage(
+          CLUB_MANAGER_PHONE,
+          managerMessage
         );
 
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        managerMessage
-      );
-
-      console.log(
-        `✅ פרטי הליד נשלחו למנהל: ${CLUB_MANAGER_PHONE}`
-      );
-    } catch (error) {
-      console.error(
-        "❌ שגיאה בשליחת הליד למנהל:",
-        error.response?.data ||
-          error.message
-      );
+        console.log(
+          `✅ פרטי הליד נשלחו למנהל: ${CLUB_MANAGER_PHONE}`
+        );
+      } catch (error) {
+        console.error(
+          "❌ שגיאה בשליחת הליד למנהל:",
+          error.response?.data ||
+            error.message
+        );
+      }
     }
   }
-}
-  if (CLUB_MANAGER_PHONE) {
-    try {
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        formatManagerLeadMessage(updatedUser)
-      );
-
-      console.log(
-        `✅ הליד נשלח למנהל המועדון`
-      );
-    } catch (error) {
-      console.error(
-        "❌ שגיאה בשליחת הליד למנהל:",
-        error.response?.data || error.message
-      );
-    }
-  }
-}
 
   console.log(
     `✅ התשובה נשלחה ל-${userId}`
@@ -327,12 +345,14 @@ async function handleWebhook(req, res) {
 
   try {
     if (
-      req.body?.event?.type !== "messages"
+      req.body?.event?.type !==
+      "messages"
     ) {
       return;
     }
 
-    const messages = req.body?.messages;
+    const messages =
+      req.body?.messages;
 
     if (!Array.isArray(messages)) {
       return;
@@ -344,7 +364,9 @@ async function handleWebhook(req, res) {
 
       if (
         messageId &&
-        processedMessageIds.has(messageId)
+        processedMessageIds.has(
+          messageId
+        )
       ) {
         console.log(
           `♻️ הודעה כפולה דולגה: ${messageId}`
@@ -353,7 +375,9 @@ async function handleWebhook(req, res) {
         continue;
       }
 
-      rememberProcessedMessage(messageId);
+      rememberProcessedMessage(
+        messageId
+      );
 
       const userId =
         message?.chat_id ||

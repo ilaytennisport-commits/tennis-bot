@@ -7,6 +7,10 @@ const {
 } = require("../services/whapiService");
 
 const {
+  getAutomatedResponse,
+} = require("../services/responseService");
+
+const {
   getConversation,
   addMessage,
   clearConversation,
@@ -413,14 +417,16 @@ async function processIncomingMessage(
       userMessage,
       currentUser
     );
-console.log(
-  "🧩 פרטים שחולצו מההודעה:",
-  {
-    userMessage,
-    currentUser,
-    extractedDetails,
-  }
-);
+
+  console.log(
+    "🧩 פרטים שחולצו מההודעה:",
+    {
+      userMessage,
+      currentUser,
+      extractedDetails,
+    }
+  );
+
   /**
    * אם לא התקבל מספר טלפון מפורש,
    * משתמשים במספר שממנו נשלחה ההודעה.
@@ -457,24 +463,29 @@ console.log(
     hasCompleteLeadDetails(
       updatedUser
     );
-console.log("🔍 בדיקת שדות ליד:", {
-  name: updatedUser.name,
-  hasName: !!updatedUser.name,
 
-  age: updatedUser.age,
-  hasAge:
-    updatedUser.age !== null &&
-    updatedUser.age !== undefined,
+  console.log(
+    "🔍 בדיקת שדות ליד:",
+    {
+      name: updatedUser.name,
+      hasName: !!updatedUser.name,
 
-  branch: updatedUser.branch,
-  hasBranch: !!updatedUser.branch,
+      age: updatedUser.age,
+      hasAge:
+        updatedUser.age !== null &&
+        updatedUser.age !== undefined,
 
-  phone: updatedUser.phone,
-  hasPhone: !!updatedUser.phone,
+      branch: updatedUser.branch,
+      hasBranch: !!updatedUser.branch,
 
-  goal: updatedUser.goal,
-  hasGoal: !!updatedUser.goal,
-});
+      phone: updatedUser.phone,
+      hasPhone: !!updatedUser.phone,
+
+      goal: updatedUser.goal,
+      hasGoal: !!updatedUser.goal,
+    }
+  );
+
   const shouldSendLeadSummary =
     completeLead &&
     updatedUser.summary_sent !== true;
@@ -500,10 +511,31 @@ console.log("🔍 בדיקת שדות ליד:", {
     reply =
       formatLeadSummary(updatedUser);
   } else {
-    reply = await generateReply(
-      conversationHistory,
-      updatedUser
-    );
+    const automatedResponse =
+      getAutomatedResponse(
+        userMessage,
+        updatedUser
+      );
+
+    if (automatedResponse.handled) {
+      console.log(
+        "⚡ תשובת FAQ אוטומטית:",
+        {
+          intent:
+            automatedResponse.intent,
+          confidence:
+            automatedResponse.confidence,
+        }
+      );
+
+      reply =
+        automatedResponse.response;
+    } else {
+      reply = await generateReply(
+        conversationHistory,
+        updatedUser
+      );
+    }
   }
 
   if (

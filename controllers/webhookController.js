@@ -268,7 +268,57 @@ async function processIncomingMessage(
 
     return;
   }
+if (userMessage === "בדיקת מנהל") {
+  if (!CLUB_MANAGER_PHONE) {
+    await sendWhatsAppMessage(
+      userId,
+      "❌ מספר מנהל המועדון לא מוגדר."
+    );
 
+    return;
+  }
+
+  try {
+    console.log(
+      `🧪 בדיקת שליחה ישירה למנהל: ${CLUB_MANAGER_PHONE}`
+    );
+
+    const testResult =
+      await sendWhatsAppMessage(
+        CLUB_MANAGER_PHONE,
+        "🧪 הודעת בדיקה מהבוט של Tennis Sport"
+      );
+
+    console.log(
+      "✅ הודעת הבדיקה למנהל נשלחה:",
+      testResult
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      "✅ Whapi אישר את שליחת הודעת הבדיקה למנהל."
+    );
+  } catch (error) {
+    console.error(
+      "❌ הודעת הבדיקה למנהל נכשלה:",
+      {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      }
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      `❌ הבדיקה נכשלה: ${
+        error.response?.data?.message ||
+        error.message
+      }`
+    );
+  }
+
+  return;
+}
   const currentUser =
     await getUser(userId);
 

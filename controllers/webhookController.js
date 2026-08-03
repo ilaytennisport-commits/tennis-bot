@@ -1,14 +1,9 @@
-const {
-  generateReply,
-} = require("../services/openaiService");
+const { createReply } = require("../services/replyService");
 
 const {
   sendWhatsAppMessage,
 } = require("../services/whapiService");
 
-const {
-  getAutomatedResponse,
-} = require("../services/responseService");
 
 const {
   getConversation,
@@ -505,38 +500,13 @@ async function processIncomingMessage(
     }
   );
 
-  let reply;
-
-  if (shouldSendLeadSummary) {
-    reply =
-      formatLeadSummary(updatedUser);
-  } else {
-    const automatedResponse =
-      getAutomatedResponse(
-        userMessage,
-        updatedUser
-      );
-
-    if (automatedResponse.handled) {
-      console.log(
-        "⚡ תשובת FAQ אוטומטית:",
-        {
-          intent:
-            automatedResponse.intent,
-          confidence:
-            automatedResponse.confidence,
-        }
-      );
-
-      reply =
-        automatedResponse.response;
-    } else {
-      reply = await generateReply(
-        conversationHistory,
-        updatedUser
-      );
-    }
-  }
+   const reply = await createReply({
+    userMessage,
+    updatedUser,
+    conversationHistory,
+    shouldSendLeadSummary,
+    formatLeadSummary,
+  });
 
   if (
     !reply ||

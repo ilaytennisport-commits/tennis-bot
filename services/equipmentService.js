@@ -2,45 +2,95 @@ const equipmentKnowledge = require(
   "../knowledge/equipmentKnowledge"
 );
 
-function getCategoryKnowledge(category) {
-  return (
-    equipmentKnowledge[category] ||
-    equipmentKnowledge.categories?.[category] ||
-    null
-  );
-}
-
 function detectEquipmentCategory(message = "") {
   const text = String(message)
     .toLowerCase()
     .trim();
 
-  if (/מחבט|מחבטים|רקטה|רקטות/.test(text)) {
-    return "rackets";
-  }
-
-  if (/גריפ|אוברגריפ|ידית/.test(text)) {
-    return "grips";
-  }
-
-  if (/גיד|גידים|שזירה|מתיחה/.test(text)) {
-    return "strings";
-  }
-
-  if (/כדור|כדורים/.test(text)) {
-    return "balls";
-  }
-
-  if (/נעל|נעליים/.test(text)) {
-    return "shoes";
-  }
-
+  // בודקים קודם ביטויים ספציפיים,
+  // כדי ש"תיק למחבט" לא יזוהה כמחבט.
   if (
-    /תיק|בולם זעזועים|כובע|בקבוק|אביזר|ציוד נלווה/.test(
+    /תיק למחבט|תיקי מחבטים|תיק/.test(
       text
     )
   ) {
-    return "accessories";
+    return {
+      category: "accessories",
+      item: "bag",
+    };
+  }
+
+  if (
+    /בולם זעזועים|סופג זעזועים|בולם/.test(
+      text
+    )
+  ) {
+    return {
+      category: "accessories",
+      item: "vibration_damper",
+    };
+  }
+
+  if (
+    /אוברגריפ|גריפ|גריפים|ידית|אחיזה/.test(
+      text
+    )
+  ) {
+    return {
+      category: "grips",
+      item: "grip",
+    };
+  }
+
+  if (
+    /גיד|גידים|מיתר|מיתרים|שזירה|מתיחה/.test(
+      text
+    )
+  ) {
+    return {
+      category: "strings",
+      item: "strings",
+    };
+  }
+
+  if (/כדור|כדורים/.test(text)) {
+    return {
+      category: "balls",
+      item: "balls",
+    };
+  }
+
+  if (
+    /נעלי טניס|נעליים|נעל/.test(
+      text
+    )
+  ) {
+    return {
+      category: "shoes",
+      item: "shoes",
+    };
+  }
+
+  if (
+    /מחבט|מחבטים|רקטה|רקטות/.test(
+      text
+    )
+  ) {
+    return {
+      category: "rackets",
+      item: "racket",
+    };
+  }
+
+  if (
+    /כובע|בקבוק|אביזר|ציוד נלווה|ציוד טניס/.test(
+      text
+    )
+  ) {
+    return {
+      category: "accessories",
+      item: "general",
+    };
   }
 
   return null;
@@ -63,7 +113,7 @@ function detectEquipmentAudience(
   }
 
   if (
-    /מבוגר|מבוגרת|למבוגר|בשבילי|לעצמי|עבורי/.test(
+    /מבוגר|מבוגרת|מבוגרים|למבוגר|בשבילי|לעצמי|עבורי/.test(
       text
     )
   ) {
@@ -84,35 +134,7 @@ function detectEquipmentAudience(
   return null;
 }
 
-function getRacketGuidance(
-  rackets,
-  audience
-) {
-  if (!rackets) {
-    return [];
-  }
-
-  if (audience === "child") {
-    return (
-      rackets.childGuidance ||
-      rackets.guidance?.children ||
-      []
-    );
-  }
-
-  if (audience === "adult") {
-    return (
-      rackets.adultGuidance ||
-      rackets.guidance?.adults ||
-      []
-    );
-  }
-
-  return [];
-}
-
 function buildRacketResponse(audience) {
-
   if (audience === "child") {
     return [
       "בשמחה 😊",
@@ -120,7 +142,7 @@ function buildRacketResponse(audience) {
       "נשמח לעזור בהתאמת מחבט לילד.",
       "ההתאמה נעשית לפי הגיל, הגובה ורמת הניסיון.",
       "",
-      "מה הגובה של הילד?"
+      "מה הגובה של הילד?",
     ].join("\n");
   }
 
@@ -130,7 +152,7 @@ function buildRacketResponse(audience) {
       "",
       "נשמח לעזור לבחור מחבט שמתאים לרמת המשחק שלך.",
       "",
-      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?"
+      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?",
     ].join("\n");
   }
 
@@ -139,29 +161,26 @@ function buildRacketResponse(audience) {
     "",
     "נשמח לעזור לבחור את המחבט המתאים.",
     "",
-    "המחבט מיועד לילד או למבוגר?"
+    "המחבט מיועד לילד או למבוגר?",
   ].join("\n");
-}
-
-function getGuidance(category) {
-  const knowledge =
-    getCategoryKnowledge(category);
-
-  if (!knowledge) {
-    return [];
-  }
-
-  return Array.isArray(knowledge.guidance)
-    ? knowledge.guidance
-    : [];
 }
 
 function getEquipmentResponse(
   message,
   profile = {}
 ) {
-  const category =
+  const equipment =
     detectEquipmentCategory(message);
+
+  if (!equipment) {
+    return (
+      equipmentKnowledge.fallbackResponse ||
+      "באקדמיה יש מגוון אפשרויות בנושא מחבטים וציוד טניס. כדי להתאים נכון, אשמח להבין איזה ציוד אתם מחפשים."
+    );
+  }
+
+  const { category, item } =
+    equipment;
 
   const audience =
     detectEquipmentAudience(
@@ -176,62 +195,77 @@ function getEquipmentResponse(
       );
 
     case "grips":
-  return [
-    "בשמחה 😊",
-    "",
-    "נשמח לעזור לבחור גריפ שמתאים למחבט שלך.",
-    "",
-    "הגריפ מיועד לילד או למבוגר?"
-  ].join("\n");
+      return [
+        "בשמחה 😊",
+        "",
+        "נשמח לעזור לבחור גריפ שמתאים למחבט שלך.",
+        "",
+        "הגריפ מיועד לילד או למבוגר?",
+      ].join("\n");
 
     case "strings":
-  return [
-    "בשמחה 😊",
-    "",
-    "נשמח לעזור לבחור גידים שמתאימים למחבט ולרמת המשחק.",
-    "",
-    "האם מדובר בשחקן מתחיל או מנוסה?"
-  ].join("\n");
+      return [
+        "בשמחה 😊",
+        "",
+        "נשמח לעזור לבחור גידים שמתאימים למחבט ולרמת המשחק.",
+        "",
+        "האם מדובר בשחקן מתחיל או מנוסה?",
+      ].join("\n");
 
     case "balls":
       return [
-        ...getGuidance("balls"),
+        "בשמחה 😊",
         "",
-        "למי מיועדים הכדורים — ילד, נער או מבוגר?",
+        "נשמח לעזור לבחור כדורי טניס מתאימים.",
+        "",
+        "הכדורים מיועדים לילד, למבוגר או לאימונים?",
       ].join("\n");
 
     case "shoes":
-  return [
-    "בשמחה 😊",
-    "",
-    "נשמח לעזור לבחור נעלי טניס מתאימות.",
-    "",
-    "הנעליים מיועדות לילד או למבוגר?"
-  ].join("\n");
+      return [
+        "בשמחה 😊",
+        "",
+        "נשמח לעזור לבחור נעלי טניס מתאימות.",
+        "",
+        "הנעליים מיועדות לילד או למבוגר?",
+      ].join("\n");
 
-    case "accessories": {
-      const accessories =
-        getCategoryKnowledge(
-          "accessories"
-        );
+    case "accessories":
+      if (item === "bag") {
+        return [
+          "בשמחה 😊",
+          "",
+          "יש אצלנו מגוון תיקים למחבטים בגדלים שונים.",
+          "",
+          "כמה מחבטים התיק צריך להכיל?",
+        ].join("\n");
+      }
 
-      const items =
-        accessories?.items || [];
+      if (
+        item ===
+        "vibration_damper"
+      ) {
+        return [
+          "בשמחה 😊",
+          "",
+          "יש אצלנו בולמי זעזועים במגוון סוגים.",
+          "",
+          "הבולם מיועד למחבט של ילד או של מבוגר?",
+        ].join("\n");
+      }
 
       return [
-        "יש מגוון ציוד נלווה לטניס, כגון:",
-        ...items.map(
-          (item) => `• ${item}`
-        ),
+        "בשמחה 😊",
         "",
-        "איזה ציוד אתם מחפשים?",
+        "יש אצלנו מגוון אביזרי טניס.",
+        "",
+        "איזה אביזר אתם מחפשים?",
       ].join("\n");
-    }
 
     default:
       return (
         equipmentKnowledge.fallbackResponse ||
-        "באקדמיה יש מגוון אפשרויות בנושא מחבטים וציוד טניס. כדי להתאים נכון, אשמח להבין למי מיועד הציוד."
+        "באקדמיה יש מגוון אפשרויות בנושא ציוד טניס. איזה ציוד אתם מחפשים?"
       );
   }
 }

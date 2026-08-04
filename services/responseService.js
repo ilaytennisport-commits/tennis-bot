@@ -1,4 +1,7 @@
 const {
+  polishResponse,
+} = require("./responsePolisher");
+const {
   classifyIntent,
 } = require("../utils/intentClassifier");
 
@@ -117,13 +120,13 @@ function getAutomatedResponse(
     }
   );
 
-  return {
+return {
     handled: Boolean(response),
     intent,
     confidence,
     audience,
-    response,
-  };
+    response: polishResponse(response),
+};
 }
 
 module.exports = {

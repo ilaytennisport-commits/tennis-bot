@@ -111,49 +111,35 @@ function getRacketGuidance(
   return [];
 }
 
-function buildRacketResponse(
-  audience
-) {
-  const rackets =
-    getCategoryKnowledge("rackets");
-
-  if (!rackets) {
-    return equipmentKnowledge.fallbackResponse ||
-      "באקדמיה יש מגוון אפשרויות בנושא מחבטים וציוד טניס. כדי להתאים נכון, אשמח להבין למי מיועד המחבט.";
-  }
+function buildRacketResponse(audience) {
 
   if (audience === "child") {
-    const guidance =
-      getRacketGuidance(
-        rackets,
-        "child"
-      );
-
     return [
-      ...guidance,
+      "בשמחה 😊",
       "",
-      "מה גיל הילד או הילדה?",
+      "נשמח לעזור בהתאמת מחבט לילד.",
+      "ההתאמה נעשית לפי הגיל, הגובה ורמת הניסיון.",
+      "",
+      "מה הגובה של הילד?"
     ].join("\n");
   }
 
   if (audience === "adult") {
-    const guidance =
-      getRacketGuidance(
-        rackets,
-        "adult"
-      );
-
     return [
-      ...guidance,
+      "בשמחה 😊",
       "",
-      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?",
+      "נשמח לעזור לבחור מחבט שמתאים לרמת המשחק שלך.",
+      "",
+      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?"
     ].join("\n");
   }
 
   return [
-    "בשמחה. בחירת מחבט תלויה בגיל, בגובה וברמת הניסיון.",
+    "בשמחה 😊",
     "",
-    "המחבט מיועד לילד, לנער או למבוגר?",
+    "נשמח לעזור לבחור את המחבט המתאים.",
+    "",
+    "המחבט מיועד לילד או למבוגר?"
   ].join("\n");
 }
 
@@ -190,18 +176,22 @@ function getEquipmentResponse(
       );
 
     case "grips":
-      return [
-        ...getGuidance("grips"),
-        "",
-        "האם מדובר בהחלפת גריפ קיים או בהתאמת גודל האחיזה?",
-      ].join("\n");
+  return [
+    "בשמחה 😊",
+    "",
+    "נשמח לעזור לבחור גריפ שמתאים למחבט שלך.",
+    "",
+    "הגריפ מיועד לילד או למבוגר?"
+  ].join("\n");
 
     case "strings":
-      return [
-        ...getGuidance("strings"),
-        "",
-        "מה רמת הניסיון של השחקן או השחקנית?",
-      ].join("\n");
+  return [
+    "בשמחה 😊",
+    "",
+    "נשמח לעזור לבחור גידים שמתאימים למחבט ולרמת המשחק.",
+    "",
+    "האם מדובר בשחקן מתחיל או מנוסה?"
+  ].join("\n");
 
     case "balls":
       return [
@@ -211,11 +201,13 @@ function getEquipmentResponse(
       ].join("\n");
 
     case "shoes":
-      return [
-        ...getGuidance("shoes"),
-        "",
-        "הנעליים מיועדות לילד או למבוגר?",
-      ].join("\n");
+  return [
+    "בשמחה 😊",
+    "",
+    "נשמח לעזור לבחור נעלי טניס מתאימות.",
+    "",
+    "הנעליים מיועדות לילד או למבוגר?"
+  ].join("\n");
 
     case "accessories": {
       const accessories =

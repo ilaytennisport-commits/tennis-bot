@@ -1,5 +1,7 @@
 const academy = require("../knowledge/academyKnowledge");
-
+const {
+  getEquipmentResponse,
+} = require("./equipmentService");
 const formatPrice = (price) => Number(price).toLocaleString("he-IL");
 
 const formatPriceList = (items) =>
@@ -12,12 +14,10 @@ function getFaqResponse(intent, context = {}) {
     case "contact":
       return `ניתן ליצור קשר עם האקדמיה בטלפון ${academy.officialPhone}. הצוות ישמח לעזור ולהעביר את הפנייה לגורם המתאים.`;
 case "tennis_equipment":
-  return [
-    "באקדמיה יש מגוון אפשרויות גם בנושא מחבטים וציוד טניס.",
-    "צוות האקדמיה יוכל לבדוק מה מתאים לך לפי הגיל, הרמה והצרכים שלך.",
-    "",
-    "האם המחבט מיועד למתחיל או למישהו שכבר משחק?"
-  ].join("\n");
+  return getEquipmentResponse(
+    context.originalMessage || "",
+    context.profile || {}
+  );
     case "branches":
       return [
         "אנחנו פועלים בשלושה סניפים:",

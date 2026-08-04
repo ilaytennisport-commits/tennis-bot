@@ -2,38 +2,36 @@ const equipmentKnowledge = require(
   "../knowledge/equipmentKnowledge"
 );
 
+function getCategoryKnowledge(category) {
+  return (
+    equipmentKnowledge[category] ||
+    equipmentKnowledge.categories?.[category] ||
+    null
+  );
+}
+
 function detectEquipmentCategory(message = "") {
   const text = String(message)
     .toLowerCase()
     .trim();
 
-  if (
-    /מחבט|מחבטים|רקטה|רקטות/.test(text)
-  ) {
+  if (/מחבט|מחבטים|רקטה|רקטות/.test(text)) {
     return "rackets";
   }
 
-  if (
-    /גריפ|אוברגריפ|ידית/.test(text)
-  ) {
+  if (/גריפ|אוברגריפ|ידית/.test(text)) {
     return "grips";
   }
 
-  if (
-    /גיד|גידים|שזירה|מתיחה/.test(text)
-  ) {
+  if (/גיד|גידים|שזירה|מתיחה/.test(text)) {
     return "strings";
   }
 
-  if (
-    /כדור|כדורים/.test(text)
-  ) {
+  if (/כדור|כדורים/.test(text)) {
     return "balls";
   }
 
-  if (
-    /נעל|נעליים/.test(text)
-  ) {
+  if (/נעל|נעליים/.test(text)) {
     return "shoes";
   }
 
@@ -86,33 +84,90 @@ function detectEquipmentAudience(
   return null;
 }
 
+function getRacketGuidance(
+  rackets,
+  audience
+) {
+  if (!rackets) {
+    return [];
+  }
+
+  if (audience === "child") {
+    return (
+      rackets.childGuidance ||
+      rackets.guidance?.children ||
+      []
+    );
+  }
+
+  if (audience === "adult") {
+    return (
+      rackets.adultGuidance ||
+      rackets.guidance?.adults ||
+      []
+    );
+  }
+
+  return [];
+}
+
 function buildRacketResponse(
   audience
 ) {
   const rackets =
-    equipmentKnowledge.rackets;
+    getCategoryKnowledge("rackets");
+
+  if (!rackets) {
+    return equipmentKnowledge.fallbackResponse ||
+      "באקדמיה יש מגוון אפשרויות בנושא מחבטים וציוד טניס. כדי להתאים נכון, אשמח להבין למי מיועד המחבט.";
+  }
 
   if (audience === "child") {
+    const guidance =
+      getRacketGuidance(
+        rackets,
+        "child"
+      );
+
     return [
-      ...rackets.childGuidance,
+      ...guidance,
       "",
-      "מה גיל הילד או הילדה?"
+      "מה גיל הילד או הילדה?",
     ].join("\n");
   }
 
   if (audience === "adult") {
+    const guidance =
+      getRacketGuidance(
+        rackets,
+        "adult"
+      );
+
     return [
-      ...rackets.adultGuidance,
+      ...guidance,
       "",
-      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?"
+      "האם מדובר במחבט ראשון או בשדרוג למחבט קיים?",
     ].join("\n");
   }
 
   return [
     "בשמחה. בחירת מחבט תלויה בגיל, בגובה וברמת הניסיון.",
     "",
-    "המחבט מיועד לילד, לנער או למבוגר?"
+    "המחבט מיועד לילד, לנער או למבוגר?",
   ].join("\n");
+}
+
+function getGuidance(category) {
+  const knowledge =
+    getCategoryKnowledge(category);
+
+  if (!knowledge) {
+    return [];
+  }
+
+  return Array.isArray(knowledge.guidance)
+    ? knowledge.guidance
+    : [];
 }
 
 function getEquipmentResponse(
@@ -136,45 +191,56 @@ function getEquipmentResponse(
 
     case "grips":
       return [
-        ...equipmentKnowledge.grips.guidance,
+        ...getGuidance("grips"),
         "",
-        "האם מדובר בהחלפת גריפ קיים או בהתאמת גודל האחיזה?"
+        "האם מדובר בהחלפת גריפ קיים או בהתאמת גודל האחיזה?",
       ].join("\n");
 
     case "strings":
       return [
-        ...equipmentKnowledge.strings.guidance,
+        ...getGuidance("strings"),
         "",
-        "מה רמת הניסיון של השחקן או השחקנית?"
+        "מה רמת הניסיון של השחקן או השחקנית?",
       ].join("\n");
 
     case "balls":
       return [
-        ...equipmentKnowledge.balls.guidance,
+        ...getGuidance("balls"),
         "",
-        "למי מיועדים הכדורים — ילד, נער או מבוגר?"
+        "למי מיועדים הכדורים — ילד, נער או מבוגר?",
       ].join("\n");
 
     case "shoes":
       return [
-        ...equipmentKnowledge.shoes.guidance,
+        ...getGuidance("shoes"),
         "",
-        "הנעליים מיועדות לילד או למבוגר?"
+        "הנעליים מיועדות לילד או למבוגר?",
       ].join("\n");
 
-    case "accessories":
+    case "accessories": {
+      const accessories =
+        getCategoryKnowledge(
+          "accessories"
+        );
+
+      const items =
+        accessories?.items || [];
+
       return [
         "יש מגוון ציוד נלווה לטניס, כגון:",
-        ...equipmentKnowledge.accessories.items.map(
+        ...items.map(
           (item) => `• ${item}`
         ),
         "",
-        "איזה ציוד אתם מחפשים?"
+        "איזה ציוד אתם מחפשים?",
       ].join("\n");
+    }
 
     default:
-      return equipmentKnowledge
-        .fallbackResponse;
+      return (
+        equipmentKnowledge.fallbackResponse ||
+        "באקדמיה יש מגוון אפשרויות בנושא מחבטים וציוד טניס. כדי להתאים נכון, אשמח להבין למי מיועד הציוד."
+      );
   }
 }
 

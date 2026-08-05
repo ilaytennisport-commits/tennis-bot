@@ -1,3 +1,8 @@
+const {
+  buildProfileUpdates,
+} = require(
+  "../services/profileMemoryService"
+);
 const { createReply } = require("../services/replyService");
 
 const {
@@ -412,7 +417,16 @@ async function processIncomingMessage(
       userMessage,
       currentUser
     );
+const profileUpdates =
+  buildProfileUpdates(
+    userMessage,
+    currentUser
+  );
 
+Object.assign(
+  extractedDetails,
+  profileUpdates
+);
   console.log(
     "🧩 פרטים שחולצו מההודעה:",
     {
@@ -500,13 +514,14 @@ async function processIncomingMessage(
     }
   );
 
-   const reply = await createReply({
-    userMessage,
-    updatedUser,
-    conversationHistory,
-    shouldSendLeadSummary,
-    formatLeadSummary,
-  });
+const reply = await createReply({
+  userId,
+  userMessage,
+  updatedUser,
+  conversationHistory,
+  shouldSendLeadSummary,
+  formatLeadSummary,
+});
 
   if (
     !reply ||

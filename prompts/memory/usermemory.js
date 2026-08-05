@@ -1,9 +1,14 @@
-const { pool } = require("../../services/databaseService");
+const {
+  pool,
+} = require("../../services/databaseService");
 
 function emptyUser() {
   return {
     name: null,
     age: null,
+    height: null,
+    audience: null,
+    equipment_topic: null,
     branch: null,
     phone: null,
     goal: null,
@@ -17,6 +22,9 @@ async function getUser(userId) {
       SELECT
         name,
         age,
+        height,
+        audience,
+        equipment_topic,
         branch,
         phone,
         goal,
@@ -30,8 +38,12 @@ async function getUser(userId) {
   return result.rows[0] || emptyUser();
 }
 
-async function saveUser(userId, data) {
-  const currentUser = await getUser(userId);
+async function saveUser(
+  userId,
+  data = {}
+) {
+  const currentUser =
+    await getUser(userId);
 
   const updatedUser = {
     ...currentUser,
@@ -44,25 +56,48 @@ async function saveUser(userId, data) {
         user_id,
         name,
         age,
+        height,
+        audience,
+        equipment_topic,
         branch,
         phone,
         goal,
         summary_sent,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $9,
+        $10,
+        NOW()
+      )
       ON CONFLICT (user_id)
       DO UPDATE SET
         name = EXCLUDED.name,
         age = EXCLUDED.age,
+        height = EXCLUDED.height,
+        audience = EXCLUDED.audience,
+        equipment_topic =
+          EXCLUDED.equipment_topic,
         branch = EXCLUDED.branch,
         phone = EXCLUDED.phone,
         goal = EXCLUDED.goal,
-        summary_sent = EXCLUDED.summary_sent,
+        summary_sent =
+          EXCLUDED.summary_sent,
         updated_at = NOW()
       RETURNING
         name,
         age,
+        height,
+        audience,
+        equipment_topic,
         branch,
         phone,
         goal,
@@ -72,6 +107,9 @@ async function saveUser(userId, data) {
       userId,
       updatedUser.name,
       updatedUser.age,
+      updatedUser.height,
+      updatedUser.audience,
+      updatedUser.equipment_topic,
       updatedUser.branch,
       updatedUser.phone,
       updatedUser.goal,
@@ -82,7 +120,9 @@ async function saveUser(userId, data) {
   return result.rows[0];
 }
 
-async function markSummarySent(userId) {
+async function markSummarySent(
+  userId
+) {
   const result = await pool.query(
     `
       UPDATE users
@@ -93,6 +133,9 @@ async function markSummarySent(userId) {
       RETURNING
         name,
         age,
+        height,
+        audience,
+        equipment_topic,
         branch,
         phone,
         goal,

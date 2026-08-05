@@ -11,13 +11,15 @@ function extractNumber(message = "") {
 function getLastAssistantMessage(
   conversationHistory = []
 ) {
-  return [...conversationHistory]
-    .reverse()
-    .find(
-      (message) =>
-        message?.role === "assistant" &&
-        typeof message.content === "string"
-    )?.content || "";
+  return (
+    [...conversationHistory]
+      .reverse()
+      .find(
+        (message) =>
+          message?.role === "assistant" &&
+          typeof message.content === "string"
+      )?.content || ""
+  );
 }
 
 function getEquipmentContinuation({
@@ -33,10 +35,7 @@ function getEquipmentContinuation({
   const number =
     extractNumber(userMessage);
 
-  /*
-   * המשך להתאמת מחבט:
-   * הבוט שאל על גובה והלקוח ענה במספר.
-   */
+  // המשך להתאמת מחבט לפי גובה
   if (
     lastAssistantMessage.includes(
       "מה הגובה"
@@ -49,23 +48,23 @@ function getEquipmentContinuation({
       userProfile.age
     );
 
-    let racketSize = null;
+    let racketSize;
 
     if (number <= 100) {
-      racketSize = '19–21 אינץ׳';
+      racketSize = "19–21 אינץ׳";
     } else if (number <= 115) {
-      racketSize = '21–23 אינץ׳';
+      racketSize = "21–23 אינץ׳";
     } else if (number <= 125) {
-      racketSize = '23 אינץ׳';
+      racketSize = "23 אינץ׳";
     } else if (number <= 140) {
-      racketSize = '25 אינץ׳';
+      racketSize = "25 אינץ׳";
     } else if (number <= 150) {
-      racketSize = '25–26 אינץ׳';
+      racketSize = "25–26 אינץ׳";
     } else {
-      racketSize = '26–27 אינץ׳';
+      racketSize = "26–27 אינץ׳";
     }
 
-       return [
+    return [
       "תודה, רשמתי 😊",
       "",
       `לפי גובה של ${number} ס״מ${
@@ -77,10 +76,9 @@ function getEquipmentContinuation({
       "",
       "האם זה המחבט הראשון שלו?",
     ].join("\n");
+  }
 
-  /*
-   * המשך לאחר השאלה אם השחקן מתחיל או מנוסה.
-   */
+  // המשך לשיחת גידים
   if (
     lastAssistantMessage.includes(
       "מתחיל או מנוסה"
@@ -106,7 +104,7 @@ function getEquipmentContinuation({
     }
 
     if (
-      /מנוסה|מתקדם|מתקדמת|תחרותי/.test(
+      /מנוסה|מתקדם|מתקדמת|תחרותי|תחרותית/.test(
         text
       )
     ) {

@@ -9,7 +9,10 @@ const pool = new Pool({
 });
 
 pool.on("error", (error) => {
-  console.error("❌ PostgreSQL pool error:", error.message);
+  console.error(
+    "❌ PostgreSQL pool error:",
+    error.message
+  );
 });
 
 async function initializeDatabase() {
@@ -19,6 +22,9 @@ async function initializeDatabase() {
       user_id TEXT PRIMARY KEY,
       name TEXT,
       age INTEGER,
+      height INTEGER,
+      audience TEXT,
+      equipment_topic TEXT,
       branch TEXT,
       phone TEXT,
       goal TEXT,
@@ -28,9 +34,26 @@ async function initializeDatabase() {
     )
   `);
 
+  // הוספת עמודות למסדי נתונים קיימים
   await pool.query(`
     ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS summary_sent BOOLEAN NOT NULL DEFAULT FALSE
+    ADD COLUMN IF NOT EXISTS summary_sent
+    BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS height INTEGER
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS audience TEXT
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS equipment_topic TEXT
   `);
 
   // טבלת היסטוריית שיחות
@@ -44,7 +67,7 @@ async function initializeDatabase() {
     )
   `);
 
-  // אינדקס לשיפור הביצועים
+  // אינדקס לשיפור ביצועים
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_conversation_user
     ON conversation_messages(user_id, created_at DESC)

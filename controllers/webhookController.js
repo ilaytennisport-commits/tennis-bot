@@ -258,39 +258,69 @@ async function sendLeadToManager(
     );
 
     const managerResult =
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        managerMessage
+     await sendWhatsAppMessage(
+    userId,
+    reply
+  );
+
+  /*
+   * createReply עשוי לשמור את הפרט האחרון
+   * של תהליך ההרשמה, לכן טוענים את המשתמש מחדש.
+   */
+  const finalUser =
+    await getUser(userId);
+
+  const finalCompleteLead =
+    hasCompleteLeadDetails(
+      finalUser
+    );
+
+  const shouldSendManagerLead =
+    finalCompleteLead &&
+    finalUser.summary_sent !== true;
+
+  console.log(
+    "📋 בדיקה סופית לשליחת ליד:",
+    {
+      name: finalUser.name,
+      age: finalUser.age,
+      branch: finalUser.branch,
+      phone: finalUser.phone,
+      goal: finalUser.goal,
+      summarySent:
+        finalUser.summary_sent,
+      completeLead:
+        finalCompleteLead,
+      shouldSendManagerLead,
+    }
+  );
+
+  if (shouldSendManagerLead) {
+    const managerMessageSent =
+      await sendLeadToManager(
+        userId,
+        finalUser
       );
 
-    console.log(
-      "✅ תשובת Whapi בשליחת הליד למנהל:",
-      managerResult
-    );
+    if (managerMessageSent) {
+      await markSummarySent(
+        userId
+      );
 
-    return true;
-  } catch (error) {
-    console.error(
-      "❌ שליחת הליד למנהל נכשלה:",
-      {
-        managerPhone:
-          CLUB_MANAGER_PHONE,
-        status:
-          error.response?.status,
-        data:
-          error.response?.data,
-        message:
-          error.message,
-      }
-    );
-
-    return false;
+      console.log(
+        `📋 הליד נשלח למנהל וסומן כנשלח עבור ${userId}`
+      );
+    } else {
+      console.warn(
+        `⚠️ שליחת הליד למנהל נכשלה עבור ${userId}`
+      );
+    }
   }
-}
 
-/**
- * מעבד הודעת WhatsApp נכנסת.
- */
+  console.log(
+    `✅ התשובה נשלחה ל-${userId}`
+  );
+}
 async function processIncomingMessage(
   message
 ) {
@@ -514,14 +544,96 @@ Object.assign(
     }
   );
 
-const reply = await createReply({
-  userId,
-  userMessage,
-  updatedUser,
-  conversationHistory,
-  shouldSendLeadSummary,
-  formatLeadSummary,
-});
+  const reply = await createReply({
+    userId,
+    userMessage,
+    updatedUser,
+    conversationHistory,
+    shouldSendLeadSummary,
+    formatLeadSummary,
+  });
+
+  if (
+    !reply ||
+    typeof reply !== "string"
+  ) {
+    throw new Error(
+      "The bot generated an empty reply"
+    );
+  }
+
+  await addMessage(
+    userId,
+    "assistant",
+    reply
+  );
+
+  console.log(
+    `🤖 תשובת הבוט: ${reply}`
+  );
+
+  await sendWhatsAppMessage(
+    userId,
+    reply
+  );
+
+  /*
+   * createReply עשוי לשמור את הפרט האחרון
+   * של תהליך ההרשמה, לכן טוענים את המשתמש מחדש.
+   */
+  const finalUser =
+    await getUser(userId);
+
+  const finalCompleteLead =
+    hasCompleteLeadDetails(
+      finalUser
+    );
+
+  const shouldSendManagerLead =
+    finalCompleteLead &&
+    finalUser.summary_sent !== true;
+
+  console.log(
+    "📋 בדיקה סופית לשליחת ליד:",
+    {
+      name: finalUser.name,
+      age: finalUser.age,
+      branch: finalUser.branch,
+      phone: finalUser.phone,
+      goal: finalUser.goal,
+      summarySent:
+        finalUser.summary_sent,
+      completeLead:
+        finalCompleteLead,
+      shouldSendManagerLead,
+    }
+  );
+
+  if (shouldSendManagerLead) {
+    const managerMessageSent =
+      await sendLeadToManager(
+        userId,
+        finalUser
+      );
+
+    if (managerMessageSent) {
+      await markSummarySent(
+        userId
+      );
+
+      console.log(
+        `📋 הליד נשלח למנהל וסומן כנשלח עבור ${userId}`
+      );
+    } else {
+      console.warn(
+        `⚠️ שליחת הליד למנהל נכשלה עבור ${userId}`
+      );
+    }
+  }
+
+  console.log(
+    `✅ התשובה נשלחה ל-${userId}`
+  );
 
   if (
     !reply ||

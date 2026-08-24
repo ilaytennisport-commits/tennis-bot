@@ -4,6 +4,7 @@ const {
 
 const {
   detectConversationIntent,
+  shouldStartLeadFlow,
 } = require(
   "./conversationIntentService"
 );
@@ -22,14 +23,125 @@ const {
   generateReply,
 } = require("./openaiService");
 
+function hasValue(value) {
+  return (
+    value !== undefined &&
+    value !== null &&
+    String(value).trim() !== ""
+  );
+}
+
+/*
+ * בודק האם כבר התחיל תהליך הרשמה
+ * בהודעות האחרונות.
+ *
+ * זה מונע משאלת מידע רגילה כמו:
+ * "איזה סניף נוח לכם?"
+ * להיחשב בטעות לתהליך ליד.
+ */
+function hasRecentLeadIntent(
+  conversationHistory = []
+) {
+  const recentMessages =
+    conversationHistory.slice(-20);
+
+  for (
+    let index =
+      recentMessages.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const message =
+      recentMessages[index];
+
+    if (
+      message?.role !== "user" ||
+      typeof message.content !==
+        "string"
+    ) {
+      continue;
+    }
+
+    const detected =
+      detectConversationIntent(
+        message.content,
+        {}
+      );
+
+    if (
+      shouldStartLeadFlow(
+        detected
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/*
+ * מתחיל הרשמה לפי הפרטים
+ * שכבר קיימים בפרופיל.
+ */
+function buildLeadStartResponse(
+  userProfile = {}
+) {
+  if (!hasValue(userProfile.name)) {
+    return {
+      source: "lead-start",
+      reply:
+        "בשמחה 😊\n\nמה שם המתאמן או המתאמנת?",
+      updates: {},
+      completed: false,
+    };
+  }
+
+  if (!hasValue(userProfile.age)) {
+    return {
+      source: "lead-start",
+      reply:
+        "בשמחה 😊\n\nמה גיל המתאמן או המתאמנת?",
+      updates: {},
+      completed: false,
+    };
+  }
+
+  if (!hasValue(userProfile.branch)) {
+    return {
+      source: "lead-start",
+      reply: [
+        "בשמחה 😊",
+        "",
+        "באיזה סניף אתם מעוניינים?",
+        "• גלי הדר – ראשון לציון",
+        "• בית דגן",
+        "• בית חשמונאי",
+      ].join("\n"),
+      updates: {},
+      completed: false,
+    };
+  }
+
+  return {
+    source: "lead-start",
+    reply:
+      "בשמחה 😊\n\nכבר יש לי את הפרטים הדרושים. אעביר אותם להמשך טיפול של צוות האקדמיה.",
+    updates: {},
+    completed: true,
+  };
+}
+
 async function buildReply({
   userMessage,
-  userProfile,
-  conversationHistory,
+  userProfile = {},
+  conversationHistory = [],
   forceLeadSummary = false,
   leadSummary = "",
 }) {
-  // אם צריך להציג סיכום ליד, הוא מקבל עדיפות מלאה.
+  /*
+   * ליד שכבר הושלם.
+   */
   if (forceLeadSummary) {
     return {
       source: "lead-summary",
@@ -38,7 +150,7 @@ async function buildReply({
       completed: true,
     };
   }
-  
+
   const conversationIntent =
     detectConversationIntent(
       userMessage,
@@ -50,27 +162,86 @@ async function buildReply({
     conversationIntent
   );
 
-  // קודם בודקים אם זו תשובת המשך לתהליך הרשמה.
-  const leadContinuation =
-    getLeadContinuation({
-      userMessage,
-      conversationHistory,
-      userProfile,
-    });
+  /*
+   * האם ההודעה הנוכחית מתחילה
+   * הרשמה באופן מפורש?
+   */
+  const startingLeadNow =
+    shouldStartLeadFlow(
+      conversationIntent
+    );
 
-  if (leadContinuation) {
-    return {
-      source: "lead-continuation",
-      reply: leadContinuation.reply,
-      updates:
-        leadContinuation.updates || {},
-      completed:
-        leadContinuation.completed ===
-        true,
-    };
+  /*
+   * האם כבר הייתה בקשת הרשמה
+   * ברורה בשיחה האחרונה?
+   */
+  const existingLeadFlow =
+    userProfile.summary_sent !==
+      true &&
+    hasRecentLeadIntent(
+      conversationHistory
+    );
+
+  const leadFlowActive =
+    startingLeadNow ||
+    existingLeadFlow;
+
+  console.log(
+    "🎯 Lead Flow:",
+    {
+      startingLeadNow,
+      existingLeadFlow,
+      leadFlowActive,
+    }
+  );
+
+  /*
+   * המשך תהליך הרשמה מופעל
+   * רק אם באמת התחיל תהליך ליד.
+   *
+   * זו הנקודה שמונעת משיחת
+   * מידע רגילה להפוך להרשמה.
+   */
+  if (
+    leadFlowActive &&
+    !startingLeadNow
+  ) {
+    const leadContinuation =
+      getLeadContinuation({
+        userMessage,
+        conversationHistory,
+        userProfile,
+      });
+
+    if (leadContinuation) {
+      return {
+        source:
+          "lead-continuation",
+        reply:
+          leadContinuation.reply,
+        updates:
+          leadContinuation.updates ||
+          {},
+        completed:
+          leadContinuation.completed ===
+          true,
+      };
+    }
   }
 
-  // אחר כך בודקים אם זו תשובת המשך לשיחת ציוד.
+  /*
+   * המשתמש ביקש עכשיו להירשם
+   * או שנציג יחזור אליו.
+   */
+  if (startingLeadNow) {
+    return buildLeadStartResponse(
+      userProfile
+    );
+  }
+
+  /*
+   * המשך שיחת ציוד.
+   */
   const equipmentContinuation =
     getEquipmentContinuation({
       userMessage,
@@ -89,7 +260,11 @@ async function buildReply({
     };
   }
 
-  // מנסים לענות מתוך בסיס הידע וה־FAQ.
+  /*
+   * FAQ:
+   * מחירים, סניפים, גילאים,
+   * ניסיון, ציוד וכו'.
+   */
   const automated =
     getAutomatedResponse(
       userMessage,
@@ -103,13 +278,17 @@ async function buildReply({
 
     return {
       source: "faq",
-      reply: automated.response,
+      reply:
+        automated.response,
       updates: {},
       completed: false,
     };
   }
 
-  // אם אין תשובה מוכנה, עוברים ל־OpenAI.
+  /*
+   * OpenAI רק כשאין
+   * מסלול מובנה מתאים.
+   */
   const reply =
     await generateReply(
       conversationHistory,

@@ -50,8 +50,8 @@ function extractUserDetails(
   }
 
   /*
-   * זיהוי גיל כאשר המשתמש עונה רק במספר,
-   * למשל: "7".
+   * זיהוי גיל כאשר המשתמש
+   * עונה רק במספר, למשל "7".
    *
    * מתבצע רק אם עדיין לא נשמר גיל.
    */
@@ -145,7 +145,7 @@ function extractUserDetails(
    * מטרת הפנייה.
    *
    * כוונת הרשמה נבדקת לפני "חוג",
-   * כדי ש"אני רוצה להירשם לחוג"
+   * כדי ש-"אני רוצה להירשם לחוג"
    * יישמר כהרשמה ולא רק כחוג טניס.
    */
   if (
@@ -221,7 +221,13 @@ function extractUserDetails(
   }
 
   /*
-   * זיהוי שם מתוך משפט.
+   * זיהוי שם רק כאשר המשתמש
+   * מציין במפורש שזה שם.
+   *
+   * מילה בודדת כמו "רז" לא תישמר
+   * כאן אוטומטית כשם.
+   * אם הבוט שאל "מה שם המתאמן?",
+   * leadConversationService יטפל בתשובה.
    */
   const namePatterns = [
     /קוראים לי\s+([א-תA-Za-z"-]{2,20})/,
@@ -245,52 +251,6 @@ function extractUserDetails(
 
       break;
     }
-  }
-
-  /*
-   * תשובה שמכילה רק שם אחד,
-   * למשל: "מוריאל".
-   */
-  const singleWordName =
-    normalizedMessage.match(
-      /^[א-תA-Za-z"-]{2,20}$/
-    );
-
-  const wordsThatAreNotNames =
-    new Set([
-      "שלום",
-      "היי",
-      "כן",
-      "לא",
-      "תודה",
-      "בבקשה",
-      "ניסיון",
-      "מחיר",
-      "מחירים",
-      "חוג",
-      "טניס",
-      "אימון",
-      "אישי",
-      "זוגי",
-      "מבוגרים",
-      "ילדים",
-      "גלי",
-      "הדר",
-      "רמז",
-      "איפוס",
-      "בדיקה",
-    ]);
-
-  if (
-    !currentUser.name &&
-    !updates.name &&
-    singleWordName &&
-    !wordsThatAreNotNames.has(
-      normalizedMessage
-    )
-  ) {
-    updates.name =
-      normalizedMessage;
   }
 
   return updates;

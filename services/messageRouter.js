@@ -10,6 +10,12 @@ const {
 );
 
 const {
+  getRecommendationResponse,
+} = require(
+  "./recommendationService"
+);
+
+const {
   getInterestResponse,
 } = require(
   "./interestConversationService"
@@ -37,10 +43,6 @@ function hasValue(value) {
   );
 }
 
-/*
- * בודק האם כבר התחיל תהליך הרשמה
- * בהודעות האחרונות.
- */
 function hasRecentLeadIntent(
   conversationHistory = []
 ) {
@@ -81,10 +83,6 @@ function hasRecentLeadIntent(
   return false;
 }
 
-/*
- * מתחיל הרשמה לפי הפרטים
- * שכבר קיימים בפרופיל.
- */
 function buildLeadStartResponse(
   userProfile = {}
 ) {
@@ -140,9 +138,6 @@ async function buildReply({
   forceLeadSummary = false,
   leadSummary = "",
 }) {
-  /*
-   * ליד שכבר הושלם.
-   */
   if (forceLeadSummary) {
     return {
       source: "lead-summary",
@@ -163,19 +158,11 @@ async function buildReply({
     conversationIntent
   );
 
-  /*
-   * האם ההודעה הנוכחית מתחילה
-   * הרשמה באופן מפורש?
-   */
   const startingLeadNow =
     shouldStartLeadFlow(
       conversationIntent
     );
 
-  /*
-   * האם כבר הייתה בקשת הרשמה
-   * ברורה בשיחה האחרונה?
-   */
   const existingLeadFlow =
     userProfile.summary_sent !== true &&
     hasRecentLeadIntent(
@@ -197,7 +184,6 @@ async function buildReply({
 
   /*
    * המשך תהליך הרשמה.
-   * מופעל רק אם באמת התחיל ליד.
    */
   if (
     leadFlowActive &&
@@ -227,8 +213,7 @@ async function buildReply({
   }
 
   /*
-   * המשתמש ביקש עכשיו להירשם
-   * או שנציג יחזור אליו.
+   * התחלת הרשמה חדשה.
    */
   if (startingLeadNow) {
     return buildLeadStartResponse(
@@ -237,8 +222,28 @@ async function buildReply({
   }
 
   /*
-   * שיחת התעניינות / המלצה.
-   * כאן עוזרים בלי ללחוץ להרשמה.
+   * המלצה חכמה.
+   * חשוב שתבוא לפני interest.
+   */
+  const recommendationResponse =
+    getRecommendationResponse({
+      userMessage,
+      userProfile,
+      conversationIntent,
+    });
+
+  if (recommendationResponse) {
+    return {
+      source: "recommendation",
+      reply:
+        recommendationResponse,
+      updates: {},
+      completed: false,
+    };
+  }
+
+  /*
+   * שיחת התעניינות כללית.
    */
   const interestResponse =
     getInterestResponse({
@@ -279,9 +284,7 @@ async function buildReply({
   }
 
   /*
-   * FAQ:
-   * מחירים, סניפים, גילאים,
-   * ניסיון, ציוד וכו'.
+   * FAQ.
    */
   const automated =
     getAutomatedResponse(
@@ -304,8 +307,7 @@ async function buildReply({
   }
 
   /*
-   * OpenAI רק כשאין
-   * מסלול מובנה מתאים.
+   * OpenAI הוא המוצא האחרון.
    */
   const reply =
     await generateReply(

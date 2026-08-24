@@ -1,15 +1,18 @@
 function getInterestResponse({
   userMessage = "",
-  userProfile = {},
   conversationIntent = {},
 }) {
   const text = String(userMessage)
     .toLowerCase()
     .trim();
 
+  /*
+   * השירות הזה מטפל רק בהתעניינות כללית.
+   * המלצות מטופלות ב-recommendationService.
+   */
   if (
-    conversationIntent.stage !== "interest" &&
-    conversationIntent.stage !== "recommendation"
+    conversationIntent.stage !==
+    "interest"
   ) {
     return null;
   }
@@ -25,30 +28,6 @@ function getInterestResponse({
       "אפשר בהחלט קודם להבין מה הכי מתאים בלי להתחייב.",
       "",
       "מה הכי חשוב לך לדעת כרגע — מחיר, רמה, סניף או איך נראה האימון?"
-    ].join("\n");
-  }
-
-  if (
-    text.includes("מה מתאים") ||
-    text.includes("מה מומלץ") ||
-    text.includes("תמליץ")
-  ) {
-    if (userProfile.age) {
-      return [
-        "בשמחה 😊",
-        "",
-        `לפי גיל ${userProfile.age}, אפשר לכוון למסגרת שמתאימה לגיל ולרמת הניסיון.`,
-        "",
-        "המתאמן מתחיל לגמרי או שכבר שיחק בעבר?"
-      ].join("\n");
-    }
-
-    return [
-      "בשמחה 😊",
-      "",
-      "כדי לכוון למסגרת שמתאימה באמת, חשוב לדעת גיל ורמת ניסיון.",
-      "",
-      "בן או בת כמה המתאמן או המתאמנת?"
     ].join("\n");
   }
 

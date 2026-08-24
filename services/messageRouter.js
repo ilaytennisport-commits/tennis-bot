@@ -3,6 +3,12 @@ const {
 } = require("./leadConversationService");
 
 const {
+  detectConversationIntent,
+} = require(
+  "./conversationIntentService"
+);
+
+const {
   getEquipmentContinuation,
 } = require(
   "./equipmentConversationService"
@@ -32,6 +38,17 @@ async function buildReply({
       completed: true,
     };
   }
+  
+  const conversationIntent =
+    detectConversationIntent(
+      userMessage,
+      userProfile
+    );
+
+  console.log(
+    "🧠 Conversation Intent:",
+    conversationIntent
+  );
 
   // קודם בודקים אם זו תשובת המשך לתהליך הרשמה.
   const leadContinuation =

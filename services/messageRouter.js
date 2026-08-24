@@ -10,6 +10,12 @@ const {
 );
 
 const {
+  getInterestResponse,
+} = require(
+  "./interestConversationService"
+);
+
+const {
   getEquipmentContinuation,
 } = require(
   "./equipmentConversationService"
@@ -34,10 +40,6 @@ function hasValue(value) {
 /*
  * בודק האם כבר התחיל תהליך הרשמה
  * בהודעות האחרונות.
- *
- * זה מונע משאלת מידע רגילה כמו:
- * "איזה סניף נוח לכם?"
- * להיחשב בטעות לתהליך ליד.
  */
 function hasRecentLeadIntent(
   conversationHistory = []
@@ -56,8 +58,7 @@ function hasRecentLeadIntent(
 
     if (
       message?.role !== "user" ||
-      typeof message.content !==
-        "string"
+      typeof message.content !== "string"
     ) {
       continue;
     }
@@ -176,8 +177,7 @@ async function buildReply({
    * ברורה בשיחה האחרונה?
    */
   const existingLeadFlow =
-    userProfile.summary_sent !==
-      true &&
+    userProfile.summary_sent !== true &&
     hasRecentLeadIntent(
       conversationHistory
     );
@@ -196,11 +196,8 @@ async function buildReply({
   );
 
   /*
-   * המשך תהליך הרשמה מופעל
-   * רק אם באמת התחיל תהליך ליד.
-   *
-   * זו הנקודה שמונעת משיחת
-   * מידע רגילה להפוך להרשמה.
+   * המשך תהליך הרשמה.
+   * מופעל רק אם באמת התחיל ליד.
    */
   if (
     leadFlowActive &&
@@ -237,6 +234,27 @@ async function buildReply({
     return buildLeadStartResponse(
       userProfile
     );
+  }
+
+  /*
+   * שיחת התעניינות / המלצה.
+   * כאן עוזרים בלי ללחוץ להרשמה.
+   */
+  const interestResponse =
+    getInterestResponse({
+      userMessage,
+      userProfile,
+      conversationIntent,
+    });
+
+  if (interestResponse) {
+    return {
+      source: "interest",
+      reply:
+        interestResponse,
+      updates: {},
+      completed: false,
+    };
   }
 
   /*

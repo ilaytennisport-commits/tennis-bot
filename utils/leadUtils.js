@@ -116,7 +116,9 @@ function extractUserDetails(
     normalizedMessage.includes(
       "ראשון לציון"
     ) ||
-    normalizedMessage.includes("רמז")
+    normalizedMessage.includes(
+      "רמז"
+    )
   ) {
     updates.branch =
       "גלי הדר – ראשון לציון";
@@ -125,7 +127,8 @@ function extractUserDetails(
       "בית דגן"
     )
   ) {
-    updates.branch = "בית דגן";
+    updates.branch =
+      "בית דגן";
   } else if (
     normalizedMessage.includes(
       "בית חשמונאי"
@@ -140,8 +143,37 @@ function extractUserDetails(
 
   /*
    * מטרת הפנייה.
+   *
+   * כוונת הרשמה נבדקת לפני "חוג",
+   * כדי ש"אני רוצה להירשם לחוג"
+   * יישמר כהרשמה ולא רק כחוג טניס.
    */
   if (
+    normalizedMessage.includes(
+      "להירשם"
+    ) ||
+    normalizedMessage.includes(
+      "להרשם"
+    ) ||
+    normalizedMessage.includes(
+      "הרשמה"
+    ) ||
+    normalizedMessage.includes(
+      "רוצה להצטרף"
+    ) ||
+    normalizedMessage.includes(
+      "רוצה להתחיל"
+    ) ||
+    normalizedMessage.includes(
+      "תרשמו אותי"
+    ) ||
+    normalizedMessage.includes(
+      "לרשום את"
+    )
+  ) {
+    updates.goal =
+      "הרשמה לחוג";
+  } else if (
     normalizedMessage.includes(
       "ניסיון"
     )
@@ -198,18 +230,14 @@ function extractUserDetails(
     /השם שלי\s+([א-תA-Za-z"-]{2,20})/,
     /השם שלו\s+([א-תA-Za-z"-]{2,20})/,
     /השם שלה\s+([א-תA-Za-z"-]{2,20})/,
-
-    /*
-     * למשל:
-     * "מישל בן 7"
-     * "נועה בת 10"
-     */
     /^([א-תA-Za-z"-]{2,20})\s+(?:בן|בת)\s+\d{1,2}$/,
   ];
 
   for (const pattern of namePatterns) {
     const nameMatch =
-      normalizedMessage.match(pattern);
+      normalizedMessage.match(
+        pattern
+      );
 
     if (nameMatch) {
       updates.name =
@@ -274,7 +302,9 @@ function getMissingLeadFields(
   const missing = [];
 
   if (!user.name) {
-    missing.push("שם המתאמן");
+    missing.push(
+      "שם המתאמן"
+    );
   }
 
   if (
@@ -286,15 +316,21 @@ function getMissingLeadFields(
   }
 
   if (!user.branch) {
-    missing.push("סניף מועדף");
+    missing.push(
+      "סניף מועדף"
+    );
   }
 
   if (!user.phone) {
-    missing.push("מספר טלפון");
+    missing.push(
+      "מספר טלפון"
+    );
   }
 
   if (!user.goal) {
-    missing.push("תחום התעניינות");
+    missing.push(
+      "תחום התעניינות"
+    );
   }
 
   return missing;

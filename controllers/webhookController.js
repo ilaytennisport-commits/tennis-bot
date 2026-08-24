@@ -514,14 +514,14 @@ Object.assign(
     }
   );
 
-const reply = await createReply({
-  userId,
-  userMessage,
-  updatedUser,
-  conversationHistory,
-  shouldSendLeadSummary,
-  formatLeadSummary,
-});
+  const reply = await createReply({
+    userId,
+    userMessage,
+    updatedUser,
+    conversationHistory,
+    shouldSendLeadSummary,
+    formatLeadSummary,
+  });
 
   if (
     !reply ||
@@ -547,26 +547,57 @@ const reply = await createReply({
     reply
   );
 
-  /**
-   * לאחר שהלקוח קיבל את הסיכום,
-   * שולחים את הליד למנהל.
+  /*
+   * createReply עשוי לשמור את הפרט האחרון
+   * של ההרשמה, לכן טוענים שוב את המשתמש
+   * לפני שבודקים אם הליד הושלם.
    */
-  if (shouldSendLeadSummary) {
+  const finalUser =
+    await getUser(userId);
+
+  const finalCompleteLead =
+    hasCompleteLeadDetails(
+      finalUser
+    );
+
+  const shouldSendManagerLead =
+    finalCompleteLead &&
+    finalUser.summary_sent !== true;
+
+  console.log(
+    "📋 בדיקה סופית לשליחת ליד:",
+    {
+      name: finalUser.name,
+      age: finalUser.age,
+      branch: finalUser.branch,
+      phone: finalUser.phone,
+      goal: finalUser.goal,
+      summarySent:
+        finalUser.summary_sent,
+      completeLead:
+        finalCompleteLead,
+      shouldSendManagerLead,
+    }
+  );
+
+  if (shouldSendManagerLead) {
     const managerMessageSent =
       await sendLeadToManager(
         userId,
-        updatedUser
+        finalUser
       );
 
     if (managerMessageSent) {
-      await markSummarySent(userId);
+      await markSummarySent(
+        userId
+      );
 
       console.log(
-        `📋 הליד סומן כנשלח עבור ${userId}`
+        `📋 הליד נשלח למנהל וסומן כנשלח עבור ${userId}`
       );
     } else {
       console.warn(
-        `⚠️ הליד לא סומן כנשלח משום שהשליחה למנהל נכשלה: ${userId}`
+        `⚠️ שליחת הליד למנהל נכשלה עבור ${userId}`
       );
     }
   }
@@ -575,6 +606,10 @@ const reply = await createReply({
     `✅ התשובה נשלחה ל-${userId}`
   );
 }
+
+/**
+ * מקבל את ה־Webhook מ־Whapi.
+ */
 
 /**
  * מקבל את ה־Webhook מ־Whapi.

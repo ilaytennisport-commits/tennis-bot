@@ -74,12 +74,74 @@ function normalizeBranch(message = "") {
   return null;
 }
 
+function getNextMissingStep(
+  profile = {}
+) {
+  if (!hasValue(profile.name)) {
+    return "name";
+  }
+
+  if (!hasValue(profile.age)) {
+    return "age";
+  }
+
+  if (!hasValue(profile.branch)) {
+    return "branch";
+  }
+
+  return null;
+}
+
+function buildNextQuestion(
+  profile = {}
+) {
+  const nextStep =
+    getNextMissingStep(profile);
+
+  if (nextStep === "name") {
+    return {
+      reply:
+        "מעולה 😊\n\nמה שם המתאמן או המתאמנת?",
+      completed: false,
+    };
+  }
+
+  if (nextStep === "age") {
+    return {
+      reply:
+        "תודה 😊\n\nמה גיל המתאמן או המתאמנת?",
+      completed: false,
+    };
+  }
+
+  if (nextStep === "branch") {
+    return {
+      reply: [
+        "מעולה 😊",
+        "",
+        "באיזה סניף אתם מעוניינים?",
+        "• גלי הדר – ראשון לציון",
+        "• בית דגן",
+        "• בית חשמונאי",
+      ].join("\n"),
+      completed: false,
+    };
+  }
+
+  return {
+    reply:
+      "תודה, רשמתי 😊\n\nהפרטים נאספו להמשך טיפול. צוות האקדמיה יחזור אליכם בהקדם.",
+    completed: true,
+  };
+}
+
 function getLeadContinuation({
   userMessage,
   conversationHistory = [],
   userProfile = {},
 }) {
-  const text = String(userMessage).trim();
+  const text =
+    String(userMessage).trim();
 
   const lastAssistantMessage =
     getLastAssistantMessage(
@@ -100,44 +162,28 @@ function getLeadContinuation({
       };
     }
 
-    if (!hasValue(userProfile.age)) {
-      return {
-        updates: {
-          name,
-        },
-        reply:
-          "תודה, רשמתי 😊\n\nמה גיל המתאמן או המתאמנת?",
-      };
-    }
+    const nextProfile = {
+      ...userProfile,
+      name,
+    };
 
-    if (!hasValue(userProfile.branch)) {
-      return {
-        updates: {
-          name,
-        },
-        reply: [
-          "תודה, רשמתי 😊",
-          "",
-          "באיזה סניף אתם מעוניינים?",
-          "• גלי הדר – ראשון לציון",
-          "• בית דגן",
-          "• בית חשמונאי",
-        ].join("\n"),
-      };
-    }
+    const next =
+      buildNextQuestion(nextProfile);
 
     return {
       updates: {
         name,
       },
-      reply:
-        "תודה, רשמתי את השם.",
+      reply: next.reply,
+      completed: next.completed,
     };
   }
 
   // תשובה לשאלת הגיל
   if (isAgeQuestion(lastAssistantMessage)) {
-    const ageMatch = text.match(/\d{1,2}/);
+    const ageMatch =
+      text.match(/\d{1,2}/);
+
     const age = ageMatch
       ? Number(ageMatch[0])
       : null;
@@ -153,34 +199,27 @@ function getLeadContinuation({
       };
     }
 
-    if (!hasValue(userProfile.branch)) {
-      return {
-        updates: {
-          age,
-        },
-        reply: [
-          "תודה 😊",
-          "",
-          "באיזה סניף אתם מעוניינים?",
-          "• גלי הדר – ראשון לציון",
-          "• בית דגן",
-          "• בית חשמונאי",
-        ].join("\n"),
-      };
-    }
+    const nextProfile = {
+      ...userProfile,
+      age,
+    };
+
+    const next =
+      buildNextQuestion(nextProfile);
 
     return {
       updates: {
         age,
       },
-      reply:
-        "תודה, רשמתי את הגיל.",
+      reply: next.reply,
+      completed: next.completed,
     };
   }
 
   // תשובה לשאלת הסניף
   if (isBranchQuestion(lastAssistantMessage)) {
-    const branch = normalizeBranch(text);
+    const branch =
+      normalizeBranch(text);
 
     if (!branch) {
       return {
@@ -193,13 +232,20 @@ function getLeadContinuation({
       };
     }
 
+    const nextProfile = {
+      ...userProfile,
+      branch,
+    };
+
+    const next =
+      buildNextQuestion(nextProfile);
+
     return {
       updates: {
         branch,
       },
-      reply:
-        "תודה, רשמתי 😊\n\nהפרטים נאספו להמשך טיפול. צוות האקדמיה יבדוק את האפשרות המתאימה ויחזור אליכם.",
-      completed: true,
+      reply: next.reply,
+      completed: next.completed,
     };
   }
 

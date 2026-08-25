@@ -6,17 +6,14 @@ const normalize = (text = "") =>
     .replace(/\s+/g, " ")
     .trim();
 
-const includesAny = (text, phrases = []) =>
+const includesAny = (
+  text,
+  phrases = []
+) =>
   phrases.some((phrase) =>
     text.includes(phrase)
   );
 
-/**
- * מזהה את מצב הלקוח בשיחה.
- *
- * המטרה כאן אינה לזהות FAQ ספציפי,
- * אלא להבין עד כמה המשתמש מתקדם לכיוון הרשמה.
- */
 function detectConversationIntent(
   message = "",
   profile = {}
@@ -31,7 +28,7 @@ function detectConversationIntent(
   }
 
   /*
-   * לקוח שמבקש במפורש שנציג יחזור אליו.
+   * בקשה מפורשת לחזרה מנציג.
    */
   if (
     includesAny(text, [
@@ -82,8 +79,33 @@ function detectConversationIntent(
   }
 
   /*
-   * בקשה לשיעור / אימון ניסיון היא עניין חזק,
-   * אבל לא מכריחים מיד הרשמה.
+   * הלקוח מוכן להתקדם,
+   * אבל עוד לא ביקש הרשמה מפורשת.
+   */
+  if (
+    includesAny(text, [
+      "נשמע טוב",
+      "מתאים לי",
+      "מתאים לנו",
+      "נשמע מתאים",
+      "בוא נתקדם",
+      "בואו נתקדם",
+      "יאללה",
+      "קדימה",
+      "אני בעניין",
+      "אנחנו בעניין",
+      "מעוניין להתקדם",
+      "מעוניינת להתקדם",
+    ])
+  ) {
+    return {
+      stage: "ready",
+      confidence: 0.92,
+    };
+  }
+
+  /*
+   * אימון ניסיון.
    */
   if (
     includesAny(text, [
@@ -103,7 +125,7 @@ function detectConversationIntent(
   }
 
   /*
-   * המשתמש רוצה המלצה או התאמה.
+   * בקשת המלצה.
    */
   if (
     includesAny(text, [
@@ -128,9 +150,7 @@ function detectConversationIntent(
   }
 
   /*
-   * סימני התעניינות.
-   * הלקוח עדיין לא ביקש להירשם ולכן לא
-   * מתחילים לאסוף ממנו פרטים בכוח.
+   * התעניינות כללית.
    */
   if (
     includesAny(text, [
@@ -154,13 +174,12 @@ function detectConversationIntent(
   }
 
   /*
-   * שאלות מידע רגילות.
-   * במקרה כזה עונים על השאלה ולא מנסים
-   * להפוך מיד את המשתמש לליד.
+   * שאלות מידע.
    */
   if (
     includesAny(text, [
       "כמה עולה",
+      "כמה זה עולה",
       "מחיר",
       "מחירים",
       "מחירון",
@@ -191,11 +210,6 @@ function detectConversationIntent(
     };
   }
 
-  /*
-   * אם כבר נשמרו מספר פרטים של הלקוח,
-   * זה סימן שיש שיחה מתקדמת, אבל עדיין
-   * לא מניחים אוטומטית שהוא רוצה להירשם.
-   */
   const knownDetails = [
     profile.name,
     profile.age,

@@ -96,10 +96,8 @@ function isRecommendationContinuation({
       .reverse()
       .find(
         (message) =>
-          message?.role ===
-            "assistant" &&
-          typeof message.content ===
-            "string"
+          message?.role === "assistant" &&
+          typeof message.content === "string"
       )?.content || "";
 
   const isExperienceAnswer =
@@ -168,6 +166,53 @@ function buildLeadStartResponse(
       "בשמחה 😊\n\nכבר יש לי את הפרטים הדרושים. אעביר אותם להמשך טיפול של צוות האקדמיה.",
     updates: {},
     completed: true,
+  };
+}
+
+function buildReadyResponse(
+  userProfile = {}
+) {
+  const parts = [
+    "מעולה 😊",
+    "",
+  ];
+
+  if (
+    hasValue(userProfile.age) &&
+    hasValue(userProfile.experience)
+  ) {
+    const experienceText =
+      userProfile.experience === "beginner"
+        ? "מתחיל"
+        : "עם ניסיון קודם";
+
+    parts.push(
+      `לפי מה שכבר סיפרת לי — גיל ${userProfile.age}, ${experienceText} — אפשר להתקדם בצורה מסודרת.`
+    );
+    parts.push("");
+  }
+
+  if (hasValue(userProfile.branch)) {
+    parts.push(
+      `גם הסניף ${userProfile.branch} כבר שמור לי.`
+    );
+    parts.push("");
+  }
+
+  parts.push(
+    "אם תרצו, אפשר להתקדם לאימון ניסיון ולבדוק התאמה לקבוצה קיימת."
+  );
+
+  parts.push("");
+  parts.push(
+    "תרצו שאעזור להתקדם עם אימון ניסיון?"
+  );
+
+  return {
+    source: "ready",
+    reply: parts.join("\n"),
+    updates: {},
+    completed: false,
   };
 }
 
@@ -253,7 +298,7 @@ async function buildReply({
   }
 
   /*
-   * התחלת הרשמה חדשה.
+   * התחלת הרשמה מפורשת.
    */
   if (startingLeadNow) {
     return buildLeadStartResponse(
@@ -262,10 +307,20 @@ async function buildReply({
   }
 
   /*
+   * הלקוח נשמע מוכן להתקדם,
+   * אבל לא ביקש עדיין הרשמה מפורשת.
+   */
+  if (
+    conversationIntent.stage ===
+    "ready"
+  ) {
+    return buildReadyResponse(
+      userProfile
+    );
+  }
+
+  /*
    * המשך של שיחת המלצה.
-   * למשל:
-   * הבוט שאל אם מתחיל או מנוסה,
-   * והלקוח ענה רק "מתחיל".
    */
   const recommendationContinuation =
     isRecommendationContinuation({

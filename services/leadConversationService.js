@@ -60,9 +60,6 @@ function normalizeBranch(message = "") {
     return "גלי הדר – ראשון לציון";
   }
 
-  if (text.includes("בית דגן")) {
-    return "בית דגן";
-  }
 
   if (
     text.includes("בית חשמונאי") ||
@@ -121,7 +118,6 @@ function buildNextQuestion(
         "",
         "באיזה סניף אתם מעוניינים?",
         "• גלי הדר – ראשון לציון",
-        "• בית דגן",
         "• בית חשמונאי",
       ].join("\n"),
       completed: false,
@@ -226,7 +222,6 @@ function getLeadContinuation({
         reply: [
           "איזה סניף מתאים לכם?",
           "• גלי הדר – ראשון לציון",
-          "• בית דגן",
           "• בית חשמונאי",
         ].join("\n"),
       };

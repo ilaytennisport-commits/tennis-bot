@@ -11,12 +11,6 @@ const academyKnowledge = {
       address: "רמז 96, ראשון לציון"
     },
     {
-      id: "beit-dagan",
-      name: "בית דגן",
-      city: "בית דגן",
-      address: null
-    },
-    {
       id: "beit-hashmonai",
       name: "בית חשמונאי",
       city: "בית חשמונאי",

@@ -124,13 +124,6 @@ function extractUserDetails(
       "גלי הדר – ראשון לציון";
   } else if (
     normalizedMessage.includes(
-      "בית דגן"
-    )
-  ) {
-    updates.branch =
-      "בית דגן";
-  } else if (
-    normalizedMessage.includes(
       "בית חשמונאי"
     ) ||
     normalizedMessage.includes(

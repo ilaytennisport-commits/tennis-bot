@@ -79,21 +79,30 @@ function detectConversationIntent(
   }
 
   /*
-   * הלקוח מוכן להתקדם,
-   * אבל עוד לא ביקש הרשמה מפורשת.
+   * משפטים קצרים שמעידים שהלקוח
+   * מוכן להתקדם.
+   *
+   * הם נבדקים בהתאמה מלאה ולא עם includes,
+   * כדי ש-"מה מתאים לילד?" לא יזוהה
+   * בטעות בגלל הביטוי "מתאים לי".
    */
-  if (
-    includesAny(text, [
-      "נשמע טוב",
+  const exactReadyPhrases =
+    new Set([
       "מתאים לי",
       "מתאים לנו",
+      "נשמע טוב",
       "נשמע מתאים",
-      "בוא נתקדם",
-      "בואו נתקדם",
       "יאללה",
       "קדימה",
       "אני בעניין",
       "אנחנו בעניין",
+    ]);
+
+  if (
+    exactReadyPhrases.has(text) ||
+    includesAny(text, [
+      "בוא נתקדם",
+      "בואו נתקדם",
       "מעוניין להתקדם",
       "מעוניינת להתקדם",
     ])
@@ -210,6 +219,11 @@ function detectConversationIntent(
     };
   }
 
+  /*
+   * אם כבר ידועים כמה פרטים,
+   * מסיקים שיש שיחה מתקדמת,
+   * אבל לא פותחים ליד אוטומטית.
+   */
   const knownDetails = [
     profile.name,
     profile.age,
@@ -243,8 +257,10 @@ function shouldStartLeadFlow(
   }
 
   return (
-    conversationIntent.stage === "lead" ||
-    conversationIntent.stage === "callback"
+    conversationIntent.stage ===
+      "lead" ||
+    conversationIntent.stage ===
+      "callback"
   );
 }
 

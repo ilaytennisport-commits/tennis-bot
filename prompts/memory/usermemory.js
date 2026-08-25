@@ -9,6 +9,7 @@ function emptyUser() {
     height: null,
     audience: null,
     equipment_topic: null,
+    experience: null,
     branch: null,
     phone: null,
     goal: null,
@@ -25,6 +26,7 @@ async function getUser(userId) {
         height,
         audience,
         equipment_topic,
+        experience,
         branch,
         phone,
         goal,
@@ -59,6 +61,7 @@ async function saveUser(
         height,
         audience,
         equipment_topic,
+        experience,
         branch,
         phone,
         goal,
@@ -76,6 +79,7 @@ async function saveUser(
         $8,
         $9,
         $10,
+        $11,
         NOW()
       )
       ON CONFLICT (user_id)
@@ -86,6 +90,8 @@ async function saveUser(
         audience = EXCLUDED.audience,
         equipment_topic =
           EXCLUDED.equipment_topic,
+        experience =
+          EXCLUDED.experience,
         branch = EXCLUDED.branch,
         phone = EXCLUDED.phone,
         goal = EXCLUDED.goal,
@@ -98,6 +104,7 @@ async function saveUser(
         height,
         audience,
         equipment_topic,
+        experience,
         branch,
         phone,
         goal,
@@ -110,6 +117,7 @@ async function saveUser(
       updatedUser.height,
       updatedUser.audience,
       updatedUser.equipment_topic,
+      updatedUser.experience,
       updatedUser.branch,
       updatedUser.phone,
       updatedUser.goal,
@@ -136,6 +144,7 @@ async function markSummarySent(
         height,
         audience,
         equipment_topic,
+        experience,
         branch,
         phone,
         goal,

@@ -16,7 +16,9 @@ pool.on("error", (error) => {
 });
 
 async function initializeDatabase() {
-  // טבלת משתמשים
+  /*
+   * טבלת משתמשים / פרופיל שיחה.
+   */
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       user_id TEXT PRIMARY KEY,
@@ -25,6 +27,7 @@ async function initializeDatabase() {
       height INTEGER,
       audience TEXT,
       equipment_topic TEXT,
+      experience TEXT,
       branch TEXT,
       phone TEXT,
       goal TEXT,
@@ -34,13 +37,9 @@ async function initializeDatabase() {
     )
   `);
 
-  // הוספת עמודות למסדי נתונים קיימים
-  await pool.query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS summary_sent
-    BOOLEAN NOT NULL DEFAULT FALSE
-  `);
-
+  /*
+   * הוספת עמודות גם אם הטבלה כבר קיימת.
+   */
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS height INTEGER
@@ -56,7 +55,20 @@ async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS equipment_topic TEXT
   `);
 
-  // טבלת היסטוריית שיחות
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS experience TEXT
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS summary_sent
+    BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
+  /*
+   * היסטוריית שיחות.
+   */
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversation_messages (
       id BIGSERIAL PRIMARY KEY,
@@ -67,13 +79,14 @@ async function initializeDatabase() {
     )
   `);
 
-  // אינדקס לשיפור ביצועים
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_conversation_user
     ON conversation_messages(user_id, created_at DESC)
   `);
 
-  console.log("✅ PostgreSQL tables are ready");
+  console.log(
+    "✅ PostgreSQL tables are ready"
+  );
 }
 
 module.exports = {

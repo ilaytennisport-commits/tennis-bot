@@ -26,37 +26,50 @@ function extractHeight(message = "") {
   );
 
   if (explicitMatch) {
-    const height = Number(explicitMatch[1]);
+    const height = Number(
+      explicitMatch[1]
+    );
 
-    if (height >= 80 && height <= 230) {
+    if (
+      height >= 80 &&
+      height <= 230
+    ) {
       return height;
     }
   }
 
-  const heightWithUnitMatch = text.match(
-    /(\d{2,3})\s*(?:ס"מ|ס״מ|סמ)/
-  );
+  const heightWithUnitMatch =
+    text.match(
+      /(\d{2,3})\s*(?:ס"מ|ס״מ|סמ)/
+    );
 
   if (heightWithUnitMatch) {
     const height = Number(
       heightWithUnitMatch[1]
     );
 
-    if (height >= 80 && height <= 230) {
+    if (
+      height >= 80 &&
+      height <= 230
+    ) {
       return height;
     }
   }
 
-  const numericOnlyMatch = text.match(
-    /^\s*(\d{2,3})\s*$/
-  );
+  const numericOnlyMatch =
+    text.match(
+      /^\s*(\d{2,3})\s*$/
+    );
 
   if (numericOnlyMatch) {
     const height = Number(
       numericOnlyMatch[1]
     );
 
-    if (height >= 80 && height <= 230) {
+    if (
+      height >= 80 &&
+      height <= 230
+    ) {
       return height;
     }
   }
@@ -88,8 +101,11 @@ function detectAudience(
     return "adult";
   }
 
-  const extractedAge = extractAge(message);
-  const savedAge = Number(profile.age);
+  const extractedAge =
+    extractAge(message);
+
+  const savedAge =
+    Number(profile.age);
 
   const age =
     extractedAge ||
@@ -117,7 +133,6 @@ function detectEquipmentTopic(
     .toLowerCase()
     .trim();
 
-  // פריטים ספציפיים נבדקים לפני "מחבט".
   if (
     /תיק למחבט|תיקי מחבטים|תיק/.test(
       text
@@ -150,7 +165,11 @@ function detectEquipmentTopic(
     return "strings";
   }
 
-  if (/כדור|כדורים/.test(text)) {
+  if (
+    /כדור|כדורים/.test(
+      text
+    )
+  ) {
     return "balls";
   }
 
@@ -170,7 +189,40 @@ function detectEquipmentTopic(
     return "racket";
   }
 
-  return profile.equipment_topic || null;
+  return (
+    profile.equipment_topic ||
+    null
+  );
+}
+
+function detectExperience(
+  message = "",
+  profile = {}
+) {
+  const text = String(message)
+    .toLowerCase()
+    .trim();
+
+  if (
+    /מתחיל|מתחילה|מתחיל מאפס|מתחילה מאפס|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה/.test(
+      text
+    )
+  ) {
+    return "beginner";
+  }
+
+  if (
+    /שיחק בעבר|שיחקה בעבר|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה|מנוסה/.test(
+      text
+    )
+  ) {
+    return "experienced";
+  }
+
+  return (
+    profile.experience ||
+    null
+  );
 }
 
 function buildProfileUpdates(
@@ -179,16 +231,26 @@ function buildProfileUpdates(
 ) {
   const updates = {};
 
-  const age = extractAge(message);
-  const height = extractHeight(message);
+  const age =
+    extractAge(message);
 
-  const audience = detectAudience(
-    message,
-    profile
-  );
+  const height =
+    extractHeight(message);
+
+  const audience =
+    detectAudience(
+      message,
+      profile
+    );
 
   const equipmentTopic =
     detectEquipmentTopic(
+      message,
+      profile
+    );
+
+  const experience =
+    detectExperience(
       message,
       profile
     );
@@ -202,12 +264,18 @@ function buildProfileUpdates(
   }
 
   if (audience) {
-    updates.audience = audience;
+    updates.audience =
+      audience;
   }
 
   if (equipmentTopic) {
     updates.equipment_topic =
       equipmentTopic;
+  }
+
+  if (experience) {
+    updates.experience =
+      experience;
   }
 
   return updates;
@@ -218,5 +286,6 @@ module.exports = {
   extractHeight,
   detectAudience,
   detectEquipmentTopic,
+  detectExperience,
   buildProfileUpdates,
 };

@@ -22,44 +22,52 @@ function getLastAssistantMessage(
 
 function isNameQuestion(message = "") {
   return (
-    message.includes("איך קוראים") ||
-    message.includes("מה שם המתאמן") ||
-    message.includes("מה שם המתאמנת") ||
-    message.includes("מה שמו") ||
-    message.includes("מה שמה")
+    message.includes(
+      "מה שם המתאמן או המתאמנת?"
+    ) ||
+    message.includes(
+      "מה שם הילד או הילדה?"
+    )
   );
 }
 
 function isAgeQuestion(message = "") {
   return (
-    message.includes("בן כמה") ||
-    message.includes("בת כמה") ||
-    message.includes("מה הגיל") ||
-    message.includes("מה גיל המתאמן") ||
-    message.includes("מה גיל המתאמנת")
+    message.includes(
+      "מה גיל המתאמן או המתאמנת?"
+    ) ||
+    message.includes(
+      "מה גיל הילד או הילדה?"
+    )
   );
 }
 
 function isBranchQuestion(message = "") {
   return (
-    message.includes("באיזה סניף") ||
-    message.includes("איזה סניף") ||
-    message.includes("סניף מועדף")
+    message.includes(
+      "באיזה סניף אתם מעוניינים?"
+    ) ||
+    message.includes(
+      "באיזה סניף תרצו להתאמן?"
+    )
   );
 }
 
-function normalizeBranch(message = "") {
+function normalizeBranch(
+  message = ""
+) {
   const text = String(message)
     .trim()
     .toLowerCase();
 
   if (
     text.includes("גלי הדר") ||
-    text.includes("ראשון")
+    text.includes("ראשון לציון") ||
+    text === "ראשון" ||
+    text.includes("רמז 96")
   ) {
     return "גלי הדר – ראשון לציון";
   }
-
 
   if (
     text.includes("בית חשמונאי") ||
@@ -98,7 +106,7 @@ function buildNextQuestion(
   if (nextStep === "name") {
     return {
       reply:
-        "מעולה 😊\n\nמה שם המתאמן או המתאמנת?",
+        "בשמחה 😊\n\nמה שם המתאמן או המתאמנת?",
       completed: false,
     };
   }
@@ -114,9 +122,9 @@ function buildNextQuestion(
   if (nextStep === "branch") {
     return {
       reply: [
-        "מעולה 😊",
+        "תודה 😊",
         "",
-        "באיזה סניף אתם מעוניינים?",
+        "באיזה סניף תרצו להתאמן?",
         "• גלי הדר – ראשון לציון",
         "• בית חשמונאי",
       ].join("\n"),
@@ -126,32 +134,43 @@ function buildNextQuestion(
 
   return {
     reply:
-      "תודה, רשמתי 😊\n\nהפרטים נאספו להמשך טיפול. צוות האקדמיה יחזור אליכם בהקדם.",
+      "תודה 😊\n\nהפרטים נאספו להמשך טיפול. צוות האקדמיה יבדוק את האפשרות המתאימה ויחזור אליכם.",
     completed: true,
   };
 }
 
 function getLeadContinuation({
-  userMessage,
+  userMessage = "",
   conversationHistory = [],
   userProfile = {},
 }) {
-  const text =
-    String(userMessage).trim();
+  const text = String(userMessage)
+    .trim();
 
   const lastAssistantMessage =
     getLastAssistantMessage(
       conversationHistory
     );
 
-  // תשובה לשאלת השם
-  if (isNameQuestion(lastAssistantMessage)) {
-    const name = text.replace(
-      /^(קוראים לי|קוראים לו|קוראים לה|השם הוא)\s+/,
-      ""
-    ).trim();
+  /*
+   * תשובה לשאלת השם.
+   */
+  if (
+    isNameQuestion(
+      lastAssistantMessage
+    )
+  ) {
+    const name = text
+      .replace(
+        /^(קוראים לי|קוראים לו|קוראים לה|השם הוא|השם שלו|השם שלה)\s+/,
+        ""
+      )
+      .trim();
 
-    if (!name || name.length < 2) {
+    if (
+      !name ||
+      name.length < 2
+    ) {
       return {
         reply:
           "אשמח לקבל את שם המתאמן או המתאמנת.",
@@ -164,19 +183,28 @@ function getLeadContinuation({
     };
 
     const next =
-      buildNextQuestion(nextProfile);
+      buildNextQuestion(
+        nextProfile
+      );
 
     return {
       updates: {
         name,
       },
       reply: next.reply,
-      completed: next.completed,
+      completed:
+        next.completed,
     };
   }
 
-  // תשובה לשאלת הגיל
-  if (isAgeQuestion(lastAssistantMessage)) {
+  /*
+   * תשובה לשאלת הגיל.
+   */
+  if (
+    isAgeQuestion(
+      lastAssistantMessage
+    )
+  ) {
     const ageMatch =
       text.match(/\d{1,2}/);
 
@@ -201,19 +229,28 @@ function getLeadContinuation({
     };
 
     const next =
-      buildNextQuestion(nextProfile);
+      buildNextQuestion(
+        nextProfile
+      );
 
     return {
       updates: {
         age,
       },
       reply: next.reply,
-      completed: next.completed,
+      completed:
+        next.completed,
     };
   }
 
-  // תשובה לשאלת הסניף
-  if (isBranchQuestion(lastAssistantMessage)) {
+  /*
+   * תשובה לשאלת הסניף.
+   */
+  if (
+    isBranchQuestion(
+      lastAssistantMessage
+    )
+  ) {
     const branch =
       normalizeBranch(text);
 
@@ -233,14 +270,17 @@ function getLeadContinuation({
     };
 
     const next =
-      buildNextQuestion(nextProfile);
+      buildNextQuestion(
+        nextProfile
+      );
 
     return {
       updates: {
         branch,
       },
       reply: next.reply,
-      completed: next.completed,
+      completed:
+        next.completed,
     };
   }
 

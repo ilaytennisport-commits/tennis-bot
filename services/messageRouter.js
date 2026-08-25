@@ -43,6 +43,23 @@ function hasValue(value) {
   );
 }
 
+function getLastAssistantMessage(
+  conversationHistory = []
+) {
+  return (
+    [...conversationHistory]
+      .reverse()
+      .find(
+        (message) =>
+          message?.role === "assistant" &&
+          typeof message.content === "string"
+      )?.content || ""
+  );
+}
+
+/*
+ * בודק אם בעבר הייתה בקשת הרשמה מפורשת.
+ */
 function hasRecentLeadIntent(
   conversationHistory = []
 ) {
@@ -83,6 +100,82 @@ function hasRecentLeadIntent(
   return false;
 }
 
+/*
+ * בודק אם הבוט כרגע נמצא באמצע
+ * איסוף פרטי ליד.
+ */
+function hasActiveLeadQuestion(
+  conversationHistory = []
+) {
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "מה שם המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה שם הילד או הילדה?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה גיל המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה גיל הילד או הילדה?"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף אתם מעוניינים?"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף תרצו להתאמן?"
+    )
+  );
+}
+
+/*
+ * הלקוח ענה "כן" להצעה להתקדם
+ * לאימון ניסיון.
+ */
+function isTrialConfirmation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  const confirmations = new Set([
+    "כן",
+    "כן בטח",
+    "בטח",
+    "בהחלט",
+    "יאללה",
+    "קדימה",
+    "מעולה",
+    "סבבה",
+  ]);
+
+  if (!confirmations.has(text)) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "תרצו שאעזור להתקדם עם אימון ניסיון"
+    ) ||
+    lastAssistantMessage.includes(
+      "תרצה שאעזור להתקדם עם אימון ניסיון"
+    )
+  );
+}
+
 function isRecommendationContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -92,13 +185,9 @@ function isRecommendationContinuation({
     .trim();
 
   const lastAssistantMessage =
-    [...conversationHistory]
-      .reverse()
-      .find(
-        (message) =>
-          message?.role === "assistant" &&
-          typeof message.content === "string"
-      )?.content || "";
+    getLastAssistantMessage(
+      conversationHistory
+    );
 
   const isExperienceAnswer =
     /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|שיחק בעבר|שיחקה בעבר|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה/.test(
@@ -123,39 +212,45 @@ function isRecommendationContinuation({
 }
 
 function buildLeadStartResponse(
-  userProfile = {}
+  userProfile = {},
+  extraUpdates = {}
 ) {
-  if (!hasValue(userProfile.name)) {
+  const profile = {
+    ...userProfile,
+    ...extraUpdates,
+  };
+
+  if (!hasValue(profile.name)) {
     return {
       source: "lead-start",
       reply:
         "בשמחה 😊\n\nמה שם המתאמן או המתאמנת?",
-      updates: {},
+      updates: extraUpdates,
       completed: false,
     };
   }
 
-  if (!hasValue(userProfile.age)) {
+  if (!hasValue(profile.age)) {
     return {
       source: "lead-start",
       reply:
-        "בשמחה 😊\n\nמה גיל המתאמן או המתאמנת?",
-      updates: {},
+        "תודה 😊\n\nמה גיל המתאמן או המתאמנת?",
+      updates: extraUpdates,
       completed: false,
     };
   }
 
-  if (!hasValue(userProfile.branch)) {
+  if (!hasValue(profile.branch)) {
     return {
       source: "lead-start",
       reply: [
-        "בשמחה 😊",
+        "תודה 😊",
         "",
-        "באיזה סניף אתם מעוניינים?",
+        "באיזה סניף תרצו להתאמן?",
         "• גלי הדר – ראשון לציון",
         "• בית חשמונאי",
       ].join("\n"),
-      updates: {},
+      updates: extraUpdates,
       completed: false,
     };
   }
@@ -163,8 +258,8 @@ function buildLeadStartResponse(
   return {
     source: "lead-start",
     reply:
-      "בשמחה 😊\n\nכבר יש לי את הפרטים הדרושים. אעביר אותם להמשך טיפול של צוות האקדמיה.",
-    updates: {},
+      "תודה 😊\n\nהפרטים הדרושים כבר שמורים. אעביר אותם להמשך טיפול של צוות האקדמיה.",
+    updates: extraUpdates,
     completed: true,
   };
 }
@@ -248,32 +343,67 @@ async function buildReply({
       conversationIntent
     );
 
-  const existingLeadFlow =
-    userProfile.summary_sent !== true &&
-    hasRecentLeadIntent(
+  const trialConfirmation =
+    isTrialConfirmation({
+      userMessage,
+      conversationHistory,
+    });
+
+  const activeLeadQuestion =
+    hasActiveLeadQuestion(
       conversationHistory
     );
 
-  const leadFlowActive =
-    startingLeadNow ||
-    existingLeadFlow;
+  const existingLeadFlow =
+    userProfile.summary_sent !== true &&
+    (
+      hasRecentLeadIntent(
+        conversationHistory
+      ) ||
+      activeLeadQuestion
+    );
 
   console.log(
     "🎯 Lead Flow:",
     {
       startingLeadNow,
+      trialConfirmation,
+      activeLeadQuestion,
       existingLeadFlow,
-      leadFlowActive,
     }
   );
 
   /*
-   * המשך תהליך הרשמה.
+   * הלקוח אישר שהוא רוצה להתקדם
+   * עם אימון ניסיון.
    */
-  if (
-    leadFlowActive &&
-    !startingLeadNow
-  ) {
+  if (trialConfirmation) {
+    const goalUpdates =
+      hasValue(userProfile.goal)
+        ? {}
+        : {
+            goal: "שיעור ניסיון",
+          };
+
+    return buildLeadStartResponse(
+      userProfile,
+      goalUpdates
+    );
+  }
+
+  /*
+   * התחלת הרשמה מפורשת.
+   */
+  if (startingLeadNow) {
+    return buildLeadStartResponse(
+      userProfile
+    );
+  }
+
+  /*
+   * המשך תהליך שכבר התחיל.
+   */
+  if (existingLeadFlow) {
     const leadContinuation =
       getLeadContinuation({
         userMessage,
@@ -298,17 +428,8 @@ async function buildReply({
   }
 
   /*
-   * התחלת הרשמה מפורשת.
-   */
-  if (startingLeadNow) {
-    return buildLeadStartResponse(
-      userProfile
-    );
-  }
-
-  /*
-   * הלקוח נשמע מוכן להתקדם,
-   * אבל לא ביקש עדיין הרשמה מפורשת.
+   * הלקוח מוכן להתקדם,
+   * אבל עוד לא אישר אימון ניסיון.
    */
   if (
     conversationIntent.stage ===
@@ -320,7 +441,7 @@ async function buildReply({
   }
 
   /*
-   * המשך של שיחת המלצה.
+   * המשך שיחת המלצה.
    */
   const recommendationContinuation =
     isRecommendationContinuation({
@@ -351,7 +472,7 @@ async function buildReply({
   }
 
   /*
-   * המלצה חכמה חדשה.
+   * המלצה חדשה.
    */
   const recommendationResponse =
     getRecommendationResponse({
@@ -371,7 +492,7 @@ async function buildReply({
   }
 
   /*
-   * שיחת התעניינות כללית.
+   * התעניינות כללית.
    */
   const interestResponse =
     getInterestResponse({
@@ -435,7 +556,7 @@ async function buildReply({
   }
 
   /*
-   * OpenAI הוא המוצא האחרון.
+   * OpenAI רק כשאין מסלול מובנה.
    */
   const reply =
     await generateReply(

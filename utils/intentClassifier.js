@@ -1,18 +1,24 @@
 const normalize = (text = "") =>
-  text
+  String(text)
     .toLowerCase()
     .replace(/[״"'’`]/g, "")
-    .replace(/[?!.,:;()\[\]{}]/g, " ")
+    .replace(/[?!.,:;()[\]{}]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-const includesAny = (text, phrases) =>
+const includesAny = (
+  text,
+  phrases = []
+) =>
   phrases.some((phrase) =>
     text.includes(phrase)
   );
 
-function classifyIntent(message = "") {
-  const text = normalize(message);
+function classifyIntent(
+  message = ""
+) {
+  const text =
+    normalize(message);
 
   if (!text) {
     return {
@@ -21,6 +27,9 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * יצירת קשר.
+   */
   if (
     includesAny(text, [
       "מספר טלפון",
@@ -36,12 +45,16 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * סניפים / מיקום.
+   */
   if (
     includesAny(text, [
       "איפה אתם",
       "כתובת",
       "מיקום",
       "סניפים",
+      "איזה סניפים",
       "איפה נמצאים",
     ])
   ) {
@@ -51,6 +64,9 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * גיל מינימום.
+   */
   if (
     includesAny(text, [
       "מאיזה גיל",
@@ -65,12 +81,17 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * אימון ניסיון.
+   */
   if (
     includesAny(text, [
       "שיעור ניסיון",
       "אימון ניסיון",
       "ניסיון",
       "לנסות",
+      "אפשר לנסות",
+      "רוצה לנסות",
     ])
   ) {
     return {
@@ -79,9 +100,20 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * מחיר.
+   *
+   * חשוב לכלול גם שאלות המשך
+   * כמו "כמה זה עולה?"
+   */
   if (
     includesAny(text, [
       "כמה עולה",
+      "כמה זה עולה",
+      "כמה זה יעלה",
+      "מה המחיר",
+      "מה העלות",
+      "כמה זה",
       "מחיר",
       "מחירים",
       "מחירון",
@@ -91,29 +123,40 @@ function classifyIntent(message = "") {
   ) {
     return {
       intent: "pricing",
-      confidence: 0.9,
+      confidence: 0.92,
     };
   }
 
+  /*
+   * אימון אישי.
+   */
   if (
     includesAny(text, [
       "אימון אישי",
       "מאמן אישי",
+      "שיעור פרטי",
       "פרטי",
     ])
   ) {
     return {
-      intent: "personal_training",
+      intent:
+        "personal_training",
       confidence: 0.93,
     };
   }
 
+  /*
+   * מבוגרים.
+   */
   if (
     includesAny(text, [
       "מבוגרים",
       "למבוגר",
+      "למבוגרת",
       "אני מבוגר",
+      "אני מבוגרת",
       "מבוגר מתחיל",
+      "מבוגרת מתחילה",
     ])
   ) {
     return {
@@ -122,14 +165,23 @@ function classifyIntent(message = "") {
     };
   }
 
+  /*
+   * הרשמה / ליד.
+   */
   if (
     includesAny(text, [
       "להירשם",
+      "להרשם",
       "הרשמה",
+      "אני רוצה להירשם",
+      "אני רוצה להרשם",
       "רוצה להצטרף",
       "רוצה להתחיל",
+      "תרשמו אותי",
       "תחזרו אליי",
+      "תחזרו אלי",
       "שיחזרו אליי",
+      "שיחזרו אלי",
     ])
   ) {
     return {
@@ -138,54 +190,58 @@ function classifyIntent(message = "") {
     };
   }
 
-if (
-  includesAny(text, [
-    // מחבטים
-    "מחבט",
-    "מחבטים",
-    "רכישת מחבט",
-    "לקנות מחבט",
-    "קניית מחבט",
+  /*
+   * ציוד טניס.
+   */
+  if (
+    includesAny(text, [
+      // מחבטים
+      "מחבט",
+      "מחבטים",
+      "רכישת מחבט",
+      "לקנות מחבט",
+      "קניית מחבט",
 
-    // גריפים
-    "גריפ",
-    "גריפים",
-    "אוברגריפ",
-    "אחיזה",
+      // גריפים
+      "גריפ",
+      "גריפים",
+      "אוברגריפ",
+      "אחיזה",
 
-    // גידים
-    "גיד",
-    "גידים",
-    "מיתר",
-    "מיתרים",
-    "שזירה",
+      // גידים
+      "גיד",
+      "גידים",
+      "מיתר",
+      "מיתרים",
+      "שזירה",
 
-    // נעליים
-    "נעל",
-    "נעלי טניס",
-    "נעליים",
+      // נעליים
+      "נעל",
+      "נעלי טניס",
+      "נעליים",
 
-    // כדורים
-    "כדור",
-    "כדורים",
+      // כדורים
+      "כדור",
+      "כדורים",
 
-    // ציוד נוסף
-    "ציוד",
-    "ציוד טניס",
-    "תיק",
-    "תיק מחבטים",
-    "בולם",
-    "בולם זעזועים",
-    "סופג זעזועים",
-    "סרט זיעה",
-    "כובע",
-  ])
-) {
-  return {
-    intent: "tennis_equipment",
-    confidence: 0.98,
-  };
-}
+      // ציוד נוסף
+      "ציוד",
+      "ציוד טניס",
+      "תיק",
+      "תיק מחבטים",
+      "בולם",
+      "בולם זעזועים",
+      "סופג זעזועים",
+      "סרט זיעה",
+      "כובע",
+    ])
+  ) {
+    return {
+      intent:
+        "tennis_equipment",
+      confidence: 0.98,
+    };
+  }
 
   return {
     intent: "openai",

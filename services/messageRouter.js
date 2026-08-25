@@ -83,6 +83,47 @@ function hasRecentLeadIntent(
   return false;
 }
 
+function isRecommendationContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  const lastAssistantMessage =
+    [...conversationHistory]
+      .reverse()
+      .find(
+        (message) =>
+          message?.role ===
+            "assistant" &&
+          typeof message.content ===
+            "string"
+      )?.content || "";
+
+  const isExperienceAnswer =
+    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|שיחק בעבר|שיחקה בעבר|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה/.test(
+      text
+    );
+
+  const assistantAskedExperience =
+    lastAssistantMessage.includes(
+      "מתחיל לגמרי"
+    ) ||
+    lastAssistantMessage.includes(
+      "כבר שיחק בעבר"
+    ) ||
+    lastAssistantMessage.includes(
+      "רמת הניסיון"
+    );
+
+  return (
+    isExperienceAnswer &&
+    assistantAskedExperience
+  );
+}
+
 function buildLeadStartResponse(
   userProfile = {}
 ) {
@@ -222,8 +263,41 @@ async function buildReply({
   }
 
   /*
-   * המלצה חכמה.
-   * חשוב שתבוא לפני interest.
+   * המשך של שיחת המלצה.
+   * למשל:
+   * הבוט שאל אם מתחיל או מנוסה,
+   * והלקוח ענה רק "מתחיל".
+   */
+  const recommendationContinuation =
+    isRecommendationContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (recommendationContinuation) {
+    const continuationResponse =
+      getRecommendationResponse({
+        userMessage,
+        userProfile,
+        conversationIntent: {
+          stage: "recommendation",
+          confidence: 1,
+        },
+      });
+
+    if (continuationResponse) {
+      return {
+        source: "recommendation",
+        reply:
+          continuationResponse,
+        updates: {},
+        completed: false,
+      };
+    }
+  }
+
+  /*
+   * המלצה חכמה חדשה.
    */
   const recommendationResponse =
     getRecommendationResponse({

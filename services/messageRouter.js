@@ -179,7 +179,7 @@ function isRecommendationContinuation({
     );
 
   const isExperienceAnswer =
-    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|שיחק בעבר|שיחקה בעבר|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה/.test(
+    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחקתי|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה|יש לי ניסיון/.test(
       text
     );
 
@@ -227,6 +227,114 @@ function isAdultFormatContinuation({
     isFormatAnswer &&
     assistantAskedFormat
   );
+}
+
+/*
+ * מזהה את המטרה של מבוגר
+ * שכבר יש לו ניסיון.
+ */
+function normalizeGoal(
+  message = ""
+) {
+  const text = String(message)
+    .toLowerCase()
+    .trim();
+
+  if (
+    text.includes("טכניקה") ||
+    text.includes("שיפור טכניקה")
+  ) {
+    return "שיפור טכניקה";
+  }
+
+  if (
+    text.includes("כושר") ||
+    text.includes("כושר גופני")
+  ) {
+    return "כושר";
+  }
+
+  if (
+    text.includes("משחקים") ||
+    text.includes("יותר משחק") ||
+    text.includes("לשחק יותר")
+  ) {
+    return "משחקים";
+  }
+
+  return null;
+}
+
+function isRecommendationGoalContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const goal =
+    normalizeGoal(userMessage);
+
+  if (!goal) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "מה חשוב לך יותר כרגע"
+    ) &&
+    (
+      lastAssistantMessage.includes(
+        "טכניקה"
+      ) ||
+      lastAssistantMessage.includes(
+        "כושר"
+      ) ||
+      lastAssistantMessage.includes(
+        "משחקים"
+      )
+    )
+  );
+}
+
+function buildGoalResponse(
+  goal
+) {
+  if (goal === "שיפור טכניקה") {
+    return [
+      "מעולה 😊",
+      "",
+      "אם המטרה היא שיפור טכניקה, כדאי להתאים מסגרת שתאפשר עבודה מסודרת על החבטות, התנועה במגרש והדיוק.",
+      "",
+      "באיזה סניף יהיה לך הכי נוח להתאמן?",
+      "• גלי הדר – ראשון לציון",
+      "• בית חשמונאי",
+    ].join("\n");
+  }
+
+  if (goal === "כושר") {
+    return [
+      "מעולה 😊",
+      "",
+      "אם המטרה היא גם לשפר כושר, אפשר להתאים אימונים שמשלבים טניס עם הרבה תנועה, עבודת רגליים וקצב משחק.",
+      "",
+      "באיזה סניף יהיה לך הכי נוח להתאמן?",
+      "• גלי הדר – ראשון לציון",
+      "• בית חשמונאי",
+    ].join("\n");
+  }
+
+  return [
+    "מעולה 😊",
+    "",
+    "אם המטרה היא יותר משחקים, כדאי להתאים מסגרת שתאפשר הרבה זמן משחק מול שחקנים ברמה מתאימה.",
+    "",
+    "באיזה סניף יהיה לך הכי נוח להתאמן?",
+    "• גלי הדר – ראשון לציון",
+    "• בית חשמונאי",
+  ].join("\n");
 }
 
 function normalizeBranch(
@@ -501,6 +609,9 @@ async function buildReply({
     );
   }
 
+  /*
+   * תשובה לשאלת רמת הניסיון.
+   */
   const recommendationContinuation =
     isRecommendationContinuation({
       userMessage,
@@ -529,6 +640,9 @@ async function buildReply({
     }
   }
 
+  /*
+   * תשובה לשאלה קבוצה או אישי.
+   */
   const adultFormatContinuation =
     isAdultFormatContinuation({
       userMessage,
@@ -558,7 +672,35 @@ async function buildReply({
   }
 
   /*
-   * המשתמש ענה על שאלת הסניף
+   * תשובה לשאלת המטרה:
+   * טכניקה / כושר / משחקים.
+   */
+  const recommendationGoalContinuation =
+    isRecommendationGoalContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (
+    recommendationGoalContinuation
+  ) {
+    const goal =
+      normalizeGoal(userMessage);
+
+    return {
+      source:
+        "recommendation-goal",
+      reply:
+        buildGoalResponse(goal),
+      updates: {
+        goal,
+      },
+      completed: false,
+    };
+  }
+
+  /*
+   * תשובה לשאלת הסניף
    * בתוך מסלול המלצה.
    */
   const recommendationBranchContinuation =
@@ -597,7 +739,9 @@ async function buildReply({
         "",
         trialText,
         "",
-        "תרצו שאעזור להתקדם עם אימון ניסיון?",
+        isAdult
+          ? "תרצה שאעזור להתקדם עם אימון ניסיון?"
+          : "תרצו שאעזור להתקדם עם אימון ניסיון?",
       ].join("\n"),
       updates: {
         branch,
@@ -606,6 +750,9 @@ async function buildReply({
     };
   }
 
+  /*
+   * המלצה חדשה.
+   */
   const recommendationResponse =
     getRecommendationResponse({
       userMessage,

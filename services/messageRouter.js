@@ -230,9 +230,52 @@ function isAdultFormatContinuation({
 }
 
 /*
- * מזהה את המטרה של מבוגר
- * שכבר יש לו ניסיון.
+ * ילד שכבר שיחק בעבר:
+ * הבוט שאל כמה זמן ובאיזו רמה.
  */
+function isChildExperienceDetailsContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .trim();
+
+  if (!text) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "כמה זמן הוא שיחק בעבר ובאיזו רמה בערך"
+    ) ||
+    (
+      lastAssistantMessage.includes(
+        "כמה זמן"
+      ) &&
+      lastAssistantMessage.includes(
+        "באיזו רמה"
+      )
+    )
+  );
+}
+
+function buildChildExperienceDetailsResponse() {
+  return [
+    "מעולה 😊",
+    "",
+    "זה עוזר להבין טוב יותר את הרקע שלו. ההתאמה הסופית לקבוצה תיעשה לפי הרמה בפועל.",
+    "",
+    "באיזה סניף יהיה לכם הכי נוח להתאמן?",
+    "• גלי הדר – ראשון לציון",
+    "• בית חשמונאי",
+  ].join("\n");
+}
+
 function normalizeGoal(
   message = ""
 ) {
@@ -381,6 +424,9 @@ function isRecommendationBranchContinuation({
   return (
     lastAssistantMessage.includes(
       "באיזה סניף יהיה לך הכי נוח להתאמן"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף יהיה לכם הכי נוח להתאמן"
     ) ||
     lastAssistantMessage.includes(
       "באיזה סניף יהיה לכם הכי נוח"
@@ -610,7 +656,7 @@ async function buildReply({
   }
 
   /*
-   * תשובה לשאלת רמת הניסיון.
+   * תשובה לשאלה האם מתחיל או מנוסה.
    */
   const recommendationContinuation =
     isRecommendationContinuation({
@@ -641,7 +687,31 @@ async function buildReply({
   }
 
   /*
-   * תשובה לשאלה קבוצה או אישי.
+   * ילד עם ניסיון:
+   * תשובה לכמה זמן שיחק ובאיזו רמה.
+   */
+  const childExperienceDetailsContinuation =
+    isChildExperienceDetailsContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (
+    childExperienceDetailsContinuation
+  ) {
+    return {
+      source:
+        "recommendation-child-experience",
+      reply:
+        buildChildExperienceDetailsResponse(),
+      updates: {},
+      completed: false,
+    };
+  }
+
+  /*
+   * מבוגר:
+   * קבוצה או אישי.
    */
   const adultFormatContinuation =
     isAdultFormatContinuation({
@@ -672,7 +742,7 @@ async function buildReply({
   }
 
   /*
-   * תשובה לשאלת המטרה:
+   * מטרה:
    * טכניקה / כושר / משחקים.
    */
   const recommendationGoalContinuation =
@@ -700,8 +770,7 @@ async function buildReply({
   }
 
   /*
-   * תשובה לשאלת הסניף
-   * בתוך מסלול המלצה.
+   * בחירת סניף בתוך מסלול המלצה.
    */
   const recommendationBranchContinuation =
     isRecommendationBranchContinuation({

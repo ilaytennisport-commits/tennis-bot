@@ -7,10 +7,8 @@ function detectExperience(
 
   /*
    * מתחיל / ללא ניסיון.
-   *
-   * חשוב לבדוק את זה לפני experienced,
-   * כדי שמשפט כמו "אף פעם לא שיחקתי"
-   * לא יזוהה בטעות כבעל ניסיון.
+   * נבדק ראשון כדי ש-"אף פעם לא שיחקתי"
+   * לא יזוהה כבעל ניסיון.
    */
   if (
     /מתחיל|מתחילה|מתחיל מאפס|מתחילה מאפס|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא שיחקתי|מעולם לא שיחקתי|אין לי ניסיון|בלי ניסיון/.test(
@@ -21,10 +19,10 @@ function detectExperience(
   }
 
   /*
-   * שחקן עם ניסיון קודם.
+   * ניסיון קודם.
    */
   if (
-    /שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|שיחקתי פעם|כבר שיחקתי|כבר משחק|כבר משחקת|אני משחק|אני משחקת|יש לי ניסיון|יש לי קצת ניסיון|יש לי ניסיון קודם|שיחקתי כמה שנים|שיחקתי כמה חודשים|מתקדם|מתקדמת|מנוסה/.test(
+    /שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|שיחקתי פעם|כבר שיחקתי|כבר שיחק|כבר שיחקה|כבר משחק|כבר משחקת|אני משחק|אני משחקת|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|יש לי קצת ניסיון|יש לו קצת ניסיון|יש לה קצת ניסיון|יש לי ניסיון קודם|שיחקתי כמה שנים|שיחקתי כמה חודשים|מתקדם|מתקדמת|מנוסה/.test(
       text
     )
   ) {
@@ -60,14 +58,42 @@ function detectAdultFormat(
   return null;
 }
 
+/*
+ * מאפשר לזהות בקשת המלצה גם בניסוחים
+ * שלא נתפסו עדיין ב-conversationIntentService.
+ */
+function isRecommendationRequest(
+  message = "",
+  conversationIntent = {}
+) {
+  if (
+    conversationIntent.stage ===
+    "recommendation"
+  ) {
+    return true;
+  }
+
+  const text = String(message)
+    .toLowerCase()
+    .trim();
+
+  return (
+    /מה מתאים|מה יתאים|מה מומלץ|תמליץ|ממליץ|מסגרת מתאימה|מסגרת שמתאימה|מחפש לו מסגרת|מחפשת לו מסגרת|מחפש לה מסגרת|מחפשת לה מסגרת|איזה חוג|איזו קבוצה|איזה מסלול/.test(
+      text
+    )
+  );
+}
+
 function getRecommendationResponse({
   userMessage = "",
   userProfile = {},
   conversationIntent = {},
 }) {
   if (
-    conversationIntent.stage !==
-    "recommendation"
+    !isRecommendationRequest(
+      userMessage,
+      conversationIntent
+    )
   ) {
     return null;
   }
@@ -95,6 +121,9 @@ function getRecommendationResponse({
     age > 0 &&
     age < 18
   ) {
+    /*
+     * ילד מתחיל.
+     */
     if (
       experience === "beginner"
     ) {
@@ -110,18 +139,25 @@ function getRecommendationResponse({
       ].join("\n");
     }
 
+    /*
+     * ילד עם ניסיון קודם.
+     * כאן לא קופצים עדיין לסניף.
+     */
     if (
       experience === "experienced"
     ) {
       return [
-        "בשמחה 😊",
+        "יופי 😊",
         "",
-        `לילד בן ${age} שכבר שיחק בעבר, כדאי להתאים קבוצה לפי הרמה בפועל ולא רק לפי הגיל.`,
+        `בגיל ${age} ועם ניסיון קודם בטניס, כדאי להתאים לו קבוצה לפי הרמה בפועל ולא רק לפי הגיל.`,
         "",
-        "כמה זמן הוא כבר משחק?"
+        "כדי שאכוון נכון — כמה זמן הוא שיחק בעבר ובאיזו רמה בערך?"
       ].join("\n");
     }
 
+    /*
+     * הגיל ידוע, רמת הניסיון עדיין לא.
+     */
     return [
       "בשמחה 😊",
       "",
@@ -139,7 +175,7 @@ function getRecommendationResponse({
     age >= 18
   ) {
     /*
-     * המשתמש כבר בחר קבוצה.
+     * המשתמש בחר קבוצה.
      */
     if (
       adultFormat === "group"
@@ -158,7 +194,7 @@ function getRecommendationResponse({
     }
 
     /*
-     * המשתמש כבר בחר אימון אישי.
+     * המשתמש בחר אימון אישי.
      */
     if (
       adultFormat === "personal"
@@ -192,7 +228,7 @@ function getRecommendationResponse({
     }
 
     /*
-     * מבוגר שכבר שיחק בעבר.
+     * מבוגר עם ניסיון.
      */
     if (
       experience === "experienced"
@@ -231,4 +267,5 @@ module.exports = {
   getRecommendationResponse,
   detectExperience,
   detectAdultFormat,
+  isRecommendationRequest,
 };

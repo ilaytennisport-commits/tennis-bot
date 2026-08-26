@@ -24,6 +24,32 @@ function detectExperience(
   return null;
 }
 
+function detectAdultFormat(
+  message = ""
+) {
+  const text = String(message)
+    .toLowerCase()
+    .trim();
+
+  if (
+    /קבוצה|קבוצתי|קבוצתית|חוג/.test(
+      text
+    )
+  ) {
+    return "group";
+  }
+
+  if (
+    /אישי|אישית|פרטי|פרטית|מאמן אישי/.test(
+      text
+    )
+  ) {
+    return "personal";
+  }
+
+  return null;
+}
+
 function getRecommendationResponse({
   userMessage = "",
   userProfile = {},
@@ -41,6 +67,13 @@ function getRecommendationResponse({
 
   const experience =
     detectExperience(
+      userMessage
+    ) ||
+    userProfile.experience ||
+    null;
+
+  const adultFormat =
+    detectAdultFormat(
       userMessage
     );
 
@@ -91,6 +124,34 @@ function getRecommendationResponse({
     Number.isFinite(age) &&
     age >= 18
   ) {
+    /*
+     * תשובה לשאלה:
+     * קבוצה או אישי?
+     */
+    if (adultFormat === "group") {
+      return [
+        "מעולה 😊",
+        "",
+        "למתחיל שמעדיף קבוצה, אימון קבוצתי הוא בדרך כלל בחירה מצוינת — לומדים את הבסיס בהדרגה וגם נהנים מהאווירה והמשחק עם אחרים.",
+        "",
+        "באיזה סניף יהיה לך הכי נוח להתאמן?",
+        "• גלי הדר – ראשון לציון",
+        "• בית חשמונאי"
+      ].join("\n");
+    }
+
+    if (adultFormat === "personal") {
+      return [
+        "מעולה 😊",
+        "",
+        "אימון אישי מתאים במיוחד למי שרוצה קצב אישי, עבודה ממוקדת על טכניקה והרבה תשומת לב מהמאמן.",
+        "",
+        "באיזה סניף יהיה לך הכי נוח להתאמן?",
+        "• גלי הדר – ראשון לציון",
+        "• בית חשמונאי"
+      ].join("\n");
+    }
+
     if (experience === "beginner") {
       return [
         "בשמחה 😊",
@@ -135,4 +196,5 @@ function getRecommendationResponse({
 module.exports = {
   getRecommendationResponse,
   detectExperience,
+  detectAdultFormat,
 };

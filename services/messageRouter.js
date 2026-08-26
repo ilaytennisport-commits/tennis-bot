@@ -211,6 +211,39 @@ function isRecommendationContinuation({
   );
 }
 
+/*
+ * המשך בחירת מסגרת למבוגר:
+ * קבוצה או אימון אישי.
+ */
+function isAdultFormatContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  const isFormatAnswer =
+    /קבוצה|קבוצתי|קבוצתית|חוג|אישי|אישית|פרטי|פרטית|מאמן אישי/.test(
+      text
+    );
+
+  const assistantAskedFormat =
+    lastAssistantMessage.includes(
+      "אתה מעדיף קבוצה או מסגרת אישית יותר"
+    );
+
+  return (
+    isFormatAnswer &&
+    assistantAskedFormat
+  );
+}
+
 function buildLeadStartResponse(
   userProfile = {},
   extraUpdates = {}
@@ -284,6 +317,7 @@ function buildReadyResponse(
     parts.push(
       `לפי מה שכבר סיפרת לי — גיל ${userProfile.age}, ${experienceText} — אפשר להתקדם בצורה מסודרת.`
     );
+
     parts.push("");
   }
 
@@ -291,6 +325,7 @@ function buildReadyResponse(
     parts.push(
       `גם הסניף ${userProfile.branch} כבר שמור לי.`
     );
+
     parts.push("");
   }
 
@@ -299,6 +334,7 @@ function buildReadyResponse(
   );
 
   parts.push("");
+
   parts.push(
     "תרצו שאעזור להתקדם עם אימון ניסיון?"
   );
@@ -441,7 +477,7 @@ async function buildReply({
   }
 
   /*
-   * המשך שיחת המלצה.
+   * המשך שיחת המלצה לפי רמת ניסיון.
    */
   const recommendationContinuation =
     isRecommendationContinuation({
@@ -450,6 +486,38 @@ async function buildReply({
     });
 
   if (recommendationContinuation) {
+    const continuationResponse =
+      getRecommendationResponse({
+        userMessage,
+        userProfile,
+        conversationIntent: {
+          stage: "recommendation",
+          confidence: 1,
+        },
+      });
+
+    if (continuationResponse) {
+      return {
+        source: "recommendation",
+        reply:
+          continuationResponse,
+        updates: {},
+        completed: false,
+      };
+    }
+  }
+
+  /*
+   * המשך בחירת מסגרת למבוגר:
+   * קבוצה או אישי.
+   */
+  const adultFormatContinuation =
+    isAdultFormatContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (adultFormatContinuation) {
     const continuationResponse =
       getRecommendationResponse({
         userMessage,

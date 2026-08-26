@@ -57,9 +57,6 @@ function getLastAssistantMessage(
   );
 }
 
-/*
- * בודק אם בעבר הייתה בקשת הרשמה מפורשת.
- */
 function hasRecentLeadIntent(
   conversationHistory = []
 ) {
@@ -100,10 +97,6 @@ function hasRecentLeadIntent(
   return false;
 }
 
-/*
- * בודק אם הבוט כרגע נמצא באמצע
- * איסוף פרטי ליד.
- */
 function hasActiveLeadQuestion(
   conversationHistory = []
 ) {
@@ -134,10 +127,6 @@ function hasActiveLeadQuestion(
   );
 }
 
-/*
- * הלקוח ענה "כן" להצעה להתקדם
- * לאימון ניסיון.
- */
 function isTrialConfirmation({
   userMessage = "",
   conversationHistory = [],
@@ -211,10 +200,6 @@ function isRecommendationContinuation({
   );
 }
 
-/*
- * המשך בחירת מסגרת למבוגר:
- * קבוצה או אימון אישי.
- */
 function isAdultFormatContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -241,6 +226,60 @@ function isAdultFormatContinuation({
   return (
     isFormatAnswer &&
     assistantAskedFormat
+  );
+}
+
+function normalizeBranch(
+  message = ""
+) {
+  const text = String(message)
+    .toLowerCase()
+    .trim();
+
+  if (
+    text.includes("גלי הדר") ||
+    text.includes("ראשון לציון") ||
+    text === "ראשון"
+  ) {
+    return "גלי הדר – ראשון לציון";
+  }
+
+  if (
+    text.includes("בית חשמונאי") ||
+    text.includes("חשמונאי")
+  ) {
+    return "בית חשמונאי";
+  }
+
+  return null;
+}
+
+function isRecommendationBranchContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const branch =
+    normalizeBranch(userMessage);
+
+  if (!branch) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "באיזה סניף יהיה לך הכי נוח להתאמן"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף יהיה לכם הכי נוח"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף יהיה לך הכי נוח"
+    )
   );
 }
 
@@ -409,10 +448,6 @@ async function buildReply({
     }
   );
 
-  /*
-   * הלקוח אישר שהוא רוצה להתקדם
-   * עם אימון ניסיון.
-   */
   if (trialConfirmation) {
     const goalUpdates =
       hasValue(userProfile.goal)
@@ -427,18 +462,12 @@ async function buildReply({
     );
   }
 
-  /*
-   * התחלת הרשמה מפורשת.
-   */
   if (startingLeadNow) {
     return buildLeadStartResponse(
       userProfile
     );
   }
 
-  /*
-   * המשך תהליך שכבר התחיל.
-   */
   if (existingLeadFlow) {
     const leadContinuation =
       getLeadContinuation({
@@ -463,10 +492,6 @@ async function buildReply({
     }
   }
 
-  /*
-   * הלקוח מוכן להתקדם,
-   * אבל עוד לא אישר אימון ניסיון.
-   */
   if (
     conversationIntent.stage ===
     "ready"
@@ -476,9 +501,6 @@ async function buildReply({
     );
   }
 
-  /*
-   * המשך שיחת המלצה לפי רמת ניסיון.
-   */
   const recommendationContinuation =
     isRecommendationContinuation({
       userMessage,
@@ -507,10 +529,6 @@ async function buildReply({
     }
   }
 
-  /*
-   * המשך בחירת מסגרת למבוגר:
-   * קבוצה או אישי.
-   */
   const adultFormatContinuation =
     isAdultFormatContinuation({
       userMessage,
@@ -540,8 +558,54 @@ async function buildReply({
   }
 
   /*
-   * המלצה חדשה.
+   * המשתמש ענה על שאלת הסניף
+   * בתוך מסלול המלצה.
    */
+  const recommendationBranchContinuation =
+    isRecommendationBranchContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (
+    recommendationBranchContinuation
+  ) {
+    const branch =
+      normalizeBranch(
+        userMessage
+      );
+
+    const audience =
+      userProfile.audience;
+
+    const isAdult =
+      audience === "adult" ||
+      Number(userProfile.age) >= 18;
+
+    const trialText =
+      isAdult
+        ? "אימון ניסיון למבוגר מתקיים כחלק מקבוצה קיימת ובעלות של 50 ש״ח."
+        : "אימון ניסיון לילדים מתקיים כחלק מקבוצה קיימת וללא עלות.";
+
+    return {
+      source:
+        "recommendation-branch",
+      reply: [
+        "מעולה 😊",
+        "",
+        `רשמתי את הסניף: ${branch}.`,
+        "",
+        trialText,
+        "",
+        "תרצו שאעזור להתקדם עם אימון ניסיון?",
+      ].join("\n"),
+      updates: {
+        branch,
+      },
+      completed: false,
+    };
+  }
+
   const recommendationResponse =
     getRecommendationResponse({
       userMessage,
@@ -559,9 +623,6 @@ async function buildReply({
     };
   }
 
-  /*
-   * התעניינות כללית.
-   */
   const interestResponse =
     getInterestResponse({
       userMessage,
@@ -579,9 +640,6 @@ async function buildReply({
     };
   }
 
-  /*
-   * המשך שיחת ציוד.
-   */
   const equipmentContinuation =
     getEquipmentContinuation({
       userMessage,
@@ -600,9 +658,6 @@ async function buildReply({
     };
   }
 
-  /*
-   * FAQ.
-   */
   const automated =
     getAutomatedResponse(
       userMessage,
@@ -623,9 +678,6 @@ async function buildReply({
     };
   }
 
-  /*
-   * OpenAI רק כשאין מסלול מובנה.
-   */
   const reply =
     await generateReply(
       conversationHistory,

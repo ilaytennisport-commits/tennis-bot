@@ -210,6 +210,33 @@ function hasActiveLeadQuestion(
 
 
 /*
+ * מזהה אם הלקוח שאל שאלה
+ * במקום לענות על פרט הליד.
+ */
+function looksLikeQuestion(
+  message = ""
+) {
+  const text = String(message)
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  if (text.includes("?")) {
+    return true;
+  }
+
+  return (
+    /^(מה|מתי|איפה|איפוא|איך|כמה|איזה|איזו|אילו|האם|למה|באיזה|באיזו|יש |אפשר |ניתן |עד מתי|מאיזה|לאיזה)/.test(
+      text
+    )
+  );
+}
+
+
+/*
  * בקשה מפורשת להתקדם עם ניסיון.
  */
 function isExplicitTrialProgression(
@@ -232,10 +259,6 @@ function isExplicitTrialProgression(
     return false;
   }
 
-  /*
-   * שאלה על אימון ניסיון אינה
-   * אישור להתקדמות.
-   */
   const asksOnlyInformation =
     /כמה עולה|מה המחיר|מחיר|עלות|מתי|באיזה שעה|איפה|כמה זמן/.test(
       text
@@ -902,58 +925,85 @@ async function buildReply({
 
 
   /*
-   * FAQ באמצע איסוף ליד.
+   * שאלה באמצע איסוף ליד.
    *
-   * למשל:
-   * בוט: מה שם המתאמן?
-   * לקוח: באיזה ימים יש אימונים?
+   * אם הלקוח שואל שאלה במקום לתת
+   * שם / גיל / סניף:
    *
-   * עונים לשאלה,
-   * ואז חוזרים לשאלת הליד.
+   * 1. מנסים FAQ.
+   * 2. אם אין FAQ — OpenAI.
+   * 3. תמיד חוזרים לשאלת הליד.
    */
-  if (activeLeadQuestion) {
+  if (
+    activeLeadQuestion &&
+    looksLikeQuestion(
+      userMessage
+    )
+  ) {
+    const pendingLeadQuestion =
+      getPendingLeadQuestion(
+        conversationHistory
+      );
+
     const automatedDuringLead =
       getAutomatedResponse(
         userMessage,
         userProfile
       );
 
+    let interruptionReply = "";
+    let interruptionSource = "";
+
     if (
       automatedDuringLead.handled
     ) {
-      const pendingLeadQuestion =
-        getPendingLeadQuestion(
-          conversationHistory
-        );
-
-      const parts = [
-        automatedDuringLead.response,
-      ];
-
-      if (pendingLeadQuestion) {
-        parts.push("");
-        parts.push(
-          "ולגבי ההמשך 😊"
-        );
-        parts.push("");
-        parts.push(
-          pendingLeadQuestion.reply
-        );
-      }
-
       console.log(
         `⚡ FAQ DURING LEAD (${automatedDuringLead.intent})`
       );
 
-      return {
-        source:
-          "faq-during-lead",
-        reply:
-          parts.join("\n"),
-        updates: {},
-        completed: false,
-      };
+      interruptionReply =
+        automatedDuringLead.response;
+
+      interruptionSource =
+        "faq-during-lead";
+    } else {
+      console.log(
+        "🤖 OPENAI DURING LEAD"
+      );
+
+      interruptionReply =
+        await generateReply(
+          conversationHistory,
+          userProfile
+        );
+
+      interruptionSource =
+        "openai-during-lead";
     }
+
+    const parts = [
+      interruptionReply,
+    ];
+
+    if (pendingLeadQuestion) {
+      parts.push("");
+      parts.push(
+        "ולגבי ההמשך 😊"
+      );
+      parts.push("");
+      parts.push(
+        pendingLeadQuestion.reply
+      );
+    }
+
+    return {
+      source:
+        interruptionSource,
+      reply:
+        parts.join("\n"),
+      updates: {},
+      completed: false,
+    };
   }
 
 

@@ -52,6 +52,53 @@ function getLastAssistantMessage(
 }
 
 
+/*
+ * האם הבוט הציע אימון ניסיון לאחרונה.
+ *
+ * זה מאפשר ללקוח לסטות לרגע ולשאול למשל
+ * "כמה עולה החוג?"
+ * ואז לחזור:
+ * "אוקיי, בוא נתקדם".
+ */
+function hasRecentTrialOffer(
+  conversationHistory = []
+) {
+  const recentMessages =
+    conversationHistory.slice(-16);
+
+  return recentMessages.some(
+    (message) => {
+      if (
+        message?.role !== "assistant" ||
+        typeof message.content !== "string"
+      ) {
+        return false;
+      }
+
+      const text =
+        message.content.toLowerCase();
+
+      return (
+        text.includes(
+          "תרצו שאעזור להתקדם עם אימון ניסיון"
+        ) ||
+        text.includes(
+          "תרצה שאעזור להתקדם עם אימון ניסיון"
+        ) ||
+        (
+          text.includes("אימון ניסיון") &&
+          (
+            text.includes("להתקדם") ||
+            text.includes("תרצו") ||
+            text.includes("תרצה")
+          )
+        )
+      );
+    }
+  );
+}
+
+
 function hasRecentLeadIntent(
   conversationHistory = []
 ) {
@@ -124,6 +171,94 @@ function hasActiveLeadQuestion(
 }
 
 
+/*
+ * זיהוי בקשה מפורשת להתקדם
+ * עם אימון ניסיון.
+ *
+ * עובד גם אם בין הצעת הניסיון
+ * לבין האישור הייתה שאלת FAQ.
+ */
+function isExplicitTrialProgression(
+  userMessage = ""
+) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  if (!text) {
+    return false;
+  }
+
+  const mentionsTrial =
+    /אימון ניסיון|אימון נסיון|שיעור ניסיון|שיעור נסיון/.test(
+      text
+    );
+
+  if (!mentionsTrial) {
+    return false;
+  }
+
+  /*
+   * מונע משאלות מידע כמו:
+   * "כמה עולה אימון ניסיון?"
+   * להפוך בטעות לליד.
+   */
+  const asksOnlyInformation =
+    /כמה עולה|מה המחיר|מחיר|עלות|מתי|באיזה שעה|איפה|כמה זמן/.test(
+      text
+    ) &&
+    !/רוצה|מעוניין|מעוניינת|נתקדם|להתקדם|לקבוע|לקבוע לי|בוא נתקדם|יאללה|קדימה|כן|אשמח/.test(
+      text
+    );
+
+  if (asksOnlyInformation) {
+    return false;
+  }
+
+  return (
+    /רוצה|מעוניין|מעוניינת|נתקדם|להתקדם|לקבוע|בוא נתקדם|יאללה|קדימה|כן|אשמח/.test(
+      text
+    )
+  );
+}
+
+
+/*
+ * אישור כללי להתקדמות לאחר
+ * שכבר הייתה הצעת אימון ניסיון בשיחה.
+ *
+ * לדוגמה:
+ * "כן בוא נתקדם"
+ * "יאללה נתקדם"
+ * "אוקיי קדימה"
+ *
+ * לא כולל "כן" בלבד,
+ * כדי לא ליירט תשובות כן אקראיות.
+ */
+function isRecentTrialProgression({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  if (
+    !hasRecentTrialOffer(
+      conversationHistory
+    )
+  ) {
+    return false;
+  }
+
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  return (
+    /בוא נתקדם|בואו נתקדם|אפשר להתקדם|רוצה להתקדם|רוצים להתקדם|נתקדם|יאללה נתקדם|קדימה נתקדם|כן.*נתקדם|אוקיי.*נתקדם|אז.*נתקדם/.test(
+      text
+    )
+  );
+}
+
+
 function isTrialConfirmation({
   userMessage = "",
   conversationHistory = [],
@@ -132,6 +267,37 @@ function isTrialConfirmation({
     .toLowerCase()
     .trim();
 
+  /*
+   * קודם כל:
+   * בקשה מפורשת לאימון ניסיון
+   * עובדת גם אחרי סטייה מהמסלול.
+   */
+  if (
+    isExplicitTrialProgression(
+      userMessage
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * "בוא נתקדם" וכו'
+   * אחרי הצעת ניסיון קודמת.
+   */
+  if (
+    isRecentTrialProgression({
+      userMessage,
+      conversationHistory,
+    })
+  ) {
+    return true;
+  }
+
+  /*
+   * תשובת "כן" קצרה עדיין דורשת
+   * שהשאלה האחרונה של הבוט
+   * הייתה ישירות הצעת אימון ניסיון.
+   */
   const confirmations = new Set([
     "כן",
     "כן בטח",
@@ -268,9 +434,6 @@ function isRecommendationContinuation({
 /*
  * בודק האם הלקוח כבר נתן
  * גם משך ניסיון וגם אינדיקציה לרמה.
- *
- * לדוגמה:
- * "הוא משחק טניס כבר שנתיים וברמה די טובה"
  */
 function hasChildExperienceDetails(
   userMessage = ""
@@ -828,11 +991,6 @@ async function buildReply({
     });
 
   if (recommendationContinuation) {
-    /*
-     * אם מדובר בילד והלקוח כבר סיפק
-     * גם משך ניסיון וגם רמה,
-     * אין צורך לשאול שוב.
-     */
     const isChild =
       userProfile.audience === "child" ||
       (

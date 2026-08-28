@@ -165,6 +165,56 @@ function isTrialConfirmation({
   );
 }
 
+/*
+ * תשובה לשאלת גיל במסלול המלצה.
+ *
+ * לדוגמה:
+ * בוט: בן או בת כמה המתאמן?
+ * לקוח: 9
+ */
+function isRecommendationAgeContinuation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .trim();
+
+  const ageMatch =
+    text.match(/^\d{1,2}$/);
+
+  if (!ageMatch) {
+    return false;
+  }
+
+  const age =
+    Number(ageMatch[0]);
+
+  if (
+    !Number.isInteger(age) ||
+    age < 4 ||
+    age > 99
+  ) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    lastAssistantMessage.includes(
+      "בן או בת כמה המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה גיל המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה גיל הילד או הילדה?"
+    )
+  );
+}
+
 function isRecommendationContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -602,6 +652,9 @@ async function buildReply({
     }
   );
 
+  /*
+   * אישור להתקדם לאימון ניסיון.
+   */
   if (trialConfirmation) {
     const goalUpdates =
       hasValue(userProfile.goal)
@@ -616,12 +669,18 @@ async function buildReply({
     );
   }
 
+  /*
+   * הרשמה מפורשת.
+   */
   if (startingLeadNow) {
     return buildLeadStartResponse(
       userProfile
     );
   }
 
+  /*
+   * המשך ליד שכבר התחיל.
+   */
   if (existingLeadFlow) {
     const leadContinuation =
       getLeadContinuation({
@@ -646,6 +705,44 @@ async function buildReply({
     }
   }
 
+  /*
+   * תשובה לשאלת גיל במסלול recommendation.
+   */
+  const recommendationAgeContinuation =
+    isRecommendationAgeContinuation({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (
+    recommendationAgeContinuation
+  ) {
+    const continuationResponse =
+      getRecommendationResponse({
+        userMessage,
+        userProfile,
+        conversationIntent: {
+          stage: "recommendation",
+          confidence: 1,
+        },
+      });
+
+    if (continuationResponse) {
+      return {
+        source:
+          "recommendation-age",
+        reply:
+          continuationResponse,
+        updates: {},
+        completed: false,
+      };
+    }
+  }
+
+  /*
+   * הלקוח מוכן להתקדם,
+   * אך עדיין לא אישר אימון ניסיון.
+   */
   if (
     conversationIntent.stage ===
     "ready"
@@ -839,6 +936,9 @@ async function buildReply({
     };
   }
 
+  /*
+   * התעניינות כללית.
+   */
   const interestResponse =
     getInterestResponse({
       userMessage,
@@ -856,6 +956,9 @@ async function buildReply({
     };
   }
 
+  /*
+   * המשך שיחת ציוד.
+   */
   const equipmentContinuation =
     getEquipmentContinuation({
       userMessage,
@@ -874,6 +977,9 @@ async function buildReply({
     };
   }
 
+  /*
+   * FAQ.
+   */
   const automated =
     getAutomatedResponse(
       userMessage,
@@ -894,6 +1000,9 @@ async function buildReply({
     };
   }
 
+  /*
+   * OpenAI הוא המוצא האחרון.
+   */
   const reply =
     await generateReply(
       conversationHistory,

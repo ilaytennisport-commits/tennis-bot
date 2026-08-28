@@ -5,27 +5,19 @@ const {
 const {
   detectConversationIntent,
   shouldStartLeadFlow,
-} = require(
-  "./conversationIntentService"
-);
+} = require("./conversationIntentService");
 
 const {
   getRecommendationResponse,
-} = require(
-  "./recommendationService"
-);
+} = require("./recommendationService");
 
 const {
   getInterestResponse,
-} = require(
-  "./interestConversationService"
-);
+} = require("./interestConversationService");
 
 const {
   getEquipmentContinuation,
-} = require(
-  "./equipmentConversationService"
-);
+} = require("./equipmentConversationService");
 
 const {
   getAutomatedResponse,
@@ -35,6 +27,7 @@ const {
   generateReply,
 } = require("./openaiService");
 
+
 function hasValue(value) {
   return (
     value !== undefined &&
@@ -42,6 +35,7 @@ function hasValue(value) {
     String(value).trim() !== ""
   );
 }
+
 
 function getLastAssistantMessage(
   conversationHistory = []
@@ -56,6 +50,7 @@ function getLastAssistantMessage(
       )?.content || ""
   );
 }
+
 
 function hasRecentLeadIntent(
   conversationHistory = []
@@ -97,6 +92,7 @@ function hasRecentLeadIntent(
   return false;
 }
 
+
 function hasActiveLeadQuestion(
   conversationHistory = []
 ) {
@@ -126,6 +122,7 @@ function hasActiveLeadQuestion(
     )
   );
 }
+
 
 function isTrialConfirmation({
   userMessage = "",
@@ -164,6 +161,7 @@ function isTrialConfirmation({
     )
   );
 }
+
 
 /*
  * תשובה לשאלת גיל במסלול המלצה.
@@ -215,6 +213,11 @@ function isRecommendationAgeContinuation({
   );
 }
 
+
+/*
+ * תשובה לשאלה האם המתאמן מתחיל
+ * או בעל ניסיון קודם.
+ */
 function isRecommendationContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -228,11 +231,25 @@ function isRecommendationContinuation({
       conversationHistory
     );
 
+  /*
+   * מכסה למשל:
+   *
+   * "מתחיל"
+   * "אף פעם לא שיחק"
+   * "הוא כבר שיחק בעבר"
+   * "הוא משחק טניס כבר שנתיים"
+   * "משחק כבר כמה שנים"
+   * "ברמה די טובה"
+   */
   const isExperienceAnswer =
-    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחקתי|כבר משחק|כבר משחקת|מתקדם|מתקדמת|מנוסה|יש לי ניסיון/.test(
+    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא|מעולם לא|בלי ניסיון|אין לי ניסיון|אין לו ניסיון|אין לה ניסיון|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחק|כבר שיחקה|כבר שיחקתי|כבר משחק|כבר משחקת|משחק טניס|משחקת טניס|משחק כבר|משחקת כבר|שיחק טניס|שיחקה טניס|שיחקתי טניס|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|ניסיון קודם|שנה|שנתיים|שנים|חודשים|חודש|רמה טובה|ברמה טובה|ברמה די טובה|מתקדם|מתקדמת|מנוסה/.test(
       text
     );
 
+  /*
+   * מוודאים שהבוט באמת שאל
+   * על רמת הניסיון.
+   */
   const assistantAskedExperience =
     lastAssistantMessage.includes(
       "מתחיל לגמרי"
@@ -241,7 +258,18 @@ function isRecommendationContinuation({
       "כבר שיחק בעבר"
     ) ||
     lastAssistantMessage.includes(
+      "כבר שיחקה בעבר"
+    ) ||
+    lastAssistantMessage.includes(
       "רמת הניסיון"
+    ) ||
+    (
+      lastAssistantMessage.includes(
+        "מתחיל"
+      ) &&
+      lastAssistantMessage.includes(
+        "שיחק"
+      )
     );
 
   return (
@@ -249,6 +277,7 @@ function isRecommendationContinuation({
     assistantAskedExperience
   );
 }
+
 
 function isAdultFormatContinuation({
   userMessage = "",
@@ -278,6 +307,7 @@ function isAdultFormatContinuation({
     assistantAskedFormat
   );
 }
+
 
 /*
  * ילד שכבר שיחק בעבר:
@@ -314,6 +344,7 @@ function isChildExperienceDetailsContinuation({
   );
 }
 
+
 function buildChildExperienceDetailsResponse() {
   return [
     "מעולה 😊",
@@ -325,6 +356,7 @@ function buildChildExperienceDetailsResponse() {
     "• בית חשמונאי",
   ].join("\n");
 }
+
 
 function normalizeGoal(
   message = ""
@@ -357,6 +389,7 @@ function normalizeGoal(
 
   return null;
 }
+
 
 function isRecommendationGoalContinuation({
   userMessage = "",
@@ -391,6 +424,7 @@ function isRecommendationGoalContinuation({
     )
   );
 }
+
 
 function buildGoalResponse(
   goal
@@ -430,6 +464,7 @@ function buildGoalResponse(
   ].join("\n");
 }
 
+
 function normalizeBranch(
   message = ""
 ) {
@@ -454,6 +489,7 @@ function normalizeBranch(
 
   return null;
 }
+
 
 function isRecommendationBranchContinuation({
   userMessage = "",
@@ -486,6 +522,7 @@ function isRecommendationBranchContinuation({
     )
   );
 }
+
 
 function buildLeadStartResponse(
   userProfile = {},
@@ -540,6 +577,7 @@ function buildLeadStartResponse(
   };
 }
 
+
 function buildReadyResponse(
   userProfile = {}
 ) {
@@ -589,6 +627,7 @@ function buildReadyResponse(
     completed: false,
   };
 }
+
 
 async function buildReply({
   userMessage,
@@ -652,6 +691,7 @@ async function buildReply({
     }
   );
 
+
   /*
    * אישור להתקדם לאימון ניסיון.
    */
@@ -669,6 +709,7 @@ async function buildReply({
     );
   }
 
+
   /*
    * הרשמה מפורשת.
    */
@@ -677,6 +718,7 @@ async function buildReply({
       userProfile
     );
   }
+
 
   /*
    * המשך ליד שכבר התחיל.
@@ -704,6 +746,7 @@ async function buildReply({
       };
     }
   }
+
 
   /*
    * תשובה לשאלת גיל במסלול recommendation.
@@ -739,6 +782,7 @@ async function buildReply({
     }
   }
 
+
   /*
    * הלקוח מוכן להתקדם,
    * אך עדיין לא אישר אימון ניסיון.
@@ -751,6 +795,7 @@ async function buildReply({
       userProfile
     );
   }
+
 
   /*
    * תשובה לשאלה האם מתחיל או מנוסה.
@@ -783,6 +828,7 @@ async function buildReply({
     }
   }
 
+
   /*
    * ילד עם ניסיון:
    * תשובה לכמה זמן שיחק ובאיזו רמה.
@@ -805,6 +851,7 @@ async function buildReply({
       completed: false,
     };
   }
+
 
   /*
    * מבוגר:
@@ -838,6 +885,7 @@ async function buildReply({
     }
   }
 
+
   /*
    * מטרה:
    * טכניקה / כושר / משחקים.
@@ -865,6 +913,7 @@ async function buildReply({
       completed: false,
     };
   }
+
 
   /*
    * בחירת סניף בתוך מסלול המלצה.
@@ -916,6 +965,7 @@ async function buildReply({
     };
   }
 
+
   /*
    * המלצה חדשה.
    */
@@ -935,6 +985,7 @@ async function buildReply({
       completed: false,
     };
   }
+
 
   /*
    * התעניינות כללית.
@@ -956,6 +1007,7 @@ async function buildReply({
     };
   }
 
+
   /*
    * המשך שיחת ציוד.
    */
@@ -976,6 +1028,7 @@ async function buildReply({
       completed: false,
     };
   }
+
 
   /*
    * FAQ.
@@ -1000,6 +1053,7 @@ async function buildReply({
     };
   }
 
+
   /*
    * OpenAI הוא המוצא האחרון.
    */
@@ -1016,6 +1070,7 @@ async function buildReply({
     completed: false,
   };
 }
+
 
 module.exports = {
   buildReply,

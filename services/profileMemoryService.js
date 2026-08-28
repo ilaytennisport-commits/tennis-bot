@@ -1,8 +1,15 @@
 function extractAge(message = "") {
   const text = String(message).trim();
 
+  // דוגמאות:
+  // בן 9
+  // בת 11
+  // גיל 35
+  // הבן שלי בן 9
+  // הילדה בת 7
+  // אני בן 42
   const match = text.match(
-    /(?:בן|בת|גיל)\s*(\d{1,2})/
+    /(?:בן|בת|גיל)\s*:?\s*(\d{1,2})/u
   );
 
   if (!match) {
@@ -21,55 +28,47 @@ function extractAge(message = "") {
 function extractHeight(message = "") {
   const text = String(message).trim();
 
+  // דוגמאות:
+  // גובה 140
+  // גובה: 140
+  // גובה - 140
   const explicitMatch = text.match(
-    /(?:גובה|גובהו|גובהה)\s*[:\-]?\s*(\d{2,3})/
+    /(?:גובה|גובהו|גובהה)\s*[:\-]?\s*(\d{2,3})/u
   );
 
   if (explicitMatch) {
-    const height = Number(
-      explicitMatch[1]
-    );
+    const height = Number(explicitMatch[1]);
 
-    if (
-      height >= 80 &&
-      height <= 230
-    ) {
+    if (height >= 80 && height <= 230) {
       return height;
     }
   }
 
-  const heightWithUnitMatch =
-    text.match(
-      /(\d{2,3})\s*(?:ס"מ|ס״מ|סמ)/
-    );
+  // דוגמאות:
+  // 140 ס"מ
+  // 140 ס״מ
+  // 140 סמ
+  const heightWithUnitMatch = text.match(
+    /(\d{2,3})\s*(?:ס"מ|ס״מ|סמ)/u
+  );
 
   if (heightWithUnitMatch) {
-    const height = Number(
-      heightWithUnitMatch[1]
-    );
+    const height = Number(heightWithUnitMatch[1]);
 
-    if (
-      height >= 80 &&
-      height <= 230
-    ) {
+    if (height >= 80 && height <= 230) {
       return height;
     }
   }
 
-  const numericOnlyMatch =
-    text.match(
-      /^\s*(\d{2,3})\s*$/
-    );
+  // מספר בלבד בטווח הגיוני של גובה
+  const numericOnlyMatch = text.match(
+    /^\s*(\d{2,3})\s*$/
+  );
 
   if (numericOnlyMatch) {
-    const height = Number(
-      numericOnlyMatch[1]
-    );
+    const height = Number(numericOnlyMatch[1]);
 
-    if (
-      height >= 80 &&
-      height <= 230
-    ) {
+    if (height >= 80 && height <= 230) {
       return height;
     }
   }
@@ -86,7 +85,7 @@ function detectAudience(
     .trim();
 
   if (
-    /ילד|ילדה|ילדים|לילד|לילדה|בן שלי|בת שלי|הבן|הבת|נוער/.test(
+    /ילד|ילדה|ילדים|לילד|לילדה|בן שלי|בת שלי|הבן|הבת|נוער/u.test(
       text
     )
   ) {
@@ -94,18 +93,15 @@ function detectAudience(
   }
 
   if (
-    /מבוגר|מבוגרת|מבוגרים|למבוגר|למבוגרת|בשבילי|לעצמי|עבורי/.test(
+    /מבוגר|מבוגרת|מבוגרים|למבוגר|למבוגרת|בשבילי|לעצמי|עבורי/u.test(
       text
     )
   ) {
     return "adult";
   }
 
-  const extractedAge =
-    extractAge(message);
-
-  const savedAge =
-    Number(profile.age);
+  const extractedAge = extractAge(message);
+  const savedAge = Number(profile.age);
 
   const age =
     extractedAge ||
@@ -134,7 +130,7 @@ function detectEquipmentTopic(
     .trim();
 
   if (
-    /תיק למחבט|תיקי מחבטים|תיק/.test(
+    /תיק למחבט|תיקי מחבטים|תיק/u.test(
       text
     )
   ) {
@@ -142,7 +138,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /בולם זעזועים|סופג זעזועים|בולם/.test(
+    /בולם זעזועים|סופג זעזועים|בולם/u.test(
       text
     )
   ) {
@@ -150,7 +146,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /אוברגריפ|גריפ|גריפים|ידית|אחיזה/.test(
+    /אוברגריפ|גריפ|גריפים|ידית|אחיזה/u.test(
       text
     )
   ) {
@@ -158,7 +154,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /גיד|גידים|מיתר|מיתרים|שזירה/.test(
+    /גיד|גידים|מיתר|מיתרים|שזירה/u.test(
       text
     )
   ) {
@@ -166,7 +162,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /כדור|כדורים/.test(
+    /כדור|כדורים/u.test(
       text
     )
   ) {
@@ -174,7 +170,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /נעלי טניס|נעליים|נעל/.test(
+    /נעלי טניס|נעליים|נעל/u.test(
       text
     )
   ) {
@@ -182,7 +178,7 @@ function detectEquipmentTopic(
   }
 
   if (
-    /מחבט|מחבטים|רקטה|רקטות/.test(
+    /מחבט|מחבטים|רקטה|רקטות/u.test(
       text
     )
   ) {
@@ -205,11 +201,12 @@ function detectExperience(
 
   /*
    * מתחיל / ללא ניסיון.
-   * נבדק קודם כדי ש-"אף פעם לא שיחקתי"
-   * לא יזוהה בטעות כבעל ניסיון.
+   * חייב להיבדק לפני experienced,
+   * כדי ש"אף פעם לא שיחקתי"
+   * לא יזוהה בטעות כשחקן מנוסה.
    */
   if (
-    /מתחיל|מתחילה|מתחיל מאפס|מתחילה מאפס|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא שיחקתי|מעולם לא שיחקתי|אין לי ניסיון|בלי ניסיון/.test(
+    /מתחיל|מתחילה|מתחיל מאפס|מתחילה מאפס|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|לא שיחקה|אף פעם לא שיחקתי|אף פעם לא שיחק|אף פעם לא שיחקה|מעולם לא שיחקתי|מעולם לא שיחק|מעולם לא שיחקה|אין לי ניסיון|אין לו ניסיון|אין לה ניסיון|בלי ניסיון/u.test(
       text
     )
   ) {
@@ -218,9 +215,16 @@ function detectExperience(
 
   /*
    * ניסיון קודם.
+   *
+   * מכסה גם:
+   * "הוא כבר שיחק בעבר"
+   * "אני משחק כבר כמה שנים"
+   * "משחק טניס כבר כמה שנים"
+   * "משחקת טניס שנתיים"
+   * "שיחק בערך שנתיים"
    */
   if (
-    /שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|שיחקתי פעם|כבר שיחקתי|כבר משחק|כבר משחקת|אני משחק|אני משחקת|יש לי ניסיון|יש לי קצת ניסיון|יש לי ניסיון קודם|שיחקתי כמה שנים|שיחקתי כמה חודשים|מתקדם|מתקדמת|מנוסה/.test(
+    /שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|שיחקתי פעם|כבר שיחקתי|כבר שיחק|כבר שיחקה|כבר משחק|כבר משחקת|אני משחק|אני משחקת|משחק טניס|משחקת טניס|שיחק טניס|שיחקה טניס|שיחקתי טניס|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|ניסיון קודם|שיחקתי כמה שנים|שיחק כמה שנים|שיחקה כמה שנים|שיחקתי כמה חודשים|שיחק כמה חודשים|שיחקה כמה חודשים|משחק כבר כמה שנים|משחקת כבר כמה שנים|משחק טניס כבר|משחקת טניס כבר|מתקדם|מתקדמת|מנוסה/u.test(
       text
     )
   ) {
@@ -239,29 +243,23 @@ function buildProfileUpdates(
 ) {
   const updates = {};
 
-  const age =
-    extractAge(message);
+  const age = extractAge(message);
+  const height = extractHeight(message);
 
-  const height =
-    extractHeight(message);
+  const audience = detectAudience(
+    message,
+    profile
+  );
 
-  const audience =
-    detectAudience(
-      message,
-      profile
-    );
+  const equipmentTopic = detectEquipmentTopic(
+    message,
+    profile
+  );
 
-  const equipmentTopic =
-    detectEquipmentTopic(
-      message,
-      profile
-    );
-
-  const experience =
-    detectExperience(
-      message,
-      profile
-    );
+  const experience = detectExperience(
+    message,
+    profile
+  );
 
   if (age !== null) {
     updates.age = age;
@@ -272,8 +270,7 @@ function buildProfileUpdates(
   }
 
   if (audience) {
-    updates.audience =
-      audience;
+    updates.audience = audience;
   }
 
   if (equipmentTopic) {

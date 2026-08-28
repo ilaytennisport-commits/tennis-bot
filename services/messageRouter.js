@@ -53,12 +53,70 @@ function getLastAssistantMessage(
 
 
 /*
+ * מחזיר את שאלת הליד שכרגע ממתינה לתשובה.
+ */
+function getPendingLeadQuestion(
+  conversationHistory = []
+) {
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  if (
+    lastAssistantMessage.includes(
+      "מה שם המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה שם הילד או הילדה?"
+    )
+  ) {
+    return {
+      type: "name",
+      reply:
+        "מה שם המתאמן או המתאמנת?",
+    };
+  }
+
+  if (
+    lastAssistantMessage.includes(
+      "מה גיל המתאמן או המתאמנת?"
+    ) ||
+    lastAssistantMessage.includes(
+      "מה גיל הילד או הילדה?"
+    )
+  ) {
+    return {
+      type: "age",
+      reply:
+        "מה גיל המתאמן או המתאמנת?",
+    };
+  }
+
+  if (
+    lastAssistantMessage.includes(
+      "באיזה סניף אתם מעוניינים?"
+    ) ||
+    lastAssistantMessage.includes(
+      "באיזה סניף תרצו להתאמן?"
+    )
+  ) {
+    return {
+      type: "branch",
+      reply: [
+        "באיזה סניף תרצו להתאמן?",
+        "• גלי הדר – ראשון לציון",
+        "• בית חשמונאי",
+      ].join("\n"),
+    };
+  }
+
+  return null;
+}
+
+
+/*
  * האם הבוט הציע אימון ניסיון לאחרונה.
- *
- * זה מאפשר ללקוח לסטות לרגע ולשאול למשל
- * "כמה עולה החוג?"
- * ואז לחזור:
- * "אוקיי, בוא נתקדם".
  */
 function hasRecentTrialOffer(
   conversationHistory = []
@@ -143,40 +201,16 @@ function hasRecentLeadIntent(
 function hasActiveLeadQuestion(
   conversationHistory = []
 ) {
-  const lastAssistantMessage =
-    getLastAssistantMessage(
+  return Boolean(
+    getPendingLeadQuestion(
       conversationHistory
-    );
-
-  return (
-    lastAssistantMessage.includes(
-      "מה שם המתאמן או המתאמנת?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה שם הילד או הילדה?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה גיל המתאמן או המתאמנת?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה גיל הילד או הילדה?"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף אתם מעוניינים?"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף תרצו להתאמן?"
     )
   );
 }
 
 
 /*
- * זיהוי בקשה מפורשת להתקדם
- * עם אימון ניסיון.
- *
- * עובד גם אם בין הצעת הניסיון
- * לבין האישור הייתה שאלת FAQ.
+ * בקשה מפורשת להתקדם עם ניסיון.
  */
 function isExplicitTrialProgression(
   userMessage = ""
@@ -199,9 +233,8 @@ function isExplicitTrialProgression(
   }
 
   /*
-   * מונע משאלות מידע כמו:
-   * "כמה עולה אימון ניסיון?"
-   * להפוך בטעות לליד.
+   * שאלה על אימון ניסיון אינה
+   * אישור להתקדמות.
    */
   const asksOnlyInformation =
     /כמה עולה|מה המחיר|מחיר|עלות|מתי|באיזה שעה|איפה|כמה זמן/.test(
@@ -224,16 +257,7 @@ function isExplicitTrialProgression(
 
 
 /*
- * אישור כללי להתקדמות לאחר
- * שכבר הייתה הצעת אימון ניסיון בשיחה.
- *
- * לדוגמה:
- * "כן בוא נתקדם"
- * "יאללה נתקדם"
- * "אוקיי קדימה"
- *
- * לא כולל "כן" בלבד,
- * כדי לא ליירט תשובות כן אקראיות.
+ * חזרה למסלול הניסיון לאחר סטייה.
  */
 function isRecentTrialProgression({
   userMessage = "",
@@ -267,11 +291,6 @@ function isTrialConfirmation({
     .toLowerCase()
     .trim();
 
-  /*
-   * קודם כל:
-   * בקשה מפורשת לאימון ניסיון
-   * עובדת גם אחרי סטייה מהמסלול.
-   */
   if (
     isExplicitTrialProgression(
       userMessage
@@ -280,10 +299,6 @@ function isTrialConfirmation({
     return true;
   }
 
-  /*
-   * "בוא נתקדם" וכו'
-   * אחרי הצעת ניסיון קודמת.
-   */
   if (
     isRecentTrialProgression({
       userMessage,
@@ -293,11 +308,6 @@ function isTrialConfirmation({
     return true;
   }
 
-  /*
-   * תשובת "כן" קצרה עדיין דורשת
-   * שהשאלה האחרונה של הבוט
-   * הייתה ישירות הצעת אימון ניסיון.
-   */
   const confirmations = new Set([
     "כן",
     "כן בטח",
@@ -331,10 +341,6 @@ function isTrialConfirmation({
 
 /*
  * תשובה לשאלת גיל במסלול המלצה.
- *
- * לדוגמה:
- * בוט: בן או בת כמה המתאמן?
- * לקוח: 9
  */
 function isRecommendationAgeContinuation({
   userMessage = "",
@@ -381,8 +387,7 @@ function isRecommendationAgeContinuation({
 
 
 /*
- * תשובה לשאלה האם המתאמן מתחיל
- * או בעל ניסיון קודם.
+ * תשובה לשאלה האם מתחיל או מנוסה.
  */
 function isRecommendationContinuation({
   userMessage = "",
@@ -431,10 +436,6 @@ function isRecommendationContinuation({
 }
 
 
-/*
- * בודק האם הלקוח כבר נתן
- * גם משך ניסיון וגם אינדיקציה לרמה.
- */
 function hasChildExperienceDetails(
   userMessage = ""
 ) {
@@ -493,10 +494,6 @@ function isAdultFormatContinuation({
 }
 
 
-/*
- * ילד שכבר שיחק בעבר:
- * הבוט שאל כמה זמן ובאיזו רמה.
- */
 function isChildExperienceDetailsContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -905,6 +902,62 @@ async function buildReply({
 
 
   /*
+   * FAQ באמצע איסוף ליד.
+   *
+   * למשל:
+   * בוט: מה שם המתאמן?
+   * לקוח: באיזה ימים יש אימונים?
+   *
+   * עונים לשאלה,
+   * ואז חוזרים לשאלת הליד.
+   */
+  if (activeLeadQuestion) {
+    const automatedDuringLead =
+      getAutomatedResponse(
+        userMessage,
+        userProfile
+      );
+
+    if (
+      automatedDuringLead.handled
+    ) {
+      const pendingLeadQuestion =
+        getPendingLeadQuestion(
+          conversationHistory
+        );
+
+      const parts = [
+        automatedDuringLead.response,
+      ];
+
+      if (pendingLeadQuestion) {
+        parts.push("");
+        parts.push(
+          "ולגבי ההמשך 😊"
+        );
+        parts.push("");
+        parts.push(
+          pendingLeadQuestion.reply
+        );
+      }
+
+      console.log(
+        `⚡ FAQ DURING LEAD (${automatedDuringLead.intent})`
+      );
+
+      return {
+        source:
+          "faq-during-lead",
+        reply:
+          parts.join("\n"),
+        updates: {},
+        completed: false,
+      };
+    }
+  }
+
+
+  /*
    * המשך ליד שכבר התחיל.
    */
   if (existingLeadFlow) {
@@ -1107,13 +1160,17 @@ async function buildReply({
     recommendationGoalContinuation
   ) {
     const goal =
-      normalizeGoal(userMessage);
+      normalizeGoal(
+        userMessage
+      );
 
     return {
       source:
         "recommendation-goal",
       reply:
-        buildGoalResponse(goal),
+        buildGoalResponse(
+          goal
+        ),
       updates: {
         goal,
       },
@@ -1238,7 +1295,7 @@ async function buildReply({
 
 
   /*
-   * FAQ.
+   * FAQ רגיל.
    */
   const automated =
     getAutomatedResponse(

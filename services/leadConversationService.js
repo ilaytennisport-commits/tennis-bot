@@ -6,6 +6,7 @@ function hasValue(value) {
   );
 }
 
+
 function getLastAssistantMessage(
   conversationHistory = []
 ) {
@@ -20,6 +21,7 @@ function getLastAssistantMessage(
   );
 }
 
+
 function isNameQuestion(message = "") {
   return (
     message.includes(
@@ -30,6 +32,7 @@ function isNameQuestion(message = "") {
     )
   );
 }
+
 
 function isAgeQuestion(message = "") {
   return (
@@ -42,6 +45,7 @@ function isAgeQuestion(message = "") {
   );
 }
 
+
 function isBranchQuestion(message = "") {
   return (
     message.includes(
@@ -52,6 +56,101 @@ function isBranchQuestion(message = "") {
     )
   );
 }
+
+
+/*
+ * מזהה שהלקוח שאל שאלה
+ * במקום לענות לפרט שהבוט ביקש.
+ *
+ * לדוגמה:
+ * "באיזה ימים יש אימונים?"
+ * "כמה זה עולה?"
+ * "יש חניה?"
+ */
+function looksLikeQuestion(
+  message = ""
+) {
+  const text = String(message)
+    .trim()
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  if (text.includes("?")) {
+    return true;
+  }
+
+  return (
+    /^(מה|מתי|איפה|איפוא|איך|כמה|איזה|איזו|אילו|האם|למה|באיזה|באיזו|יש |אפשר |ניתן |עד מתי|מאיזה|לאיזה|איפה יש)/.test(
+      text
+    )
+  );
+}
+
+
+/*
+ * בדיקה בסיסית שהטקסט באמת
+ * יכול להיות שם של אדם.
+ */
+function normalizeName(
+  message = ""
+) {
+  let name = String(message)
+    .trim()
+    .replace(
+      /^(קוראים לי|קוראים לו|קוראים לה|השם הוא|השם שלו|השם שלה|שמי)\s+/,
+      ""
+    )
+    .trim();
+
+  /*
+   * לא שומרים שאלות בתור שם.
+   */
+  if (looksLikeQuestion(name)) {
+    return null;
+  }
+
+  /*
+   * לא שומרים משפטים ארוכים מאוד
+   * בתור שם.
+   */
+  if (
+    name.length < 2 ||
+    name.length > 40
+  ) {
+    return null;
+  }
+
+  /*
+   * שם לא אמור להכיל הרבה מילים.
+   * מאפשר גם שם + שם משפחה.
+   */
+  const words =
+    name
+      .split(/\s+/)
+      .filter(Boolean);
+
+  if (words.length > 4) {
+    return null;
+  }
+
+  /*
+   * מונע מטקסטים נפוצים של FAQ
+   * להפוך לשם.
+   */
+  if (
+    /מחיר|עולה|אימון|אימונים|ימים|שעות|שעה|סניף|כתובת|איפה|מתי|חוג|קבוצה|קבוצות|ניסיון|נסיון|מחבט|ציוד/.test(
+      name.toLowerCase()
+    )
+  ) {
+    return null;
+  }
+
+  return name;
+}
+
 
 function normalizeBranch(
   message = ""
@@ -79,6 +178,7 @@ function normalizeBranch(
   return null;
 }
 
+
 function getNextMissingStep(
   profile = {}
 ) {
@@ -96,6 +196,7 @@ function getNextMissingStep(
 
   return null;
 }
+
 
 function buildNextQuestion(
   profile = {}
@@ -139,6 +240,7 @@ function buildNextQuestion(
   };
 }
 
+
 function getLeadContinuation({
   userMessage = "",
   conversationHistory = [],
@@ -152,6 +254,7 @@ function getLeadContinuation({
       conversationHistory
     );
 
+
   /*
    * תשובה לשאלת השם.
    */
@@ -160,20 +263,24 @@ function getLeadContinuation({
       lastAssistantMessage
     )
   ) {
-    const name = text
-      .replace(
-        /^(קוראים לי|קוראים לו|קוראים לה|השם הוא|השם שלו|השם שלה)\s+/,
-        ""
-      )
-      .trim();
+    /*
+     * אם הלקוח שאל שאלה במקום לתת שם,
+     * לא מטפלים בזה כליד.
+     * ה-router ייתן ל-FAQ לטפל בה.
+     */
+    if (looksLikeQuestion(text)) {
+      return null;
+    }
 
-    if (
-      !name ||
-      name.length < 2
-    ) {
+    const name =
+      normalizeName(text);
+
+    if (!name) {
       return {
         reply:
           "אשמח לקבל את שם המתאמן או המתאמנת.",
+        updates: {},
+        completed: false,
       };
     }
 
@@ -197,6 +304,7 @@ function getLeadContinuation({
     };
   }
 
+
   /*
    * תשובה לשאלת הגיל.
    */
@@ -205,6 +313,14 @@ function getLeadContinuation({
       lastAssistantMessage
     )
   ) {
+    /*
+     * שאלה באמצע איסוף הליד
+     * לא נחשבת לגיל.
+     */
+    if (looksLikeQuestion(text)) {
+      return null;
+    }
+
     const ageMatch =
       text.match(/\d{1,2}/);
 
@@ -220,6 +336,8 @@ function getLeadContinuation({
       return {
         reply:
           "מה גיל המתאמן או המתאמנת? אפשר לכתוב את הגיל במספרים.",
+        updates: {},
+        completed: false,
       };
     }
 
@@ -243,6 +361,7 @@ function getLeadContinuation({
     };
   }
 
+
   /*
    * תשובה לשאלת הסניף.
    */
@@ -251,6 +370,14 @@ function getLeadContinuation({
       lastAssistantMessage
     )
   ) {
+    /*
+     * אם זו שאלת ביניים,
+     * נותנים ל-router לטפל בה.
+     */
+    if (looksLikeQuestion(text)) {
+      return null;
+    }
+
     const branch =
       normalizeBranch(text);
 
@@ -261,6 +388,8 @@ function getLeadContinuation({
           "• גלי הדר – ראשון לציון",
           "• בית חשמונאי",
         ].join("\n"),
+        updates: {},
+        completed: false,
       };
     }
 
@@ -284,8 +413,10 @@ function getLeadContinuation({
     };
   }
 
+
   return null;
 }
+
 
 module.exports = {
   getLeadContinuation,

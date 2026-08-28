@@ -231,25 +231,11 @@ function isRecommendationContinuation({
       conversationHistory
     );
 
-  /*
-   * מכסה למשל:
-   *
-   * "מתחיל"
-   * "אף פעם לא שיחק"
-   * "הוא כבר שיחק בעבר"
-   * "הוא משחק טניס כבר שנתיים"
-   * "משחק כבר כמה שנים"
-   * "ברמה די טובה"
-   */
   const isExperienceAnswer =
     /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא|מעולם לא|בלי ניסיון|אין לי ניסיון|אין לו ניסיון|אין לה ניסיון|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחק|כבר שיחקה|כבר שיחקתי|כבר משחק|כבר משחקת|משחק טניס|משחקת טניס|משחק כבר|משחקת כבר|שיחק טניס|שיחקה טניס|שיחקתי טניס|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|ניסיון קודם|שנה|שנתיים|שנים|חודשים|חודש|רמה טובה|ברמה טובה|ברמה די טובה|מתקדם|מתקדמת|מנוסה/.test(
       text
     );
 
-  /*
-   * מוודאים שהבוט באמת שאל
-   * על רמת הניסיון.
-   */
   const assistantAskedExperience =
     lastAssistantMessage.includes(
       "מתחיל לגמרי"
@@ -275,6 +261,41 @@ function isRecommendationContinuation({
   return (
     isExperienceAnswer &&
     assistantAskedExperience
+  );
+}
+
+
+/*
+ * בודק האם הלקוח כבר נתן
+ * גם משך ניסיון וגם אינדיקציה לרמה.
+ *
+ * לדוגמה:
+ * "הוא משחק טניס כבר שנתיים וברמה די טובה"
+ */
+function hasChildExperienceDetails(
+  userMessage = ""
+) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .trim();
+
+  if (!text) {
+    return false;
+  }
+
+  const hasDuration =
+    /שנה|שנתיים|שנים|חודש|חודשיים|חודשים|כמה שנים|כמה חודשים|חצי שנה/.test(
+      text
+    );
+
+  const hasLevel =
+    /רמה|טובה|טוב|בינוני|בינונית|מתקדם|מתקדמת|גבוהה|גבוה|תחרותי|תחרותית/.test(
+      text
+    );
+
+  return (
+    hasDuration &&
+    hasLevel
   );
 }
 
@@ -807,6 +828,34 @@ async function buildReply({
     });
 
   if (recommendationContinuation) {
+    /*
+     * אם מדובר בילד והלקוח כבר סיפק
+     * גם משך ניסיון וגם רמה,
+     * אין צורך לשאול שוב.
+     */
+    const isChild =
+      userProfile.audience === "child" ||
+      (
+        Number(userProfile.age) > 0 &&
+        Number(userProfile.age) < 18
+      );
+
+    if (
+      isChild &&
+      hasChildExperienceDetails(
+        userMessage
+      )
+    ) {
+      return {
+        source:
+          "recommendation-child-experience-complete",
+        reply:
+          buildChildExperienceDetailsResponse(),
+        updates: {},
+        completed: false,
+      };
+    }
+
     const continuationResponse =
       getRecommendationResponse({
         userMessage,

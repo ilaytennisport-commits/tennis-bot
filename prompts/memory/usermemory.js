@@ -6,6 +6,7 @@ function emptyUser() {
   return {
     name: null,
     age: null,
+    city: null,
     height: null,
     audience: null,
     equipment_topic: null,
@@ -13,6 +14,11 @@ function emptyUser() {
     branch: null,
     phone: null,
     goal: null,
+
+    // שער הכניסה
+    source: null,
+    source_confirmed: false,
+
     summary_sent: false,
   };
 }
@@ -23,6 +29,7 @@ async function getUser(userId) {
       SELECT
         name,
         age,
+        city,
         height,
         audience,
         equipment_topic,
@@ -30,6 +37,8 @@ async function getUser(userId) {
         branch,
         phone,
         goal,
+        source,
+        source_confirmed,
         summary_sent
       FROM users
       WHERE user_id = $1
@@ -58,6 +67,7 @@ async function saveUser(
         user_id,
         name,
         age,
+        city,
         height,
         audience,
         equipment_topic,
@@ -65,6 +75,8 @@ async function saveUser(
         branch,
         phone,
         goal,
+        source,
+        source_confirmed,
         summary_sent,
         updated_at
       )
@@ -80,12 +92,16 @@ async function saveUser(
         $9,
         $10,
         $11,
+        $12,
+        $13,
+        $14,
         NOW()
       )
       ON CONFLICT (user_id)
       DO UPDATE SET
         name = EXCLUDED.name,
         age = EXCLUDED.age,
+        city = EXCLUDED.city,
         height = EXCLUDED.height,
         audience = EXCLUDED.audience,
         equipment_topic =
@@ -95,12 +111,16 @@ async function saveUser(
         branch = EXCLUDED.branch,
         phone = EXCLUDED.phone,
         goal = EXCLUDED.goal,
+        source = EXCLUDED.source,
+        source_confirmed =
+          EXCLUDED.source_confirmed,
         summary_sent =
           EXCLUDED.summary_sent,
         updated_at = NOW()
       RETURNING
         name,
         age,
+        city,
         height,
         audience,
         equipment_topic,
@@ -108,12 +128,15 @@ async function saveUser(
         branch,
         phone,
         goal,
+        source,
+        source_confirmed,
         summary_sent
     `,
     [
       userId,
       updatedUser.name,
       updatedUser.age,
+      updatedUser.city,
       updatedUser.height,
       updatedUser.audience,
       updatedUser.equipment_topic,
@@ -121,6 +144,8 @@ async function saveUser(
       updatedUser.branch,
       updatedUser.phone,
       updatedUser.goal,
+      updatedUser.source,
+      updatedUser.source_confirmed === true,
       updatedUser.summary_sent === true,
     ]
   );
@@ -141,6 +166,7 @@ async function markSummarySent(
       RETURNING
         name,
         age,
+        city,
         height,
         audience,
         equipment_topic,
@@ -148,6 +174,8 @@ async function markSummarySent(
         branch,
         phone,
         goal,
+        source,
+        source_confirmed,
         summary_sent
     `,
     [userId]

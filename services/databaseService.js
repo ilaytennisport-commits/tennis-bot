@@ -24,6 +24,7 @@ async function initializeDatabase() {
       user_id TEXT PRIMARY KEY,
       name TEXT,
       age INTEGER,
+      city TEXT,
       height INTEGER,
       audience TEXT,
       equipment_topic TEXT,
@@ -31,7 +32,12 @@ async function initializeDatabase() {
       branch TEXT,
       phone TEXT,
       goal TEXT,
+
+      source TEXT,
+      source_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+
       summary_sent BOOLEAN NOT NULL DEFAULT FALSE,
+
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -40,6 +46,11 @@ async function initializeDatabase() {
   /*
    * הוספת עמודות גם אם הטבלה כבר קיימת.
    */
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS city TEXT
+  `);
+
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS height INTEGER
@@ -58,6 +69,30 @@ async function initializeDatabase() {
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS experience TEXT
+  `);
+
+  /*
+   * מקור ההגעה של הלקוח.
+   *
+   * ערכים אפשריים:
+   * regular
+   * move
+   * amit
+   * freefit
+   */
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS source TEXT
+  `);
+
+  /*
+   * האם כבר עברנו עם המשתמש
+   * את שער הכניסה וזיהינו מקור הגעה.
+   */
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS source_confirmed
+    BOOLEAN NOT NULL DEFAULT FALSE
   `);
 
   await pool.query(`

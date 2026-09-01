@@ -3,12 +3,14 @@ const {
 } = require(
   "../services/profileMemoryService"
 );
-const { createReply } = require("../services/replyService");
+
+const {
+  createReply,
+} = require("../services/replyService");
 
 const {
   sendWhatsAppMessage,
 } = require("../services/whapiService");
-
 
 const {
   getConversation,
@@ -29,6 +31,22 @@ const {
   formatLeadSummary,
 } = require("../utils/leadUtils");
 
+const {
+  getEntryWelcomeMessage,
+  shouldAskSource,
+  resolveSource,
+} = require("../services/sourceRoutingService");
+
+const {
+  isSpecialSource,
+  buildSpecialWelcome,
+  getMissingSpecialField,
+  getQuestionForField,
+  buildSpecialRulesMessage,
+} = require(
+  "../services/specialSourceConversationService"
+);
+
 const processedMessageIds = new Set();
 const MAX_PROCESSED_MESSAGE_IDS = 2000;
 
@@ -37,8 +55,11 @@ const userQueues = new Map();
 const CLUB_MANAGER_PHONE =
   process.env.CLUB_MANAGER_PHONE;
 
-/**
- * בודק האם כל פרטי הליד הנדרשים נאספו.
+const SPECIAL_BRANCH =
+  "גלי הדר – ראשון לציון";
+
+/*
+ * בודק האם כל פרטי הליד הרגיל נאספו.
  */
 function hasCompleteLeadDetails(user) {
   const hasName =
@@ -71,7 +92,469 @@ function hasCompleteLeadDetails(user) {
   );
 }
 
-/**
+/*
+ * בודק האם כבר קיימים בפרופיל
+ * פרטים משמעותיים מהמערכת הישנה.
+ */
+function hasExistingProfileData(user = {}) {
+  return Boolean(
+    user.name ||
+      user.age ||
+      user.city ||
+      user.height ||
+      user.audience ||
+      user.equipment_topic ||
+      user.experience ||
+      user.branch ||
+      user.phone ||
+      user.goal ||
+      user.summary_sent === true
+  );
+}
+
+/*
+ * בודק האם ההודעה האחרונה של הבוט
+ * הייתה שאלת שער הכניסה.
+ */
+function isWaitingForSource(
+  conversationHistory = []
+) {
+  const lastAssistantMessage =
+    [...conversationHistory]
+      .reverse()
+      .find(
+        (item) =>
+          item?.role === "assistant" &&
+          typeof item?.content === "string"
+      );
+
+  if (!lastAssistantMessage) {
+    return false;
+  }
+
+  return lastAssistantMessage.content.includes(
+    "איך שמעתם עלינו"
+  );
+}
+
+/*
+ * מנקה טקסט קצר שמתקבל מהלקוח.
+ */
+function cleanText(value = "") {
+  return String(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/*
+ * בודק אם ההודעה נראית כמו שאלה
+ * ולא כמו תשובה לפרט שביקשנו.
+ */
+function looksLikeQuestion(message = "") {
+  const text =
+    cleanText(message).toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  if (text.includes("?")) {
+    return true;
+  }
+
+  const questionPatterns = [
+    /^מה\b/,
+    /^מתי\b/,
+    /^איך\b/,
+    /^איפה\b/,
+    /^האם\b/,
+    /^כמה\b/,
+    /^איזה\b/,
+    /^איזו\b/,
+    /^איזה ימים\b/,
+    /^באיזה\b/,
+    /^באילו\b/,
+    /^אפשר\b/,
+    /^יש\b/,
+  ];
+
+  return questionPatterns.some(
+    (pattern) => pattern.test(text)
+  );
+}
+
+/*
+ * חילוץ גיל מתוך תשובה למסלול המיוחד.
+ */
+function extractSpecialAge(message = "") {
+  const text = cleanText(message);
+
+  const match = text.match(
+    /(?:בן|בת|גיל)?\s*(\d{1,2})/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const age = Number(match[1]);
+
+  if (
+    !Number.isInteger(age) ||
+    age < 4 ||
+    age > 100
+  ) {
+    return null;
+  }
+
+  return age;
+}
+
+/*
+ * בונה את העדכון לפרט שהבוט
+ * ביקש כרגע במסלול המיוחד.
+ */
+function buildSpecialFieldUpdate(
+  field,
+  userMessage
+) {
+  const text = cleanText(userMessage);
+
+  if (!text) {
+    return null;
+  }
+
+  switch (field) {
+    case "name": {
+      if (
+        looksLikeQuestion(text) ||
+        text.length < 2 ||
+        text.length > 80 ||
+        /\d/.test(text)
+      ) {
+        return null;
+      }
+
+      return {
+        name: text,
+      };
+    }
+
+    case "age": {
+      const age =
+        extractSpecialAge(text);
+
+      if (!age) {
+        return null;
+      }
+
+      return {
+        age,
+        audience:
+          age >= 18
+            ? "adult"
+            : "child",
+      };
+    }
+
+    case "city": {
+      if (
+        looksLikeQuestion(text) ||
+        text.length < 2 ||
+        text.length > 80
+      ) {
+        return null;
+      }
+
+      return {
+        city: text,
+      };
+    }
+
+    case "experience": {
+      if (
+        looksLikeQuestion(text) ||
+        text.length < 2 ||
+        text.length > 500
+      ) {
+        return null;
+      }
+
+      return {
+        experience: text,
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+/*
+ * תשובה במקרה שהלקוח לא נתן
+ * את הפרט שביקשנו.
+ */
+function buildInvalidSpecialFieldReply(
+  field
+) {
+  switch (field) {
+    case "name":
+      return [
+        "בשמחה 😊",
+        "כדי שאוכל להמשיך, צריך קודם את השם המלא של המתאמן או המתאמנת.",
+      ].join("\n");
+
+    case "age":
+      return [
+        "כדי שאוכל להתאים את הקבוצה, צריך את גיל המתאמן או המתאמנת 😊",
+        "אפשר לכתוב למשל: 12",
+      ].join("\n");
+
+    case "city":
+      return [
+        "כדי שאוכל להמשיך, צריך את עיר המגורים 😊",
+        "אפשר לכתוב רק את שם העיר.",
+      ].join("\n");
+
+    case "experience":
+      return [
+        "כדי להשלים את ההתאמה, אשמח לדעת מה הניסיון בטניס עד היום 😊",
+        'אם אין ניסיון קודם, אפשר לכתוב "ללא ניסיון".',
+      ].join("\n");
+
+    default:
+      return "אשמח לקבל את הפרט שביקשתי כדי שנוכל להמשיך 😊";
+  }
+}
+
+/*
+ * מטפל בהמשך שיחה של לקוח
+ * MOVE / עמית / FreeFit.
+ *
+ * מחזיר true אם ההודעה טופלה
+ * במסלול המיוחד.
+ */
+async function handleSpecialSourceConversation({
+  userId,
+  userMessage,
+  currentUser,
+}) {
+  if (
+    !currentUser.source_confirmed ||
+    !isSpecialSource(
+      currentUser.source
+    )
+  ) {
+    return false;
+  }
+
+  /*
+   * מוודאים שגם לקוחות מיוחדים
+   * תמיד משויכים לגלי הדר בלבד.
+   */
+  if (
+    currentUser.branch !==
+    SPECIAL_BRANCH
+  ) {
+    currentUser = await saveUser(
+      userId,
+      {
+        branch: SPECIAL_BRANCH,
+      }
+    );
+  }
+
+  const missingField =
+    getMissingSpecialField(
+      currentUser
+    );
+
+  /*
+   * אם כל הפרטים כבר נאספו,
+   * לא מעבירים את הלקוח לבוט הרגיל.
+   *
+   * בשלב הבא נוכל להוסיף כאן
+   * FAQ ייעודי למסלולים האלה.
+   */
+  if (!missingField) {
+    await addMessage(
+      userId,
+      "user",
+      userMessage
+    );
+
+    const completedReply = [
+      "הפרטים שלך כבר שמורים אצלנו 😊",
+      "",
+      "להצטרפות לקבוצת עדכוני האימונים:",
+      "https://chat.whatsapp.com/DiUCuKGCEQi93ziqMgqfzh",
+      "",
+      "אם יש שאלה לגבי האימונים דרך המסלול, אפשר לכתוב אותה כאן.",
+    ].join("\n");
+
+    await addMessage(
+      userId,
+      "assistant",
+      completedReply
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      completedReply
+    );
+
+    console.log(
+      "🔐 הודעה במסלול מיוחד לאחר השלמת פרטים:",
+      {
+        userId,
+        source:
+          currentUser.source,
+      }
+    );
+
+    return true;
+  }
+
+  const fieldUpdate =
+    buildSpecialFieldUpdate(
+      missingField,
+      userMessage
+    );
+
+  await addMessage(
+    userId,
+    "user",
+    userMessage
+  );
+
+  /*
+   * לא מקבלים שאלה או תשובה לא תקינה
+   * בתור שם / גיל / עיר / ניסיון.
+   */
+  if (!fieldUpdate) {
+    const invalidReply =
+      buildInvalidSpecialFieldReply(
+        missingField
+      );
+
+    await addMessage(
+      userId,
+      "assistant",
+      invalidReply
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      invalidReply
+    );
+
+    console.log(
+      "⚠️ תשובה לא תקינה במסלול מיוחד:",
+      {
+        userId,
+        source:
+          currentUser.source,
+        missingField,
+        userMessage,
+      }
+    );
+
+    return true;
+  }
+
+  currentUser = await saveUser(
+    userId,
+    {
+      ...fieldUpdate,
+      branch: SPECIAL_BRANCH,
+    }
+  );
+
+  console.log(
+    "💾 פרט נשמר במסלול מיוחד:",
+    {
+      userId,
+      source:
+        currentUser.source,
+      field:
+        missingField,
+      value:
+        fieldUpdate[
+          missingField
+        ],
+    }
+  );
+
+  const nextMissingField =
+    getMissingSpecialField(
+      currentUser
+    );
+
+  /*
+   * יש עוד פרט שצריך לאסוף.
+   */
+  if (nextMissingField) {
+    const nextQuestion =
+      getQuestionForField(
+        nextMissingField
+      );
+
+    await addMessage(
+      userId,
+      "assistant",
+      nextQuestion
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      nextQuestion
+    );
+
+    return true;
+  }
+
+  /*
+   * כל הפרטים נאספו.
+   */
+  const rulesReply =
+    buildSpecialRulesMessage(
+      currentUser.source
+    );
+
+  await addMessage(
+    userId,
+    "assistant",
+    rulesReply
+  );
+
+  await sendWhatsAppMessage(
+    userId,
+    rulesReply
+  );
+
+  console.log(
+    "✅ מסלול מיוחד הושלם:",
+    {
+      userId,
+      source:
+        currentUser.source,
+      name:
+        currentUser.name,
+      age:
+        currentUser.age,
+      city:
+        currentUser.city,
+      experience:
+        currentUser.experience,
+      branch:
+        currentUser.branch,
+    }
+  );
+
+  return true;
+}
+
+/*
  * יוצר הודעה מסודרת למנהל המועדון.
  */
 function formatManagerLeadMessage(
@@ -82,45 +565,59 @@ function formatManagerLeadMessage(
     user.phone || ""
   ).replace(/\D/g, "");
 
-  let internationalPhone = cleanPhone;
+  let internationalPhone =
+    cleanPhone;
 
   if (cleanPhone.startsWith("0")) {
     internationalPhone =
       `972${cleanPhone.substring(1)}`;
   }
 
-  const whatsappLink = internationalPhone
-    ? `https://wa.me/${internationalPhone}`
-    : "לא זמין";
+  const whatsappLink =
+    internationalPhone
+      ? `https://wa.me/${internationalPhone}`
+      : "לא זמין";
 
   const formattedConversation =
     conversationHistory
       .filter(
         (conversationMessage) =>
           conversationMessage?.content &&
-          ["user", "assistant"].includes(
+          [
+            "user",
+            "assistant",
+          ].includes(
             conversationMessage.role
           )
       )
-      .map((conversationMessage) => {
-        const speaker =
-          conversationMessage.role === "user"
-            ? "👤 לקוח"
-            : "🤖 בוט";
+      .map(
+        (
+          conversationMessage
+        ) => {
+          const speaker =
+            conversationMessage.role ===
+            "user"
+              ? "👤 לקוח"
+              : "🤖 בוט";
 
-        return (
-          `${speaker}:\n` +
-          conversationMessage.content
-        );
-      })
+          return (
+            `${speaker}:\n` +
+            conversationMessage.content
+          );
+        }
+      )
       .join("\n\n");
 
   const receivedAt =
-    new Intl.DateTimeFormat("he-IL", {
-      timeZone: "Asia/Jerusalem",
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(new Date());
+    new Intl.DateTimeFormat(
+      "he-IL",
+      {
+        timeZone:
+          "Asia/Jerusalem",
+        dateStyle: "short",
+        timeStyle: "short",
+      }
+    ).format(new Date());
 
   return [
     "🎾 ליד חדש - Tennis Sport",
@@ -148,9 +645,6 @@ function formatManagerLeadMessage(
   ].join("\n");
 }
 
-/**
- * מחלץ את מזהה ההודעה שהגיע מ־Whapi.
- */
 function getMessageId(message) {
   return (
     message?.id ||
@@ -160,16 +654,16 @@ function getMessageId(message) {
   );
 }
 
-/**
- * שומר מזהי הודעות שכבר עובדו,
- * כדי למנוע טיפול כפול באותו Webhook.
- */
-function rememberProcessedMessage(messageId) {
+function rememberProcessedMessage(
+  messageId
+) {
   if (!messageId) {
     return;
   }
 
-  processedMessageIds.add(messageId);
+  processedMessageIds.add(
+    messageId
+  );
 
   if (
     processedMessageIds.size >
@@ -186,26 +680,30 @@ function rememberProcessedMessage(messageId) {
   }
 }
 
-/**
- * מפעיל תור נפרד לכל משתמש,
- * כדי שהודעות מאותו משתמש יעובדו לפי הסדר.
- */
-function enqueueUserMessage(userId, task) {
+function enqueueUserMessage(
+  userId,
+  task
+) {
   const previousTask =
     userQueues.get(userId) ||
     Promise.resolve();
 
-  const currentTask = previousTask
-    .catch(() => {
-      // שגיאה קודמת לא תעצור את התור.
-    })
-    .then(task);
+  const currentTask =
+    previousTask
+      .catch(() => {
+        // שגיאה קודמת לא תעצור את התור.
+      })
+      .then(task);
 
-  userQueues.set(userId, currentTask);
+  userQueues.set(
+    userId,
+    currentTask
+  );
 
   currentTask.finally(() => {
     if (
-      userQueues.get(userId) === currentTask
+      userQueues.get(userId) ===
+      currentTask
     ) {
       userQueues.delete(userId);
     }
@@ -214,9 +712,6 @@ function enqueueUserMessage(userId, task) {
   return currentTask;
 }
 
-/**
- * שולח את פרטי הליד למנהל המועדון.
- */
 async function sendLeadToManager(
   userId,
   updatedUser
@@ -231,7 +726,9 @@ async function sendLeadToManager(
 
   try {
     const updatedConversationHistory =
-      await getConversation(userId);
+      await getConversation(
+        userId
+      );
 
     const managerMessage =
       formatManagerLeadMessage(
@@ -288,9 +785,6 @@ async function sendLeadToManager(
   }
 }
 
-/**
- * מעבד הודעת WhatsApp נכנסת.
- */
 async function processIncomingMessage(
   message
 ) {
@@ -316,23 +810,36 @@ async function processIncomingMessage(
     return;
   }
 
-  console.log("🔍 מזהי Whapi:", {
-    from: message.from,
-    chat_id: message.chat_id,
-    selectedUserId: userId,
-    detectedPhone:
-      whatsappIdToPhone(userId),
-  });
+  console.log(
+    "🔍 מזהי Whapi:",
+    {
+      from: message.from,
+      chat_id:
+        message.chat_id,
+      selectedUserId:
+        userId,
+      detectedPhone:
+        whatsappIdToPhone(
+          userId
+        ),
+    }
+  );
 
   console.log(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
-  /**
-   * איפוס פרטי המשתמש והשיחה.
+  /*
+   * איפוס.
    */
-  if (userMessage === "איפוס שיחה") {
-    await clearConversation(userId);
+  if (
+    userMessage ===
+    "איפוס שיחה"
+  ) {
+    await clearConversation(
+      userId
+    );
+
     await clearUser(userId);
 
     const resetReply =
@@ -350,10 +857,13 @@ async function processIncomingMessage(
     return;
   }
 
-  /**
-   * בדיקה ישירה של שליחה למנהל.
+  /*
+   * בדיקת מנהל.
    */
-  if (userMessage === "בדיקת מנהל") {
+  if (
+    userMessage ===
+    "בדיקת מנהל"
+  ) {
     if (!CLUB_MANAGER_PHONE) {
       await sendWhatsAppMessage(
         userId,
@@ -397,7 +907,8 @@ async function processIncomingMessage(
       );
 
       const errorMessage =
-        error.response?.data?.message ||
+        error.response?.data
+          ?.message ||
         error.message;
 
       await sendWhatsAppMessage(
@@ -409,24 +920,277 @@ async function processIncomingMessage(
     return;
   }
 
-  const currentUser =
+  let currentUser =
     await getUser(userId);
 
+  const previousConversationHistory =
+    await getConversation(
+      userId
+    );
+
+  const waitingForSource =
+    isWaitingForSource(
+      previousConversationHistory
+    );
+
+  /*
+   * לקוח ותיק מהמערכת הישנה.
+   */
+  if (
+    shouldAskSource(
+      currentUser
+    ) &&
+    !waitingForSource &&
+    (
+      previousConversationHistory.length >
+        0 ||
+      hasExistingProfileData(
+        currentUser
+      )
+    )
+  ) {
+    currentUser =
+      await saveUser(
+        userId,
+        {
+          source: "regular",
+          source_confirmed:
+            true,
+        }
+      );
+
+    console.log(
+      "🧭 לקוח קיים סומן אוטומטית כ-regular:",
+      {
+        userId,
+        source:
+          currentUser.source,
+      }
+    );
+  }
+
+  /*
+   * לקוח חדש לגמרי.
+   */
+  if (
+    shouldAskSource(
+      currentUser
+    ) &&
+    !waitingForSource
+  ) {
+    const detectedPhone =
+      currentUser.phone ||
+      whatsappIdToPhone(
+        userId
+      );
+
+    await saveUser(
+      userId,
+      {
+        phone:
+          detectedPhone,
+      }
+    );
+
+    await addMessage(
+      userId,
+      "user",
+      userMessage
+    );
+
+    const welcomeReply =
+      getEntryWelcomeMessage();
+
+    await addMessage(
+      userId,
+      "assistant",
+      welcomeReply
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      welcomeReply
+    );
+
+    console.log(
+      "🚪 שער הכניסה נשלח ללקוח חדש:",
+      {
+        userId,
+      }
+    );
+
+    return;
+  }
+
+  /*
+   * תשובה לשאלת
+   * "איך שמעתם עלינו?"
+   */
+  if (
+    shouldAskSource(
+      currentUser
+    ) &&
+    waitingForSource
+  ) {
+    const sourceResult =
+      resolveSource(
+        userMessage
+      );
+
+    const sourceUpdates = {
+      source:
+        sourceResult.source,
+      source_confirmed:
+        true,
+    };
+
+    /*
+     * שלושת המסלולים המיוחדים
+     * קיימים בגלי הדר בלבד.
+     */
+    if (
+      sourceResult.isSpecial
+    ) {
+      sourceUpdates.branch =
+        SPECIAL_BRANCH;
+    }
+
+    currentUser =
+      await saveUser(
+        userId,
+        sourceUpdates
+      );
+
+    await addMessage(
+      userId,
+      "user",
+      userMessage
+    );
+
+    console.log(
+      "🧭 מקור הגעה זוהה:",
+      {
+        userId,
+        source:
+          sourceResult.source,
+        isSpecial:
+          sourceResult.isSpecial,
+      }
+    );
+
+    /*
+     * MOVE / עמית / FreeFit.
+     */
+    if (
+      sourceResult.isSpecial
+    ) {
+      const specialSourceReply =
+        buildSpecialWelcome(
+          sourceResult.source
+        );
+
+      await addMessage(
+        userId,
+        "assistant",
+        specialSourceReply
+      );
+
+      await sendWhatsAppMessage(
+        userId,
+        specialSourceReply
+      );
+
+      console.log(
+        "🔐 הלקוח נותב למסלול מיוחד:",
+        {
+          userId,
+          source:
+            sourceResult.source,
+          branch:
+            SPECIAL_BRANCH,
+        }
+      );
+
+      return;
+    }
+
+    /*
+     * לקוח רגיל.
+     */
+    const regularEntryReply =
+      [
+        "מעולה, תודה 😊",
+        "",
+        "איך אפשר לעזור לכם היום?",
+      ].join("\n");
+
+    await addMessage(
+      userId,
+      "assistant",
+      regularEntryReply
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      regularEntryReply
+    );
+
+    console.log(
+      "➡️ הלקוח נותב למסלול הרגיל:",
+      {
+        userId,
+      }
+    );
+
+    return;
+  }
+
+  /*
+   * אם מקור ההגעה כבר זוהה
+   * כ-MOVE / עמית / FreeFit,
+   * כל ההמשך נשאר במסלול הסגור.
+   */
+  if (
+    currentUser.source_confirmed ===
+      true &&
+    isSpecialSource(
+      currentUser.source
+    )
+  ) {
+    const handledSpecial =
+      await handleSpecialSourceConversation(
+        {
+          userId,
+          userMessage,
+          currentUser,
+        }
+      );
+
+    if (handledSpecial) {
+      return;
+    }
+  }
+
+  /*
+   * מכאן הבוט הרגיל.
+   */
   const extractedDetails =
     extractUserDetails(
       userMessage,
       currentUser
     );
-const profileUpdates =
-  buildProfileUpdates(
-    userMessage,
-    currentUser
+
+  const profileUpdates =
+    buildProfileUpdates(
+      userMessage,
+      currentUser
+    );
+
+  Object.assign(
+    extractedDetails,
+    profileUpdates
   );
 
-Object.assign(
-  extractedDetails,
-  profileUpdates
-);
   console.log(
     "🧩 פרטים שחולצו מההודעה:",
     {
@@ -436,16 +1200,14 @@ Object.assign(
     }
   );
 
-  /**
-   * אם לא התקבל מספר טלפון מפורש,
-   * משתמשים במספר שממנו נשלחה ההודעה.
-   */
   if (
     !currentUser.phone &&
     !extractedDetails.phone
   ) {
     extractedDetails.phone =
-      whatsappIdToPhone(userId);
+      whatsappIdToPhone(
+        userId
+      );
   }
 
   const updatedUser =
@@ -466,7 +1228,9 @@ Object.assign(
   );
 
   const conversationHistory =
-    await getConversation(userId);
+    await getConversation(
+      userId
+    );
 
   const completeLead =
     hasCompleteLeadDetails(
@@ -476,37 +1240,54 @@ Object.assign(
   console.log(
     "🔍 בדיקת שדות ליד:",
     {
-      name: updatedUser.name,
-      hasName: !!updatedUser.name,
+      name:
+        updatedUser.name,
+      hasName:
+        !!updatedUser.name,
 
-      age: updatedUser.age,
+      age:
+        updatedUser.age,
       hasAge:
-        updatedUser.age !== null &&
-        updatedUser.age !== undefined,
+        updatedUser.age !==
+          null &&
+        updatedUser.age !==
+          undefined,
 
-      branch: updatedUser.branch,
-      hasBranch: !!updatedUser.branch,
+      branch:
+        updatedUser.branch,
+      hasBranch:
+        !!updatedUser.branch,
 
-      phone: updatedUser.phone,
-      hasPhone: !!updatedUser.phone,
+      phone:
+        updatedUser.phone,
+      hasPhone:
+        !!updatedUser.phone,
 
-      goal: updatedUser.goal,
-      hasGoal: !!updatedUser.goal,
+      goal:
+        updatedUser.goal,
+      hasGoal:
+        !!updatedUser.goal,
     }
   );
 
   const shouldSendLeadSummary =
     completeLead &&
-    updatedUser.summary_sent !== true;
+    updatedUser.summary_sent !==
+      true;
 
   console.log(
     "📋 בדיקת מוכנות הליד:",
     {
-      name: updatedUser.name,
-      age: updatedUser.age,
-      branch: updatedUser.branch,
-      phone: updatedUser.phone,
-      goal: updatedUser.goal,
+      name:
+        updatedUser.name,
+      age:
+        updatedUser.age,
+      branch:
+        updatedUser.branch,
+      phone:
+        updatedUser.phone,
+      goal:
+        updatedUser.goal,
       summarySent:
         updatedUser.summary_sent,
       completeLead,
@@ -514,14 +1295,15 @@ Object.assign(
     }
   );
 
-  const reply = await createReply({
-    userId,
-    userMessage,
-    updatedUser,
-    conversationHistory,
-    shouldSendLeadSummary,
-    formatLeadSummary,
-  });
+  const reply =
+    await createReply({
+      userId,
+      userMessage,
+      updatedUser,
+      conversationHistory,
+      shouldSendLeadSummary,
+      formatLeadSummary,
+    });
 
   if (
     !reply ||
@@ -548,9 +1330,8 @@ Object.assign(
   );
 
   /*
-   * createReply עשוי לשמור את הפרט האחרון
-   * של ההרשמה, לכן טוענים שוב את המשתמש
-   * לפני שבודקים אם הליד הושלם.
+   * createReply עשוי לשמור
+   * את הפרט האחרון של הליד.
    */
   const finalUser =
     await getUser(userId);
@@ -562,16 +1343,22 @@ Object.assign(
 
   const shouldSendManagerLead =
     finalCompleteLead &&
-    finalUser.summary_sent !== true;
+    finalUser.summary_sent !==
+      true;
 
   console.log(
     "📋 בדיקה סופית לשליחת ליד:",
     {
-      name: finalUser.name,
-      age: finalUser.age,
-      branch: finalUser.branch,
-      phone: finalUser.phone,
-      goal: finalUser.goal,
+      name:
+        finalUser.name,
+      age:
+        finalUser.age,
+      branch:
+        finalUser.branch,
+      phone:
+        finalUser.phone,
+      goal:
+        finalUser.goal,
       summarySent:
         finalUser.summary_sent,
       completeLead:
@@ -580,14 +1367,18 @@ Object.assign(
     }
   );
 
-  if (shouldSendManagerLead) {
+  if (
+    shouldSendManagerLead
+  ) {
     const managerMessageSent =
       await sendLeadToManager(
         userId,
         finalUser
       );
 
-    if (managerMessageSent) {
+    if (
+      managerMessageSent
+    ) {
       await markSummarySent(
         userId
       );
@@ -607,17 +1398,17 @@ Object.assign(
   );
 }
 
-/**
+/*
  * מקבל את ה־Webhook מ־Whapi.
  */
-
-/**
- * מקבל את ה־Webhook מ־Whapi.
- */
-async function handleWebhook(req, res) {
+async function handleWebhook(
+  req,
+  res
+) {
   res.status(200).json({
     success: true,
-    message: "Webhook received",
+    message:
+      "Webhook received",
   });
 
   try {
@@ -631,13 +1422,19 @@ async function handleWebhook(req, res) {
     const messages =
       req.body?.messages;
 
-    if (!Array.isArray(messages)) {
+    if (
+      !Array.isArray(messages)
+    ) {
       return;
     }
 
-    for (const message of messages) {
+    for (
+      const message of messages
+    ) {
       const messageId =
-        getMessageId(message);
+        getMessageId(
+          message
+        );
 
       if (
         messageId &&
@@ -674,7 +1471,8 @@ async function handleWebhook(req, res) {
           } catch (error) {
             console.error(
               `❌ שגיאה בעיבוד הודעה עבור ${userId}:`,
-              error.response?.data ||
+              error.response
+                ?.data ||
                 error.message
             );
           }

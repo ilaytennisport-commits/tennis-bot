@@ -6,6 +6,16 @@ function hasValue(value) {
   );
 }
 
+function normalizeText(value = "") {
+  return String(value)
+    .toLowerCase()
+    .trim()
+    .replace(/[״"'׳]/g, "")
+    .replace(/[.,!?;:()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeSource(source = "") {
   return String(source)
     .toLowerCase()
@@ -39,9 +49,6 @@ function isSpecialSource(source = "") {
 /*
  * ההודעה הראשונה לאחר שזוהה
  * שהלקוח הגיע דרך אחת הפלטפורמות.
- *
- * שם הפלטפורמה מופיע רק משום
- * שהלקוח עצמו כבר ציין אותה.
  */
 function buildSpecialWelcome(source) {
   const sourceName =
@@ -69,10 +76,6 @@ function getMissingSpecialField(user = {}) {
     return "age";
   }
 
-  /*
-   * city עדיין לא קיים בפרופיל.
-   * נוסיף אותו למסד הנתונים בשלב הבא.
-   */
   if (!hasValue(user.city)) {
     return "city";
   }
@@ -98,7 +101,7 @@ function getQuestionForField(field) {
     case "experience":
       return [
         "מה הניסיון בטניס עד היום?",
-        "אם אין ניסיון קודם, אפשר פשוט לכתוב \"ללא ניסיון\".",
+        'אם אין ניסיון קודם, אפשר פשוט לכתוב "ללא ניסיון".',
       ].join("\n");
 
     default:
@@ -108,8 +111,6 @@ function getQuestionForField(field) {
 
 /*
  * הודעת סיום איסוף הפרטים.
- *
- * בית דגן לא מופיע כאן.
  */
 function buildSpecialRulesMessage(source) {
   const sourceName =
@@ -138,6 +139,212 @@ function buildSpecialRulesMessage(source) {
   ].join("\n");
 }
 
+/*
+ * מזהה שאלות נפוצות של לקוחות
+ * MOVE / עמית / FreeFit.
+ *
+ * חשוב:
+ * לא מזכירים מסלולים אחרים,
+ * מחירים רגילים או מבצעים.
+ */
+function getSpecialFaqReply(
+  message = "",
+  source = ""
+) {
+  const text =
+    normalizeText(message);
+
+  const sourceName =
+    getSourceDisplayName(source);
+
+  /*
+   * איפה מתקיימים האימונים.
+   */
+  if (
+    text.includes("איפה") ||
+    text.includes("מיקום") ||
+    text.includes("סניף") ||
+    text.includes("איפה האימון") ||
+    text.includes("איפה האימונים")
+  ) {
+    return [
+      "האימונים במסגרת המסלול מתקיימים בגלי הדר – ראשון לציון 🎾",
+      "",
+      "האימונים מתקיימים בקבוצות של עד 8–10 מתאמנים.",
+    ].join("\n");
+  }
+
+  /*
+   * כמה משתתפים בקבוצה.
+   */
+  if (
+    text.includes("כמה אנשים") ||
+    text.includes("כמה משתתפים") ||
+    text.includes("גודל קבוצה") ||
+    text.includes("כמה בקבוצה")
+  ) {
+    return "הקבוצות הן עד 8–10 מתאמנים 🎾";
+  }
+
+  /*
+   * הרשמה לשבוע הבא.
+   */
+  if (
+    text.includes("עד מתי") ||
+    text.includes("מתי נרשמים") ||
+    text.includes("מתי להירשם") ||
+    text.includes("הרשמה לשבוע הבא") ||
+    text.includes("להירשם לשבוע הבא")
+  ) {
+    return [
+      "ההרשמה לאימוני השבוע הבא מתבצעת עד יום שישי.",
+      "",
+      "מומלץ להירשם מראש כדי להגדיל את הסיכוי למקום פנוי 😊",
+    ].join("\n");
+  }
+
+  /*
+   * הרשמה למחר / היום / ברגע האחרון.
+   */
+  if (
+    text.includes("למחר") ||
+    text.includes("מחר") ||
+    text.includes("היום") ||
+    text.includes("ברגע האחרון") ||
+    text.includes("24 שעות") ||
+    text.includes("24 שעה")
+  ) {
+    return [
+      "הרשמה בטווח של 24 שעות לפני האימון ללא אישור לא תכובד.",
+      "",
+      "אם נשלחה בקבוצת העדכונים הודעה על אימון בהתראה קצרה, אפשר להירשם בהתאם לפרטים שבהודעה.",
+    ].join("\n");
+  }
+
+  /*
+   * האם יש מקום / האם אפשר להצטרף.
+   */
+  if (
+    text.includes("יש מקום") ||
+    text.includes("מקום פנוי") ||
+    text.includes("אפשר להצטרף") ||
+    text.includes("אפשר להירשם") ||
+    text.includes("פנוי")
+  ) {
+    return [
+      `ההשתתפות דרך ${sourceName} תלויה באימונים המופיעים בפלטפורמה ובמקום הפנוי בקבוצה.`,
+      "",
+      "בנוסף, תינתן עדיפות למתאמני המועדון הקבועים.",
+    ].join("\n");
+  }
+
+  /*
+   * מינימום משתתפים.
+   */
+  if (
+    text.includes("מינימום") ||
+    text.includes("כמה צריכים") ||
+    text.includes("מספיק משתתפים")
+  ) {
+    return "קיום האימון מותנה במינימום משתתפים.";
+  }
+
+  /*
+   * ביטול אימון.
+   */
+  if (
+    text.includes("ביטול") ||
+    text.includes("מתבטל") ||
+    text.includes("בוטל") ||
+    text.includes("לא מתקיים") ||
+    text.includes("לא יתקיים")
+  ) {
+    return [
+      "אם אימון מתבטל, המועדון יעדכן את הנרשמים.",
+      "",
+      "אימון שלא יתקיים לא יחויב או יזוכה בהתאם.",
+    ].join("\n");
+  }
+
+  /*
+   * חיוב / זיכוי.
+   */
+  if (
+    text.includes("חיוב") ||
+    text.includes("מחייב") ||
+    text.includes("זיכוי") ||
+    text.includes("יחויב") ||
+    text.includes("כסף")
+  ) {
+    return [
+      "אימון שלא יתקיים לא יחויב או יזוכה בהתאם.",
+      "",
+      "אם יש מקרה ספציפי, אפשר לכתוב כאן מה קרה ואעזור לפי כללי המסלול.",
+    ].join("\n");
+  }
+
+  /*
+   * קבוצת עדכונים.
+   */
+  if (
+    text.includes("קבוצה") ||
+    text.includes("קבוצת עדכונים") ||
+    text.includes("וואטסאפ") ||
+    text.includes("קישור") ||
+    text.includes("לינק")
+  ) {
+    return [
+      "זו קבוצת עדכוני האימונים:",
+      "https://chat.whatsapp.com/DiUCuKGCEQi93ziqMgqfzh",
+      "",
+      "ההצטרפות לקבוצה נדרשת לצורך קבלת עדכונים על האימונים.",
+    ].join("\n");
+  }
+
+  /*
+   * אימונים בהתראה קצרה.
+   */
+  if (
+    text.includes("התראה קצרה") ||
+    text.includes("אימון נוסף") ||
+    text.includes("אימונים נוספים") ||
+    text.includes("אימון ספונטני")
+  ) {
+    return [
+      "לעיתים נשלחות בקבוצת העדכונים הודעות על אימונים בהתראה קצרה.",
+      "",
+      "במקרה כזה ניתן להירשם לפי הפרטים שמופיעים בהודעה.",
+    ].join("\n");
+  }
+
+  /*
+   * האם חייבים להירשם דרך הפלטפורמה.
+   */
+  if (
+    text.includes("פלטפורמה") ||
+    text.includes("דרך האפליקציה") ||
+    text.includes("דרך האפליקציה")
+  ) {
+    return [
+      `במסלול ${sourceName} ניתן להצטרף לאימונים המופיעים בפלטפורמה.`,
+      "",
+      "יש לפעול בהתאם להרשמה ולאימונים שמופיעים שם.",
+    ].join("\n");
+  }
+
+  /*
+   * שאלה כללית שלא זוהתה.
+   *
+   * בכוונה לא שולחים לבוט הרגיל,
+   * כדי שלא ייחשפו מחירים או מסלולים אחרים.
+   */
+  return [
+    `אשמח לעזור בכל שאלה לגבי האימונים דרך ${sourceName} 😊`,
+    "",
+    "אפשר לשאול למשל על הרשמה, מיקום האימונים, ביטולים, גודל הקבוצה או קבוצת העדכונים.",
+  ].join("\n");
+}
+
 module.exports = {
   isSpecialSource,
   getSourceDisplayName,
@@ -145,4 +352,5 @@ module.exports = {
   getMissingSpecialField,
   getQuestionForField,
   buildSpecialRulesMessage,
+  getSpecialFaqReply,
 };

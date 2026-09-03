@@ -1,8 +1,6 @@
 const {
   buildProfileUpdates,
-} = require(
-  "../services/profileMemoryService"
-);
+} = require("../services/profileMemoryService");
 
 const {
   createReply,
@@ -43,6 +41,7 @@ const {
   getMissingSpecialField,
   getQuestionForField,
   buildSpecialRulesMessage,
+  getSpecialFaqReply,
 } = require(
   "../services/specialSourceConversationService"
 );
@@ -330,9 +329,6 @@ function buildInvalidSpecialFieldReply(
 /*
  * מטפל בהמשך שיחה של לקוח
  * MOVE / עמית / FreeFit.
- *
- * מחזיר true אם ההודעה טופלה
- * במסלול המיוחד.
  */
 async function handleSpecialSourceConversation({
   userId,
@@ -341,16 +337,14 @@ async function handleSpecialSourceConversation({
 }) {
   if (
     !currentUser.source_confirmed ||
-    !isSpecialSource(
-      currentUser.source
-    )
+    !isSpecialSource(currentUser.source)
   ) {
     return false;
   }
 
   /*
-   * מוודאים שגם לקוחות מיוחדים
-   * תמיד משויכים לגלי הדר בלבד.
+   * לקוחות המסלולים המיוחדים
+   * משויכים לגלי הדר – ראשון לציון בלבד.
    */
   if (
     currentUser.branch !==
@@ -370,11 +364,10 @@ async function handleSpecialSourceConversation({
     );
 
   /*
-   * אם כל הפרטים כבר נאספו,
-   * לא מעבירים את הלקוח לבוט הרגיל.
+   * כל הפרטים כבר נאספו.
    *
-   * בשלב הבא נוכל להוסיף כאן
-   * FAQ ייעודי למסלולים האלה.
+   * מכאן הלקוח נשאר בתוך FAQ
+   * המסלול המיוחד ולא עובר לבוט הרגיל.
    */
   if (!missingField) {
     await addMessage(
@@ -383,32 +376,30 @@ async function handleSpecialSourceConversation({
       userMessage
     );
 
-    const completedReply = [
-      "הפרטים שלך כבר שמורים אצלנו 😊",
-      "",
-      "להצטרפות לקבוצת עדכוני האימונים:",
-      "https://chat.whatsapp.com/DiUCuKGCEQi93ziqMgqfzh",
-      "",
-      "אם יש שאלה לגבי האימונים דרך המסלול, אפשר לכתוב אותה כאן.",
-    ].join("\n");
+    const faqReply =
+      getSpecialFaqReply(
+        userMessage,
+        currentUser.source
+      );
 
     await addMessage(
       userId,
       "assistant",
-      completedReply
+      faqReply
     );
 
     await sendWhatsAppMessage(
       userId,
-      completedReply
+      faqReply
     );
 
     console.log(
-      "🔐 הודעה במסלול מיוחד לאחר השלמת פרטים:",
+      "💬 FAQ במסלול מיוחד:",
       {
         userId,
         source:
           currentUser.source,
+        userMessage,
       }
     );
 
@@ -907,8 +898,7 @@ async function processIncomingMessage(
       );
 
       const errorMessage =
-        error.response?.data
-          ?.message ||
+        error.response?.data?.message ||
         error.message;
 
       await sendWhatsAppMessage(
@@ -1146,9 +1136,8 @@ async function processIncomingMessage(
   }
 
   /*
-   * אם מקור ההגעה כבר זוהה
-   * כ-MOVE / עמית / FreeFit,
-   * כל ההמשך נשאר במסלול הסגור.
+   * לקוחות MOVE / עמית / FreeFit
+   * נשארים תמיד במסלול המיוחד.
    */
   if (
     currentUser.source_confirmed ===
@@ -1471,8 +1460,7 @@ async function handleWebhook(
           } catch (error) {
             console.error(
               `❌ שגיאה בעיבוד הודעה עבור ${userId}:`,
-              error.response
-                ?.data ||
+              error.response?.data ||
                 error.message
             );
           }

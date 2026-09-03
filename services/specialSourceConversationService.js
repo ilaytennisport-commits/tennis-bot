@@ -47,6 +47,132 @@ function isSpecialSource(source = "") {
 }
 
 /*
+ * בודק האם הלקוח מביע עניין מפורש
+ * במסלול הרגיל של האקדמיה.
+ *
+ * במקרה כזה נאפשר לבוט הרגיל
+ * להמשיך את השיחה.
+ *
+ * חשוב:
+ * "כמה עולה דרך עמית?"
+ * או שאלה על הפלטפורמה עצמה
+ * אינן נחשבות עניין במסלול רגיל.
+ */
+function isRegularProgramInterest(
+  message = "",
+  source = ""
+) {
+  const text = normalizeText(message);
+
+  if (!text) {
+    return false;
+  }
+
+  /*
+   * אם הלקוח מדבר במפורש על
+   * הפלטפורמה שלו, נשאיר אותו
+   * במסלול המיוחד.
+   */
+  const specialPlatformPatterns = [
+    /\bmove\b/i,
+    /(^|\s)מוב($|\s)/,
+    /(^|\s)עמית($|\s)/,
+    /\bfreefit\b/i,
+    /\bfree fit\b/i,
+    /(^|\s)פריפיט($|\s)/,
+    /(^|\s)פרי פיט($|\s)/,
+    /דרך הפלטפורמה/,
+    /בפלטפורמה/,
+  ];
+
+  if (
+    specialPlatformPatterns.some(
+      (pattern) => pattern.test(text)
+    )
+  ) {
+    return false;
+  }
+
+  /*
+   * ביטויים ברורים שמעידים
+   * שהלקוח מתעניין במסלול רגיל.
+   */
+  const regularPatterns = [
+    /מסלול רגיל/,
+    /מסלול קבוע/,
+    /חוג רגיל/,
+    /חוג קבוע/,
+    /חוג טניס/,
+    /להירשם לחוג/,
+    /להרשם לחוג/,
+    /להצטרף לחוג/,
+    /לעבור למסלול רגיל/,
+    /לעבור למסלול קבוע/,
+    /להירשם למועדון/,
+    /להרשם למועדון/,
+    /להצטרף למועדון/,
+    /מנוי רגיל/,
+    /מנוי חודשי/,
+    /מחיר רגיל/,
+    /מחירים רגילים/,
+    /מחירון רגיל/,
+    /מחירון המועדון/,
+    /אימון פרטי/,
+    /אימונים פרטיים/,
+    /שיעור פרטי/,
+    /שיעורים פרטיים/,
+    /אימון אישי/,
+    /אימונים אישיים/,
+    /אימון זוגי/,
+    /אימונים זוגיים/,
+    /כרטיסיה/,
+    /כרטיסייה/,
+  ];
+
+  if (
+    regularPatterns.some(
+      (pattern) => pattern.test(text)
+    )
+  ) {
+    return true;
+  }
+
+  /*
+   * שאלות מחיר כשיש בהן מונח
+   * שמצביע בבירור על השירות הרגיל.
+   */
+  const asksPrice =
+    text.includes("כמה עולה") ||
+    text.includes("מה המחיר") ||
+    text.includes("מחיר") ||
+    text.includes("עלות");
+
+  const regularServiceTerms = [
+    "חוג",
+    "פרטי",
+    "אישי",
+    "זוגי",
+    "כרטיסיה",
+    "כרטיסייה",
+    "מנוי",
+    "מסלול רגיל",
+    "מסלול קבוע",
+    "מועדון",
+  ];
+
+  if (
+    asksPrice &&
+    regularServiceTerms.some(
+      (term) => text.includes(term)
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/*
  * ההודעה הראשונה לאחר שזוהה
  * שהלקוח הגיע דרך אחת הפלטפורמות.
  */
@@ -140,12 +266,8 @@ function buildSpecialRulesMessage(source) {
 }
 
 /*
- * מזהה שאלות נפוצות של לקוחות
+ * FAQ ייעודי ללקוחות
  * MOVE / עמית / FreeFit.
- *
- * חשוב:
- * לא מזכירים מסלולים אחרים,
- * מחירים רגילים או מבצעים.
  */
 function getSpecialFaqReply(
   message = "",
@@ -163,9 +285,7 @@ function getSpecialFaqReply(
   if (
     text.includes("איפה") ||
     text.includes("מיקום") ||
-    text.includes("סניף") ||
-    text.includes("איפה האימון") ||
-    text.includes("איפה האימונים")
+    text.includes("סניף")
   ) {
     return [
       "האימונים במסגרת המסלול מתקיימים בגלי הדר – ראשון לציון 🎾",
@@ -287,7 +407,6 @@ function getSpecialFaqReply(
    * קבוצת עדכונים.
    */
   if (
-    text.includes("קבוצה") ||
     text.includes("קבוצת עדכונים") ||
     text.includes("וואטסאפ") ||
     text.includes("קישור") ||
@@ -318,12 +437,12 @@ function getSpecialFaqReply(
   }
 
   /*
-   * האם חייבים להירשם דרך הפלטפורמה.
+   * הרשמה דרך הפלטפורמה.
    */
   if (
     text.includes("פלטפורמה") ||
     text.includes("דרך האפליקציה") ||
-    text.includes("דרך האפליקציה")
+    text.includes("באפליקציה")
   ) {
     return [
       `במסלול ${sourceName} ניתן להצטרף לאימונים המופיעים בפלטפורמה.`,
@@ -334,9 +453,6 @@ function getSpecialFaqReply(
 
   /*
    * שאלה כללית שלא זוהתה.
-   *
-   * בכוונה לא שולחים לבוט הרגיל,
-   * כדי שלא ייחשפו מחירים או מסלולים אחרים.
    */
   return [
     `אשמח לעזור בכל שאלה לגבי האימונים דרך ${sourceName} 😊`,
@@ -347,6 +463,7 @@ function getSpecialFaqReply(
 
 module.exports = {
   isSpecialSource,
+  isRegularProgramInterest,
   getSourceDisplayName,
   buildSpecialWelcome,
   getMissingSpecialField,

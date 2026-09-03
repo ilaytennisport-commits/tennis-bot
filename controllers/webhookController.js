@@ -37,6 +37,7 @@ const {
 
 const {
   isSpecialSource,
+  isRegularProgramInterest,
   buildSpecialWelcome,
   getMissingSpecialField,
   getQuestionForField,
@@ -175,6 +176,7 @@ function looksLikeQuestion(message = "") {
     /^באילו\b/,
     /^אפשר\b/,
     /^יש\b/,
+    /^עד מתי\b/,
   ];
 
   return questionPatterns.some(
@@ -189,7 +191,7 @@ function extractSpecialAge(message = "") {
   const text = cleanText(message);
 
   const match = text.match(
-    /(?:בן|בת|גיל)?\s*(\d{1,2})/
+    /(?:בן|בת|גיל)?\s*(\d{1,3})/
   );
 
   if (!match) {
@@ -327,8 +329,24 @@ function buildInvalidSpecialFieldReply(
 }
 
 /*
+ * בודק האם הודעה שנשלחה בזמן
+ * איסוף הפרטים נראית כמו שאלת FAQ.
+ */
+function shouldHandleSpecialFaqDuringOnboarding(
+  userMessage
+) {
+  return looksLikeQuestion(
+    userMessage
+  );
+}
+
+/*
  * מטפל בהמשך שיחה של לקוח
  * MOVE / עמית / FreeFit.
+ *
+ * מחזיר:
+ * true  = ההודעה טופלה במסלול המיוחד.
+ * false = אפשר להעביר אותה לבוט הרגיל.
  */
 async function handleSpecialSourceConversation({
   userId,
@@ -337,8 +355,36 @@ async function handleSpecialSourceConversation({
 }) {
   if (
     !currentUser.source_confirmed ||
-    !isSpecialSource(currentUser.source)
+    !isSpecialSource(
+      currentUser.source
+    )
   ) {
+    return false;
+  }
+
+  /*
+   * אם לקוח שהגיע דרך מסלול מיוחד
+   * מתעניין במפורש במסלול הרגיל,
+   * מאפשרים לבוט הרגיל לטפל בהודעה.
+   *
+   * מקור ההגעה המקורי נשאר שמור.
+   */
+  if (
+    isRegularProgramInterest(
+      userMessage,
+      currentUser.source
+    )
+  ) {
+    console.log(
+      "💰 לקוח ממסלול מיוחד מתעניין במסלול הרגיל:",
+      {
+        userId,
+        source:
+          currentUser.source,
+        userMessage,
+      }
+    );
+
     return false;
   }
 
@@ -364,10 +410,8 @@ async function handleSpecialSourceConversation({
     );
 
   /*
-   * כל הפרטים כבר נאספו.
-   *
-   * מכאן הלקוח נשאר בתוך FAQ
-   * המסלול המיוחד ולא עובר לבוט הרגיל.
+   * כל הפרטים כבר נאספו:
+   * עונים דרך FAQ המסלול המיוחד.
    */
   if (!missingField) {
     await addMessage(
@@ -406,6 +450,67 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
+  /*
+   * הלקוח עדיין באמצע מסירת פרטים,
+   * אבל שאל שאלה במקום לענות.
+   *
+   * עונים לשאלה ואז מחזירים אותו
+   * בדיוק לשאלה שחיכתה לו.
+   */
+  if (
+    shouldHandleSpecialFaqDuringOnboarding(
+      userMessage
+    )
+  ) {
+    await addMessage(
+      userId,
+      "user",
+      userMessage
+    );
+
+    const faqReply =
+      getSpecialFaqReply(
+        userMessage,
+        currentUser.source
+      );
+
+    const pendingQuestion =
+      getQuestionForField(
+        missingField
+      );
+
+    const combinedReply = [
+      faqReply,
+      "",
+      "וכדי שנוכל להמשיך בהרשמה:",
+      pendingQuestion,
+    ].join("\n");
+
+    await addMessage(
+      userId,
+      "assistant",
+      combinedReply
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      combinedReply
+    );
+
+    console.log(
+      "💬 FAQ במהלך איסוף פרטים במסלול מיוחד:",
+      {
+        userId,
+        source:
+          currentUser.source,
+        missingField,
+        userMessage,
+      }
+    );
+
+    return true;
+  }
+
   const fieldUpdate =
     buildSpecialFieldUpdate(
       missingField,
@@ -419,7 +524,7 @@ async function handleSpecialSourceConversation({
   );
 
   /*
-   * לא מקבלים שאלה או תשובה לא תקינה
+   * לא מקבלים תשובה לא תקינה
    * בתור שם / גיל / עיר / ניסיון.
    */
   if (!fieldUpdate) {
@@ -1136,8 +1241,11 @@ async function processIncomingMessage(
   }
 
   /*
-   * לקוחות MOVE / עמית / FreeFit
-   * נשארים תמיד במסלול המיוחד.
+   * לקוחות MOVE / עמית / FreeFit.
+   *
+   * בדרך כלל נשארים במסלול המיוחד,
+   * אלא אם הביעו עניין מפורש
+   * במסלול הרגיל.
    */
   if (
     currentUser.source_confirmed ===

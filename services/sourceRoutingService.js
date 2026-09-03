@@ -20,16 +20,56 @@ function detectSpecialSource(message = "") {
   const text = normalizeMessage(message);
 
   /*
-   * MOVE / מוב
+   * MOVE / מוב / קופות חולים
+   *
+   * כל לקוח שמציין קופת חולים
+   * מנותב למסלול MOVE.
+   *
+   * אין מקור נפרד למכבי / כללית /
+   * מאוחדת / לאומית.
    */
   const movePatterns = [
     /\bmove\b/i,
     /(^|\s)מוב($|\s)/,
+
+    /*
+     * אזכור כללי של קופת חולים.
+     */
+    /קופת חולים/,
+    /קופת החולים/,
+    /קופח/,
+
+    /*
+     * מכבי
+     */
+    /(^|\s)מכבי($|\s)/,
+    /מכבי שירותי בריאות/,
+
+    /*
+     * כללית
+     */
+    /(^|\s)כללית($|\s)/,
+    /כללית מושלם/,
+    /כללית פלטינום/,
+    /שירותי בריאות כללית/,
+
+    /*
+     * מאוחדת
+     */
+    /(^|\s)מאוחדת($|\s)/,
+    /מאוחדת עדיף/,
+    /מאוחדת שיא/,
+
+    /*
+     * לאומית
+     */
+    /(^|\s)לאומית($|\s)/,
+    /לאומית שירותי בריאות/,
   ];
 
   if (
-    movePatterns.some((pattern) =>
-      pattern.test(text)
+    movePatterns.some(
+      (pattern) => pattern.test(text)
     )
   ) {
     return "move";
@@ -46,8 +86,8 @@ function detectSpecialSource(message = "") {
   ];
 
   if (
-    amitPatterns.some((pattern) =>
-      pattern.test(text)
+    amitPatterns.some(
+      (pattern) => pattern.test(text)
     )
   ) {
     return "amit";
@@ -67,8 +107,8 @@ function detectSpecialSource(message = "") {
   ];
 
   if (
-    freefitPatterns.some((pattern) =>
-      pattern.test(text)
+    freefitPatterns.some(
+      (pattern) => pattern.test(text)
     )
   ) {
     return "freefit";

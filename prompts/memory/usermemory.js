@@ -19,6 +19,10 @@ function emptyUser() {
     source: null,
     source_confirmed: false,
 
+    // לקוח שהגיע ממסלול מיוחד
+    // ועבר להתעניין במסלול הרגיל
+    regular_flow_active: false,
+
     summary_sent: false,
   };
 }
@@ -39,6 +43,7 @@ async function getUser(userId) {
         goal,
         source,
         source_confirmed,
+        regular_flow_active,
         summary_sent
       FROM users
       WHERE user_id = $1
@@ -77,6 +82,7 @@ async function saveUser(
         goal,
         source,
         source_confirmed,
+        regular_flow_active,
         summary_sent,
         updated_at
       )
@@ -95,6 +101,7 @@ async function saveUser(
         $12,
         $13,
         $14,
+        $15,
         NOW()
       )
       ON CONFLICT (user_id)
@@ -114,6 +121,8 @@ async function saveUser(
         source = EXCLUDED.source,
         source_confirmed =
           EXCLUDED.source_confirmed,
+        regular_flow_active =
+          EXCLUDED.regular_flow_active,
         summary_sent =
           EXCLUDED.summary_sent,
         updated_at = NOW()
@@ -130,6 +139,7 @@ async function saveUser(
         goal,
         source,
         source_confirmed,
+        regular_flow_active,
         summary_sent
     `,
     [
@@ -146,6 +156,7 @@ async function saveUser(
       updatedUser.goal,
       updatedUser.source,
       updatedUser.source_confirmed === true,
+      updatedUser.regular_flow_active === true,
       updatedUser.summary_sent === true,
     ]
   );
@@ -176,6 +187,7 @@ async function markSummarySent(
         goal,
         source,
         source_confirmed,
+        regular_flow_active,
         summary_sent
     `,
     [userId]

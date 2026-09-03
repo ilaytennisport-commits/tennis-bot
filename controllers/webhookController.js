@@ -33,6 +33,7 @@ const {
   getEntryWelcomeMessage,
   shouldAskSource,
   resolveSource,
+  detectSpecialSource,
 } = require("../services/sourceRoutingService");
 
 const {
@@ -108,6 +109,7 @@ function hasExistingProfileData(user = {}) {
       user.branch ||
       user.phone ||
       user.goal ||
+      user.regular_flow_active === true ||
       user.summary_sent === true
   );
 }
@@ -341,12 +343,37 @@ function shouldHandleSpecialFaqDuringOnboarding(
 }
 
 /*
+ * אם לקוח שכבר עבר למסלול הרגיל
+ * מזכיר שוב במפורש את המקור המיוחד
+ * שממנו הגיע, נחזיר אותו למסלול המיוחד.
+ *
+ * דוגמאות:
+ * לקוח MOVE שכותב "מה לגבי מכבי?"
+ * לקוח עמית שכותב "ומה דרך עמית?"
+ * לקוח FreeFit שכותב "מה לגבי פריפיט?"
+ */
+function shouldReturnToSpecialFlow(
+  userMessage,
+  currentSource
+) {
+  const detectedSource =
+    detectSpecialSource(
+      userMessage
+    );
+
+  return (
+    detectedSource !== null &&
+    detectedSource === currentSource
+  );
+}
+
+/*
  * מטפל בהמשך שיחה של לקוח
  * MOVE / עמית / FreeFit.
  *
  * מחזיר:
  * true  = ההודעה טופלה במסלול המיוחד.
- * false = אפשר להעביר אותה לבוט הרגיל.
+ * false = ההודעה ממשיכה לבוט הרגיל.
  */
 async function handleSpecialSourceConversation({
   userId,
@@ -363,11 +390,67 @@ async function handleSpecialSourceConversation({
   }
 
   /*
-   * אם לקוח שהגיע דרך מסלול מיוחד
-   * מתעניין במפורש במסלול הרגיל,
-   * מאפשרים לבוט הרגיל לטפל בהודעה.
+   * הלקוח כבר עבר בעבר לשיחה
+   * על המסלול הרגיל.
    *
-   * מקור ההגעה המקורי נשאר שמור.
+   * כל עוד הוא לא חוזר במפורש
+   * לשאול על המקור המיוחד,
+   * ממשיכים בבוט הרגיל.
+   */
+  if (
+    currentUser.regular_flow_active ===
+    true
+  ) {
+    if (
+      shouldReturnToSpecialFlow(
+        userMessage,
+        currentUser.source
+      )
+    ) {
+      currentUser =
+        await saveUser(
+          userId,
+          {
+            regular_flow_active:
+              false,
+            branch:
+              SPECIAL_BRANCH,
+          }
+        );
+
+      console.log(
+        "🔙 לקוח חזר מהמסלול הרגיל למסלול המיוחד:",
+        {
+          userId,
+          source:
+            currentUser.source,
+          userMessage,
+        }
+      );
+    } else {
+      console.log(
+        "➡️ ממשיך בשיחה על המסלול הרגיל:",
+        {
+          userId,
+          source:
+            currentUser.source,
+          userMessage,
+        }
+      );
+
+      return false;
+    }
+  }
+
+  /*
+   * לקוח במסלול מיוחד מתעניין
+   * במפורש בחוג / מסלול / אימון רגיל.
+   *
+   * מפעילים מצב רגיל מתמשך.
+   *
+   * מקור ההגעה נשאר move / amit / freefit,
+   * אבל branch מתאפס כדי שהבוט הרגיל
+   * יוכל להתאים סניף רגיל בהמשך.
    */
   if (
     isRegularProgramInterest(
@@ -375,12 +458,24 @@ async function handleSpecialSourceConversation({
       currentUser.source
     )
   ) {
+    currentUser =
+      await saveUser(
+        userId,
+        {
+          regular_flow_active:
+            true,
+          branch: null,
+        }
+      );
+
     console.log(
-      "💰 לקוח ממסלול מיוחד מתעניין במסלול הרגיל:",
+      "💰 לקוח ממסלול מיוחד עבר להתעניין במסלול הרגיל:",
       {
         userId,
         source:
           currentUser.source,
+        regularFlowActive:
+          currentUser.regular_flow_active,
         userMessage,
       }
     );
@@ -1051,6 +1146,8 @@ async function processIncomingMessage(
           source: "regular",
           source_confirmed:
             true,
+          regular_flow_active:
+            false,
         }
       );
 
@@ -1137,10 +1234,12 @@ async function processIncomingMessage(
         sourceResult.source,
       source_confirmed:
         true,
+      regular_flow_active:
+        false,
     };
 
     /*
-     * שלושת המסלולים המיוחדים
+     * המסלולים המיוחדים
      * קיימים בגלי הדר בלבד.
      */
     if (
@@ -1241,11 +1340,15 @@ async function processIncomingMessage(
   }
 
   /*
-   * לקוחות MOVE / עמית / FreeFit.
+   * לקוחות שהגיעו דרך
+   * MOVE / קופת חולים / עמית / FreeFit.
    *
-   * בדרך כלל נשארים במסלול המיוחד,
-   * אלא אם הביעו עניין מפורש
-   * במסלול הרגיל.
+   * אם regular_flow_active = TRUE,
+   * הם ממשיכים בבוט הרגיל.
+   *
+   * אם הם מזכירים שוב במפורש את
+   * המקור המיוחד שלהם, הם יכולים
+   * לחזור למסלול המיוחד.
    */
   if (
     currentUser.source_confirmed ===
@@ -1266,6 +1369,15 @@ async function processIncomingMessage(
     if (handledSpecial) {
       return;
     }
+
+    /*
+     * ייתכן שבתוך הטיפול נשמר
+     * regular_flow_active או אופס branch.
+     * טוענים מחדש את הפרופיל לפני
+     * הכניסה לבוט הרגיל.
+     */
+    currentUser =
+      await getUser(userId);
   }
 
   /*
@@ -1364,6 +1476,12 @@ async function processIncomingMessage(
         updatedUser.goal,
       hasGoal:
         !!updatedUser.goal,
+
+      source:
+        updatedUser.source,
+
+      regularFlowActive:
+        updatedUser.regular_flow_active,
     }
   );
 
@@ -1385,6 +1503,10 @@ async function processIncomingMessage(
         updatedUser.phone,
       goal:
         updatedUser.goal,
+      source:
+        updatedUser.source,
+      regularFlowActive:
+        updatedUser.regular_flow_active,
       summarySent:
         updatedUser.summary_sent,
       completeLead,
@@ -1456,6 +1578,10 @@ async function processIncomingMessage(
         finalUser.phone,
       goal:
         finalUser.goal,
+      source:
+        finalUser.source,
+      regularFlowActive:
+        finalUser.regular_flow_active,
       summarySent:
         finalUser.summary_sent,
       completeLead:

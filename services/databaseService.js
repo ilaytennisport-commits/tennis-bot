@@ -36,6 +36,8 @@ async function initializeDatabase() {
       source TEXT,
       source_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
 
+      regular_flow_active BOOLEAN NOT NULL DEFAULT FALSE,
+
       summary_sent BOOLEAN NOT NULL DEFAULT FALSE,
 
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -95,6 +97,23 @@ async function initializeDatabase() {
     BOOLEAN NOT NULL DEFAULT FALSE
   `);
 
+  /*
+   * לקוח שהגיע ממסלול מיוחד
+   * ועבר להתעניין במסלול הרגיל.
+   *
+   * מקור ההגעה המקורי נשאר שמור,
+   * אבל כל עוד השדה TRUE,
+   * ממשיכים אותו בבוט הרגיל.
+   */
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS regular_flow_active
+    BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
+  /*
+   * האם הליד כבר נשלח למנהל.
+   */
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS summary_sent

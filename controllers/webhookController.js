@@ -60,8 +60,7 @@ const {
 
 const processedMessageIds = new Set();
 
-const MAX_PROCESSED_MESSAGE_IDS =
-  2000;
+const MAX_PROCESSED_MESSAGE_IDS = 2000;
 
 const userQueues = new Map();
 
@@ -77,10 +76,6 @@ const SPECIAL_BRANCH =
  * =========================================================
  */
 
-/*
- * בודק אם המספר ששולח את ההודעה
- * הוא מספר המנהל.
- */
 function isManagerPhone(phone) {
   if (!CLUB_MANAGER_PHONE) {
     return false;
@@ -94,14 +89,6 @@ function isManagerPhone(phone) {
   );
 }
 
-/*
- * מנקה שם שהגיע בדיווח נוכחות.
- *
- * מאפשר גם כתיבה כמו:
- * • נועם
- * - נועם
- * ✅ נועם
- */
 function cleanAttendanceName(
   value = ""
 ) {
@@ -115,23 +102,6 @@ function cleanAttendanceName(
     .trim();
 }
 
-/*
- * מפענח הודעת נוכחות.
- *
- * דוגמה:
- *
- * נוכחות צעירה
- * סתיו
- * רז
- * יונתן לוי
- *
- * מחזיר:
- * {
- *   isAttendanceCommand: true,
- *   groupName: "צעירה",
- *   presentNames: [...]
- * }
- */
 function parseAttendanceCommand(
   message = ""
 ) {
@@ -140,22 +110,21 @@ function parseAttendanceCommand(
 
   if (!rawText) {
     return {
-      isAttendanceCommand:
-        false,
+      isAttendanceCommand: false,
     };
   }
 
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((line) =>
-      line.trim()
-    )
-    .filter(Boolean);
+  const lines =
+    rawText
+      .split(/\r?\n/)
+      .map((line) =>
+        line.trim()
+      )
+      .filter(Boolean);
 
   if (lines.length === 0) {
     return {
-      isAttendanceCommand:
-        false,
+      isAttendanceCommand: false,
     };
   }
 
@@ -164,25 +133,42 @@ function parseAttendanceCommand(
       .replace(/\*/g, "")
       .trim();
 
-  if (
-    !/^נוכחות\b/.test(
-      firstLine
-    )
-  ) {
-    return {
-      isAttendanceCommand:
-        false,
-    };
-  }
+  let groupName = "";
 
-  const groupName =
-    firstLine
-      .replace(
-        /^נוכחות\s*[:\-–—]?\s*/,
-        ""
-      )
-      .replace(/\*/g, "")
-      .trim();
+  const attendanceMatch =
+    firstLine.match(
+      /^נוכחות\s*[:\-–—]?\s*(.*)$/i
+    );
+
+  if (attendanceMatch) {
+    groupName =
+      cleanAttendanceName(
+        attendanceMatch[1]
+      );
+  } else {
+    const possibleGroupName =
+      cleanAttendanceName(
+        firstLine
+      );
+
+    const normalizedGroupName =
+      possibleGroupName
+        .toLowerCase();
+
+    if (
+      normalizedGroupName ===
+        "צעירה" ||
+      normalizedGroupName ===
+        "בוגרת"
+    ) {
+      groupName =
+        possibleGroupName;
+    } else {
+      return {
+        isAttendanceCommand: false,
+      };
+    }
+  }
 
   const presentNames =
     lines
@@ -196,17 +182,12 @@ function parseAttendanceCommand(
       .filter(Boolean);
 
   return {
-    isAttendanceCommand:
-      true,
+    isAttendanceCommand: true,
     groupName,
     presentNames,
   };
 }
 
-/*
- * בונה רשימה קצרה של
- * הקבוצות הקיימות.
- */
 async function buildGroupsHelpMessage() {
   try {
     const groups =
@@ -236,16 +217,11 @@ async function buildGroupsHelpMessage() {
   }
 }
 
-/*
- * הודעה שנשלחת למנהל אחרי
- * דיווח נוכחות של מאמן.
- */
 function buildManagerAttendanceMessage(
   result
 ) {
   const dateText =
-    result?.session
-      ?.session_date ||
+    result?.session?.session_date ||
     "";
 
   const absentLines =
@@ -272,10 +248,6 @@ function buildManagerAttendanceMessage(
   ].join("\n");
 }
 
-/*
- * שולח למנהל את תוצאת
- * דיווח הנוכחות.
- */
 async function sendAttendanceToManager(
   result
 ) {
@@ -293,13 +265,8 @@ async function sendAttendanceToManager(
         result
       );
 
-    await sendWhatsAppMessage(
-      CLUB_MANAGER_PHONE,
-      managerMessage
-    );
-
     console.log(
-      "✅ דיווח הנוכחות נשלח למנהל:",
+      "📨 מנסה לשלוח דיווח נוכחות למנהל:",
       {
         group:
           result.group.name,
@@ -310,6 +277,17 @@ async function sendAttendanceToManager(
         absent:
           result.absentCount,
       }
+    );
+
+    const managerResult =
+      await sendWhatsAppMessage(
+        CLUB_MANAGER_PHONE,
+        managerMessage
+      );
+
+    console.log(
+      "✅ דיווח הנוכחות נשלח למנהל:",
+      managerResult
     );
 
     return true;
@@ -330,15 +308,6 @@ async function sendAttendanceToManager(
   }
 }
 
-/*
- * =========================================================
- * טיפול באנשי צוות
- * =========================================================
- *
- * חשוב:
- * אנשי צוות נעצרים כאן ולא ממשיכים
- * לבוט הלקוחות.
- */
 async function handleStaffMessage({
   userId,
   userMessage,
@@ -350,13 +319,6 @@ async function handleStaffMessage({
       userMessage
     );
 
-  /*
-   * כרגע מאמנים מורשים רק
-   * לדווח נוכחות.
-   *
-   * פקודות ניהול מתאמנים
-   * יתווספו למנהל בלבד בשלב הבא.
-   */
   if (
     !attendanceCommand
       .isAttendanceCommand
@@ -378,19 +340,28 @@ async function handleStaffMessage({
             "רז",
             "יונתן לוי",
             "",
+            "או פשוט:",
+            "",
+            "צעירה",
+            "סתיו",
+            "רז",
+            "יונתן לוי",
+            "",
             groupsHelp,
           ].join("\n")
         : [
             "🎾 זוהית כמאמן מורשה.",
             "",
-            "כדי לדווח נוכחות יש לשלוח:",
-            "",
-            "נוכחות [שם קבוצה]",
-            "ולאחר מכן כל מתאמן שהגיע בשורה נפרדת.",
-            "",
-            "לדוגמה:",
+            "כדי לדווח נוכחות אפשר לשלוח:",
             "",
             "נוכחות צעירה",
+            "סתיו",
+            "רז",
+            "יונתן לוי",
+            "",
+            "או פשוט:",
+            "",
+            "צעירה",
             "סתיו",
             "רז",
             "יונתן לוי",
@@ -408,9 +379,6 @@ async function handleStaffMessage({
     return true;
   }
 
-  /*
-   * חייב להיות שם קבוצה.
-   */
   if (
     !attendanceCommand.groupName
   ) {
@@ -438,11 +406,6 @@ async function handleStaffMessage({
     return true;
   }
 
-  /*
-   * כדי למנוע סימון בטעות של
-   * כל הקבוצה כנעדרת,
-   * לא מקבלים דיווח ריק.
-   */
   if (
     attendanceCommand
       .presentNames.length === 0
@@ -498,11 +461,6 @@ async function handleStaffMessage({
           staffPhone,
       });
 
-    /*
-     * קבוצה לא קיימת /
-     * שם לא מוכר /
-     * שגיאת אימות.
-     */
     if (!result.success) {
       let reply =
         result.message ||
@@ -543,9 +501,6 @@ async function handleStaffMessage({
       return true;
     }
 
-    /*
-     * הנוכחות נשמרה.
-     */
     const coachReply =
       buildAttendanceSummary(
         result
@@ -572,13 +527,6 @@ async function handleStaffMessage({
       }
     );
 
-    /*
-     * אם המאמן דיווח,
-     * שולחים את רשימת החסרים למנהל.
-     *
-     * אם המנהל עצמו דיווח,
-     * לא שולחים לו הודעה כפולה.
-     */
     if (!manager) {
       const managerSent =
         await sendAttendanceToManager(
@@ -628,9 +576,6 @@ async function handleStaffMessage({
  * =========================================================
  */
 
-/*
- * בודק האם כל פרטי הליד הרגיל נאספו.
- */
 function hasCompleteLeadDetails(user) {
   const hasName =
     typeof user.name === "string" &&
@@ -662,10 +607,6 @@ function hasCompleteLeadDetails(user) {
   );
 }
 
-/*
- * בודק האם כבר קיימים בפרופיל
- * פרטים משמעותיים מהמערכת הישנה.
- */
 function hasExistingProfileData(
   user = {}
 ) {
@@ -686,10 +627,6 @@ function hasExistingProfileData(
   );
 }
 
-/*
- * בודק האם ההודעה האחרונה של הבוט
- * הייתה שאלת שער הכניסה.
- */
 function isWaitingForSource(
   conversationHistory = []
 ) {
@@ -713,19 +650,12 @@ function isWaitingForSource(
   );
 }
 
-/*
- * מנקה טקסט קצר שמתקבל מהלקוח.
- */
 function cleanText(value = "") {
   return String(value)
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/*
- * בודק אם ההודעה נראית כמו שאלה
- * ולא כמו תשובה לפרט שביקשנו.
- */
 function looksLikeQuestion(
   message = ""
 ) {
@@ -765,9 +695,6 @@ function looksLikeQuestion(
   );
 }
 
-/*
- * חילוץ גיל מתוך תשובה למסלול המיוחד.
- */
 function extractSpecialAge(
   message = ""
 ) {
@@ -797,10 +724,6 @@ function extractSpecialAge(
   return age;
 }
 
-/*
- * בונה את העדכון לפרט שהבוט
- * ביקש כרגע במסלול המיוחד.
- */
 function buildSpecialFieldUpdate(
   field,
   userMessage
@@ -886,10 +809,6 @@ function buildSpecialFieldUpdate(
   }
 }
 
-/*
- * תשובה במקרה שהלקוח לא נתן
- * את הפרט שביקשנו.
- */
 function buildInvalidSpecialFieldReply(
   field
 ) {
@@ -923,10 +842,6 @@ function buildInvalidSpecialFieldReply(
   }
 }
 
-/*
- * בודק האם הודעה שנשלחה בזמן
- * איסוף הפרטים נראית כמו שאלת FAQ.
- */
 function shouldHandleSpecialFaqDuringOnboarding(
   userMessage
 ) {
@@ -935,11 +850,6 @@ function shouldHandleSpecialFaqDuringOnboarding(
   );
 }
 
-/*
- * אם לקוח שכבר עבר למסלול הרגיל
- * מזכיר שוב במפורש את המקור המיוחד
- * שממנו הגיע, נחזיר אותו למסלול המיוחד.
- */
 function shouldReturnToSpecialFlow(
   userMessage,
   currentSource
@@ -956,10 +866,6 @@ function shouldReturnToSpecialFlow(
   );
 }
 
-/*
- * מטפל בהמשך שיחה של לקוח
- * MOVE / עמית / FreeFit.
- */
 async function handleSpecialSourceConversation({
   userId,
   userMessage,
@@ -1292,9 +1198,6 @@ async function handleSpecialSourceConversation({
   return true;
 }
 
-/*
- * יוצר הודעה מסודרת למנהל המועדון.
- */
 function formatManagerLeadMessage(
   user,
   conversationHistory = []
@@ -1329,7 +1232,8 @@ function formatManagerLeadMessage(
         (
           conversationMessage
         ) =>
-          conversationMessage?.content &&
+          conversationMessage
+            ?.content &&
           [
             "user",
             "assistant",
@@ -1361,10 +1265,14 @@ function formatManagerLeadMessage(
       {
         timeZone:
           "Asia/Jerusalem",
-        dateStyle: "short",
-        timeStyle: "short",
+        dateStyle:
+          "short",
+        timeStyle:
+          "short",
       }
-    ).format(new Date());
+    ).format(
+      new Date()
+    );
 
   return [
     "🎾 ליד חדש - Tennis Sport",
@@ -1546,13 +1454,16 @@ async function processIncomingMessage(
   }
 
   if (
-    message.type !== "text"
+    message.type !==
+    "text"
   ) {
     return;
   }
 
   const userMessage =
-    message.text?.body?.trim();
+    message.text
+      ?.body
+      ?.trim();
 
   const userId =
     message.chat_id ||
@@ -1587,9 +1498,6 @@ async function processIncomingMessage(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
-  /*
-   * איפוס.
-   */
   if (
     userMessage ===
     "איפוס שיחה"
@@ -1618,16 +1526,34 @@ async function processIncomingMessage(
   }
 
   /*
-   * בדיקת מנהל.
-   *
-   * משאירים אותה לפני ניתוב
-   * אנשי הצוות כדי שהפקודה
-   * הישנה תמשיך לעבוד.
+   * בדיקת מנהל - מוגבלת למנהל או מאמן מורשה בלבד.
    */
   if (
     userMessage ===
     "בדיקת מנהל"
   ) {
+    const manager =
+      isManagerPhone(
+        detectedPhone
+      );
+
+    const coach =
+      isCoachPhone(
+        detectedPhone
+      );
+
+    if (
+      !manager &&
+      !coach
+    ) {
+      await sendWhatsAppMessage(
+        userId,
+        "❌ הפקודה אינה זמינה."
+      );
+
+      return;
+    }
+
     if (
       !CLUB_MANAGER_PHONE
     ) {
@@ -1641,7 +1567,7 @@ async function processIncomingMessage(
 
     try {
       console.log(
-        `🧪 בדיקת שליחה ישירה למנהל: ${CLUB_MANAGER_PHONE}`
+        "🧪 בדיקת שליחה ישירה למנהל"
       );
 
       const testResult =
@@ -1686,16 +1612,6 @@ async function processIncomingMessage(
     return;
   }
 
-  /*
-   * =========================================================
-   * ניתוב אנשי צוות
-   * =========================================================
-   *
-   * חשוב מאוד:
-   * הקטע הזה נמצא לפני getUser,
-   * לפני שער מקור ההגעה,
-   * ולפני כל בוט הלקוחות.
-   */
   const manager =
     isManagerPhone(
       detectedPhone
@@ -1734,12 +1650,6 @@ async function processIncomingMessage(
     return;
   }
 
-  /*
-   * =========================================================
-   * מכאן והלאה - לקוחות בלבד
-   * =========================================================
-   */
-
   let currentUser =
     await getUser(
       userId
@@ -1755,9 +1665,6 @@ async function processIncomingMessage(
       previousConversationHistory
     );
 
-  /*
-   * לקוח ותיק מהמערכת הישנה.
-   */
   if (
     shouldAskSource(
       currentUser
@@ -1794,9 +1701,6 @@ async function processIncomingMessage(
     );
   }
 
-  /*
-   * לקוח חדש לגמרי.
-   */
   if (
     shouldAskSource(
       currentUser
@@ -1845,10 +1749,6 @@ async function processIncomingMessage(
     return;
   }
 
-  /*
-   * תשובה לשאלת
-   * "איך שמעתם עלינו?"
-   */
   if (
     shouldAskSource(
       currentUser
@@ -1986,9 +1886,6 @@ async function processIncomingMessage(
       );
   }
 
-  /*
-   * מכאן הבוט הרגיל.
-   */
   const extractedDetails =
     extractUserDetails(
       userMessage,
@@ -2227,9 +2124,6 @@ async function processIncomingMessage(
   );
 }
 
-/*
- * מקבל את ה־Webhook מ־Whapi.
- */
 async function handleWebhook(
   req,
   res
@@ -2302,8 +2196,7 @@ async function handleWebhook(
           } catch (error) {
             console.error(
               `❌ שגיאה בעיבוד הודעה עבור ${userId}:`,
-              error.response
-                ?.data ||
+              error.response?.data ||
                 error.message
             );
           }

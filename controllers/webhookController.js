@@ -50,6 +50,8 @@ const {
 
 const {
   normalizePhone,
+  getManagerPhones,
+  isManagerPhone,
   isCoachPhone,
   getActiveGroups,
   submitAttendance,
@@ -58,12 +60,19 @@ const {
   "../services/attendanceService"
 );
 
-const processedMessageIds = new Set();
+const processedMessageIds =
+  new Set();
 
-const MAX_PROCESSED_MESSAGE_IDS = 2000;
+const MAX_PROCESSED_MESSAGE_IDS =
+  2000;
 
-const userQueues = new Map();
+const userQueues =
+  new Map();
 
+/*
+ * המנהל הראשי נשאר עבור
+ * מערכת הלידים הקיימת.
+ */
 const CLUB_MANAGER_PHONE =
   process.env.CLUB_MANAGER_PHONE;
 
@@ -72,22 +81,9 @@ const SPECIAL_BRANCH =
 
 /*
  * =========================================================
- * מערכת נוכחות - הרשאות
+ * מערכת נוכחות
  * =========================================================
  */
-
-function isManagerPhone(phone) {
-  if (!CLUB_MANAGER_PHONE) {
-    return false;
-  }
-
-  return (
-    normalizePhone(phone) ===
-    normalizePhone(
-      CLUB_MANAGER_PHONE
-    )
-  );
-}
 
 function cleanAttendanceName(
   value = ""
@@ -110,7 +106,8 @@ function parseAttendanceCommand(
 
   if (!rawText) {
     return {
-      isAttendanceCommand: false,
+      isAttendanceCommand:
+        false,
     };
   }
 
@@ -122,9 +119,12 @@ function parseAttendanceCommand(
       )
       .filter(Boolean);
 
-  if (lines.length === 0) {
+  if (
+    lines.length === 0
+  ) {
     return {
-      isAttendanceCommand: false,
+      isAttendanceCommand:
+        false,
     };
   }
 
@@ -135,6 +135,11 @@ function parseAttendanceCommand(
 
   let groupName = "";
 
+  /*
+   * אפשרות:
+   *
+   * נוכחות צעירה
+   */
   const attendanceMatch =
     firstLine.match(
       /^נוכחות\s*[:\-–—]?\s*(.*)$/i
@@ -146,6 +151,13 @@ function parseAttendanceCommand(
         attendanceMatch[1]
       );
   } else {
+    /*
+     * אפשר גם:
+     *
+     * צעירה
+     * סתיו
+     * רז
+     */
     const possibleGroupName =
       cleanAttendanceName(
         firstLine
@@ -165,7 +177,8 @@ function parseAttendanceCommand(
         possibleGroupName;
     } else {
       return {
-        isAttendanceCommand: false,
+        isAttendanceCommand:
+          false,
       };
     }
   }
@@ -182,7 +195,8 @@ function parseAttendanceCommand(
       .filter(Boolean);
 
   return {
-    isAttendanceCommand: true,
+    isAttendanceCommand:
+      true,
     groupName,
     presentNames,
   };
@@ -221,7 +235,8 @@ function buildManagerAttendanceMessage(
   result
 ) {
   const dateText =
-    result?.session?.session_date ||
+    result?.session
+      ?.session_date ||
     "";
 
   const absentLines =
@@ -248,65 +263,123 @@ function buildManagerAttendanceMessage(
   ].join("\n");
 }
 
-async function sendAttendanceToManager(
-  result
+/*
+ * שולח דיווח נוכחות לכל המנהלים.
+ *
+ * אם אחד המנהלים הוא זה שדיווח,
+ * לא שולחים אליו שוב את אותו הדיווח.
+ */
+async function sendAttendanceToManagers(
+  result,
+  reporterPhone
 ) {
-  if (!CLUB_MANAGER_PHONE) {
+  const managerPhones =
+    getManagerPhones();
+
+  if (
+    managerPhones.length === 0
+  ) {
     console.warn(
-      "⚠️ CLUB_MANAGER_PHONE לא הוגדר - הנוכחות נשמרה אבל לא נשלחה למנהל."
+      "⚠️ לא הוגדרו מספרי מנהלים."
     );
 
     return false;
   }
 
-  try {
-    const managerMessage =
-      buildManagerAttendanceMessage(
-        result
-      );
-
-    console.log(
-      "📨 מנסה לשלוח דיווח נוכחות למנהל:",
-      {
-        group:
-          result.group.name,
-        submittedBy:
-          result.submittedBy,
-        present:
-          result.presentCount,
-        absent:
-          result.absentCount,
-      }
+  const normalizedReporter =
+    normalizePhone(
+      reporterPhone
     );
 
-    const managerResult =
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        managerMessage
-      );
+  const recipients =
+    managerPhones.filter(
+      (phone) =>
+        normalizePhone(phone) !==
+        normalizedReporter
+    );
 
+  /*
+   * למשל אם מוגדר רק מנהל אחד
+   * והוא עצמו דיווח.
+   */
+  if (
+    recipients.length === 0
+  ) {
     console.log(
-      "✅ דיווח הנוכחות נשלח למנהל:",
-      managerResult
+      "ℹ️ אין מנהל נוסף שאליו צריך לשלוח את הדיווח."
     );
 
     return true;
-  } catch (error) {
-    console.error(
-      "❌ שליחת דיווח הנוכחות למנהל נכשלה:",
-      {
-        status:
-          error.response?.status,
-        data:
-          error.response?.data,
-        message:
-          error.message,
-      }
+  }
+
+  const managerMessage =
+    buildManagerAttendanceMessage(
+      result
     );
 
-    return false;
+  let allSent =
+    true;
+
+  for (
+    const managerPhone of recipients
+  ) {
+    try {
+      console.log(
+        "📨 שולח דיווח נוכחות למנהל:",
+        {
+          group:
+            result.group.name,
+          managerPhone,
+          submittedBy:
+            result.submittedBy,
+          present:
+            result.presentCount,
+          absent:
+            result.absentCount,
+        }
+      );
+
+      const managerResult =
+        await sendWhatsAppMessage(
+          managerPhone,
+          managerMessage
+        );
+
+      console.log(
+        "✅ דיווח הנוכחות נשלח למנהל:",
+        {
+          managerPhone,
+          result:
+            managerResult,
+        }
+      );
+    } catch (error) {
+      allSent =
+        false;
+
+      console.error(
+        "❌ שליחת דיווח נוכחות למנהל נכשלה:",
+        {
+          managerPhone,
+          status:
+            error.response?.status,
+          data:
+            error.response?.data,
+          message:
+            error.message,
+        }
+      );
+    }
   }
+
+  return allSent;
 }
+
+/*
+ * =========================================================
+ * טיפול באנשי צוות
+ * =========================================================
+ */
 
 async function handleStaffMessage({
   userId,
@@ -333,7 +406,7 @@ async function handleStaffMessage({
             "",
             "כרגע מערכת הנוכחות תומכת בדיווח נוכחות.",
             "",
-            "לדוגמה:",
+            "אפשר לשלוח:",
             "",
             "נוכחות צעירה",
             "סתיו",
@@ -368,7 +441,7 @@ async function handleStaffMessage({
             "",
             groupsHelp,
             "",
-            "ℹ️ מאמנים יכולים לדווח נוכחות בלבד. הוספה או שינוי של מתאמנים מתבצעים רק על ידי המנהל.",
+            "ℹ️ מאמנים יכולים לדווח נוכחות בלבד. הוספה או שינוי של מתאמנים מתבצעים רק על ידי מנהל.",
           ].join("\n");
 
     await sendWhatsAppMessage(
@@ -406,9 +479,15 @@ async function handleStaffMessage({
     return true;
   }
 
+  /*
+   * לא שומרים דיווח ריק,
+   * כדי לא לסמן בטעות
+   * קבוצה שלמה כנעדרת.
+   */
   if (
     attendanceCommand
-      .presentNames.length === 0
+      .presentNames
+      .length === 0
   ) {
     const reply = [
       "⚠️ לא נשלחו שמות של מתאמנים שהגיעו.",
@@ -501,14 +580,18 @@ async function handleStaffMessage({
       return true;
     }
 
-    const coachReply =
+    /*
+     * שולחים למי שדיווח
+     * את הסיכום המלא.
+     */
+    const staffReply =
       buildAttendanceSummary(
         result
       );
 
     await sendWhatsAppMessage(
       userId,
-      coachReply
+      staffReply
     );
 
     console.log(
@@ -527,21 +610,27 @@ async function handleStaffMessage({
       }
     );
 
-    if (!manager) {
-      const managerSent =
-        await sendAttendanceToManager(
-          result
-        );
+    /*
+     * דיווח מאמן:
+     * נשלח לכל המנהלים.
+     *
+     * דיווח מנהל:
+     * נשלח רק למנהל/ים האחרים.
+     */
+    const managersSent =
+      await sendAttendanceToManagers(
+        result,
+        staffPhone
+      );
 
-      if (!managerSent) {
-        await sendWhatsAppMessage(
-          userId,
-          [
-            "⚠️ הנוכחות נשמרה בהצלחה,",
-            "אך כרגע לא הצלחתי להעביר את הדיווח למנהל.",
-          ].join("\n")
-        );
-      }
+    if (!managersSent) {
+      await sendWhatsAppMessage(
+        userId,
+        [
+          "⚠️ הנוכחות נשמרה בהצלחה,",
+          "אך לא הצלחתי להעביר את הדיווח לכל המנהלים.",
+        ].join("\n")
+      );
     }
 
     return true;
@@ -584,7 +673,9 @@ function hasCompleteLeadDetails(user) {
   const hasAge =
     user.age !== null &&
     user.age !== undefined &&
-    String(user.age).trim().length > 0;
+    String(user.age)
+      .trim()
+      .length > 0;
 
   const hasBranch =
     typeof user.branch === "string" &&
@@ -623,7 +714,8 @@ function hasExistingProfileData(
       user.goal ||
       user.regular_flow_active ===
         true ||
-      user.summary_sent === true
+      user.summary_sent ===
+        true
   );
 }
 
@@ -645,9 +737,11 @@ function isWaitingForSource(
     return false;
   }
 
-  return lastAssistantMessage.content.includes(
-    "איך שמעתם עלינו"
-  );
+  return lastAssistantMessage
+    .content
+    .includes(
+      "איך שמעתם עלינו"
+    );
 }
 
 function cleanText(value = "") {
@@ -668,7 +762,9 @@ function looksLikeQuestion(
     return false;
   }
 
-  if (text.includes("?")) {
+  if (
+    text.includes("?")
+  ) {
     return true;
   }
 
@@ -711,7 +807,9 @@ function extractSpecialAge(
   }
 
   const age =
-    Number(match[1]);
+    Number(
+      match[1]
+    );
 
   if (
     !Number.isInteger(age) ||
@@ -729,7 +827,9 @@ function buildSpecialFieldUpdate(
   userMessage
 ) {
   const text =
-    cleanText(userMessage);
+    cleanText(
+      userMessage
+    );
 
   if (!text) {
     return null;
@@ -749,7 +849,8 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        name: text,
+        name:
+          text,
       };
     }
 
@@ -784,7 +885,8 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        city: text,
+        city:
+          text,
       };
     }
 
@@ -800,7 +902,8 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        experience: text,
+        experience:
+          text,
       };
     }
 
@@ -937,7 +1040,8 @@ async function handleSpecialSourceConversation({
         {
           regular_flow_active:
             true,
-          branch: null,
+          branch:
+            null,
         }
       );
 
@@ -1205,7 +1309,10 @@ function formatManagerLeadMessage(
   const cleanPhone =
     String(
       user.phone || ""
-    ).replace(/\D/g, "");
+    ).replace(
+      /\D/g,
+      ""
+    );
 
   let internationalPhone =
     cleanPhone;
@@ -1374,7 +1481,9 @@ async function sendLeadToManager(
   userId,
   updatedUser
 ) {
-  if (!CLUB_MANAGER_PHONE) {
+  if (
+    !CLUB_MANAGER_PHONE
+  ) {
     console.warn(
       "⚠️ CLUB_MANAGER_PHONE לא הוגדר ב-Railway"
     );
@@ -1397,8 +1506,6 @@ async function sendLeadToManager(
     console.log(
       "📨 מנסה לשלוח ליד למנהל:",
       {
-        managerPhone:
-          CLUB_MANAGER_PHONE,
         customerPhone:
           updatedUser.phone,
         customerName:
@@ -1428,8 +1535,6 @@ async function sendLeadToManager(
     console.error(
       "❌ שליחת הליד למנהל נכשלה:",
       {
-        managerPhone:
-          CLUB_MANAGER_PHONE,
         status:
           error.response?.status,
         data:
@@ -1498,6 +1603,9 @@ async function processIncomingMessage(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
+  /*
+   * איפוס
+   */
   if (
     userMessage ===
     "איפוס שיחה"
@@ -1525,93 +1633,6 @@ async function processIncomingMessage(
     return;
   }
 
-  /*
-   * בדיקת מנהל - מוגבלת למנהל או מאמן מורשה בלבד.
-   */
-  if (
-    userMessage ===
-    "בדיקת מנהל"
-  ) {
-    const manager =
-      isManagerPhone(
-        detectedPhone
-      );
-
-    const coach =
-      isCoachPhone(
-        detectedPhone
-      );
-
-    if (
-      !manager &&
-      !coach
-    ) {
-      await sendWhatsAppMessage(
-        userId,
-        "❌ הפקודה אינה זמינה."
-      );
-
-      return;
-    }
-
-    if (
-      !CLUB_MANAGER_PHONE
-    ) {
-      await sendWhatsAppMessage(
-        userId,
-        "❌ מספר מנהל המועדון לא מוגדר."
-      );
-
-      return;
-    }
-
-    try {
-      console.log(
-        "🧪 בדיקת שליחה ישירה למנהל"
-      );
-
-      const testResult =
-        await sendWhatsAppMessage(
-          CLUB_MANAGER_PHONE,
-          "🧪 הודעת בדיקה מהבוט של Tennis Sport"
-        );
-
-      console.log(
-        "✅ הודעת הבדיקה למנהל נשלחה:",
-        testResult
-      );
-
-      await sendWhatsAppMessage(
-        userId,
-        "✅ Whapi אישר את שליחת הודעת הבדיקה למנהל."
-      );
-    } catch (error) {
-      console.error(
-        "❌ הודעת הבדיקה למנהל נכשלה:",
-        {
-          status:
-            error.response?.status,
-          data:
-            error.response?.data,
-          message:
-            error.message,
-        }
-      );
-
-      const errorMessage =
-        error.response?.data
-          ?.message ||
-        error.message;
-
-      await sendWhatsAppMessage(
-        userId,
-        `❌ הבדיקה נכשלה: ${errorMessage}`
-      );
-    }
-
-    return;
-  }
-
   const manager =
     isManagerPhone(
       detectedPhone
@@ -1622,6 +1643,98 @@ async function processIncomingMessage(
       detectedPhone
     );
 
+  /*
+   * בדיקת מנהל זמינה
+   * למנהלים בלבד.
+   */
+  if (
+    userMessage ===
+    "בדיקת מנהל"
+  ) {
+    if (!manager) {
+      await sendWhatsAppMessage(
+        userId,
+        "❌ הפקודה אינה זמינה."
+      );
+
+      return;
+    }
+
+    const managerPhones =
+      getManagerPhones();
+
+    if (
+      managerPhones.length === 0
+    ) {
+      await sendWhatsAppMessage(
+        userId,
+        "❌ לא הוגדרו מנהלים במערכת."
+      );
+
+      return;
+    }
+
+    try {
+      let sentCount =
+        0;
+
+      for (
+        const managerPhone of
+          managerPhones
+      ) {
+        if (
+          normalizePhone(
+            managerPhone
+          ) ===
+          normalizePhone(
+            detectedPhone
+          )
+        ) {
+          continue;
+        }
+
+        await sendWhatsAppMessage(
+          managerPhone,
+          "🧪 הודעת בדיקה ממערכת הניהול של Tennis Sport"
+        );
+
+        sentCount +=
+          1;
+      }
+
+      await sendWhatsAppMessage(
+        userId,
+        sentCount > 0
+          ? `✅ הודעת הבדיקה נשלחה ל-${sentCount} מנהלים נוספים.`
+          : "✅ אתה המנהל היחיד שמוגדר כרגע במערכת."
+      );
+    } catch (error) {
+      console.error(
+        "❌ בדיקת מנהלים נכשלה:",
+        {
+          status:
+            error.response?.status,
+          data:
+            error.response?.data,
+          message:
+            error.message,
+        }
+      );
+
+      await sendWhatsAppMessage(
+        userId,
+        "❌ בדיקת המנהלים נכשלה."
+      );
+    }
+
+    return;
+  }
+
+  /*
+   * =========================================================
+   * ניתוב אנשי צוות
+   * =========================================================
+   */
   if (
     manager ||
     coach
@@ -1649,6 +1762,12 @@ async function processIncomingMessage(
 
     return;
   }
+
+  /*
+   * =========================================================
+   * מכאן והלאה - לקוחות
+   * =========================================================
+   */
 
   let currentUser =
     await getUser(
@@ -1952,35 +2071,16 @@ async function processIncomingMessage(
     {
       name:
         updatedUser.name,
-      hasName:
-        !!updatedUser.name,
-
       age:
         updatedUser.age,
-      hasAge:
-        updatedUser.age !==
-          null &&
-        updatedUser.age !==
-          undefined,
-
       branch:
         updatedUser.branch,
-      hasBranch:
-        !!updatedUser.branch,
-
       phone:
         updatedUser.phone,
-      hasPhone:
-        !!updatedUser.phone,
-
       goal:
         updatedUser.goal,
-      hasGoal:
-        !!updatedUser.goal,
-
       source:
         updatedUser.source,
-
       regularFlowActive:
         updatedUser
           .regular_flow_active,
@@ -1991,31 +2091,6 @@ async function processIncomingMessage(
     completeLead &&
     updatedUser.summary_sent !==
       true;
-
-  console.log(
-    "📋 בדיקת מוכנות הליד:",
-    {
-      name:
-        updatedUser.name,
-      age:
-        updatedUser.age,
-      branch:
-        updatedUser.branch,
-      phone:
-        updatedUser.phone,
-      goal:
-        updatedUser.goal,
-      source:
-        updatedUser.source,
-      regularFlowActive:
-        updatedUser
-          .regular_flow_active,
-      summarySent:
-        updatedUser.summary_sent,
-      completeLead,
-      shouldSendLeadSummary,
-    }
-  );
 
   const reply =
     await createReply({
@@ -2129,7 +2204,8 @@ async function handleWebhook(
   res
 ) {
   res.status(200).json({
-    success: true,
+    success:
+      true,
     message:
       "Webhook received",
   });

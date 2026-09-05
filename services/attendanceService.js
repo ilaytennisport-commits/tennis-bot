@@ -4,11 +4,11 @@ const {
 
 /*
  * =========================================================
- * הרשאות מאמנים
+ * שמות אנשי צוות
  * =========================================================
  */
 
-const COACH_NAMES = {
+const STAFF_NAMES = {
   "0544832278": "אריק הלמן",
   "0546444516": "ליאל",
   "0533368713": "נובל",
@@ -18,6 +18,12 @@ const COACH_NAMES = {
   "0549454430": "נועה",
   "0505209997": "אור",
 };
+
+/*
+ * =========================================================
+ * טלפונים והרשאות
+ * =========================================================
+ */
 
 function normalizePhone(phone = "") {
   let value = String(phone)
@@ -39,11 +45,10 @@ function normalizePhone(phone = "") {
   return value;
 }
 
-function getCoachPhones() {
-  const raw =
-    process.env.COACH_PHONES || "";
-
-  return raw
+function parsePhoneList(
+  value = ""
+) {
+  return String(value)
     .split(",")
     .map((phone) =>
       normalizePhone(phone)
@@ -51,22 +56,136 @@ function getCoachPhones() {
     .filter(Boolean);
 }
 
+/*
+ * =========================================================
+ * מנהלים
+ * =========================================================
+ *
+ * משתנה חדש:
+ *
+ * MANAGER_PHONES
+ *
+ * לדוגמה:
+ * 0500000000,0501111111
+ *
+ * אם MANAGER_PHONES עדיין לא הוגדר,
+ * המערכת תשתמש ב-CLUB_MANAGER_PHONE
+ * הישן כדי לא לשבור את המערכת.
+ */
+
+function getManagerPhones() {
+  const managerPhones =
+    parsePhoneList(
+      process.env.MANAGER_PHONES ||
+        ""
+    );
+
+  if (
+    managerPhones.length > 0
+  ) {
+    return [
+      ...new Set(
+        managerPhones
+      ),
+    ];
+  }
+
+  const oldManagerPhone =
+    normalizePhone(
+      process.env
+        .CLUB_MANAGER_PHONE ||
+        ""
+    );
+
+  return oldManagerPhone
+    ? [oldManagerPhone]
+    : [];
+}
+
+function isManagerPhone(phone) {
+  const normalizedPhone =
+    normalizePhone(phone);
+
+  if (!normalizedPhone) {
+    return false;
+  }
+
+  return getManagerPhones().includes(
+    normalizedPhone
+  );
+}
+
+/*
+ * =========================================================
+ * מאמנים
+ * =========================================================
+ */
+
+function getCoachPhones() {
+  return parsePhoneList(
+    process.env.COACH_PHONES ||
+      ""
+  );
+}
+
 function isCoachPhone(phone) {
   const normalizedPhone =
     normalizePhone(phone);
+
+  if (!normalizedPhone) {
+    return false;
+  }
 
   return getCoachPhones().includes(
     normalizedPhone
   );
 }
 
-function getCoachName(phone) {
+/*
+ * =========================================================
+ * שמות אנשי צוות
+ * =========================================================
+ */
+
+function getStaffName(phone) {
   const normalizedPhone =
     normalizePhone(phone);
 
-  return (
-    COACH_NAMES[normalizedPhone] ||
-    "מאמן"
+  if (
+    STAFF_NAMES[
+      normalizedPhone
+    ]
+  ) {
+    return STAFF_NAMES[
+      normalizedPhone
+    ];
+  }
+
+  if (
+    isManagerPhone(
+      normalizedPhone
+    )
+  ) {
+    return "מנהל";
+  }
+
+  if (
+    isCoachPhone(
+      normalizedPhone
+    )
+  ) {
+    return "מאמן";
+  }
+
+  return "איש צוות";
+}
+
+/*
+ * תאימות לקוד הקיים.
+ */
+function getCoachName(phone) {
+  return getStaffName(
+    phone
   );
 }
 
@@ -184,7 +303,9 @@ function findMatchingTrainee(
   trainees
 ) {
   const normalizedInput =
-    normalizeName(inputName);
+    normalizeName(
+      inputName
+    );
 
   return (
     trainees.find(
@@ -308,7 +429,8 @@ async function submitAttendance({
   if (!group) {
     return {
       success: false,
-      code: "GROUP_NOT_FOUND",
+      code:
+        "GROUP_NOT_FOUND",
       message:
         `❌ לא מצאתי קבוצה בשם "${groupName}".`,
     };
@@ -319,17 +441,23 @@ async function submitAttendance({
       group.id
     );
 
-  if (trainees.length === 0) {
+  if (
+    trainees.length === 0
+  ) {
     return {
       success: false,
-      code: "EMPTY_GROUP",
+      code:
+        "EMPTY_GROUP",
       message:
         `❌ אין מתאמנים פעילים בקבוצת ${group.name}.`,
     };
   }
 
-  const matchedTrainees = [];
-  const unknownNames = [];
+  const matchedTrainees =
+    [];
+
+  const unknownNames =
+    [];
 
   for (
     const inputName of presentNames
@@ -360,21 +488,24 @@ async function submitAttendance({
   }
 
   /*
-   * חשוב:
    * שמות לא מוכרים לעולם
-   * לא נוצרים כאן כמתאמנים.
+   * לא מתווספים אוטומטית.
    */
-  if (unknownNames.length > 0) {
+  if (
+    unknownNames.length > 0
+  ) {
     return {
       success: false,
-      code: "UNKNOWN_TRAINEES",
+      code:
+        "UNKNOWN_TRAINEES",
       group,
       unknownNames,
       message: [
         "⚠️ נמצאו שמות שלא קיימים ברשימת הקבוצה:",
         "",
         ...unknownNames.map(
-          (name) => `• ${name}`
+          (name) =>
+            `• ${name}`
         ),
         "",
         "הנוכחות לא נשמרה.",
@@ -387,14 +518,15 @@ async function submitAttendance({
     getIsraelDateString();
 
   const submittedBy =
-    getCoachName(
+    getStaffName(
       submittedByPhone
     );
 
   const session =
     await getOrCreateAttendanceSession(
       {
-        groupId: group.id,
+        groupId:
+          group.id,
         sessionDate,
         submittedBy,
       }
@@ -409,7 +541,8 @@ async function submitAttendance({
     );
 
   await saveAttendanceRecords({
-    sessionId: session.id,
+    sessionId:
+      session.id,
     trainees,
     presentTraineeIds,
   });
@@ -430,6 +563,11 @@ async function submitAttendance({
     group,
 
     submittedBy,
+
+    submittedByPhone:
+      normalizePhone(
+        submittedByPhone
+      ),
 
     total:
       trainees.length,
@@ -470,7 +608,9 @@ function buildAttendanceSummary(
           (trainee) =>
             `✅ ${trainee.name}`
         )
-      : ["אין"];
+      : [
+          "אין",
+        ];
 
   const absentLines =
     result.absent.length > 0
@@ -478,7 +618,9 @@ function buildAttendanceSummary(
           (trainee) =>
             `❌ ${trainee.name}`
         )
-      : ["אין 🎉"];
+      : [
+          "אין 🎉",
+        ];
 
   return [
     `📋 נוכחות – ${result.group.name}`,
@@ -498,8 +640,12 @@ function buildAttendanceSummary(
 module.exports = {
   normalizePhone,
 
+  getManagerPhones,
+  isManagerPhone,
+
   isCoachPhone,
   getCoachName,
+  getStaffName,
 
   getIsraelDateString,
 

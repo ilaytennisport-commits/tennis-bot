@@ -48,8 +48,20 @@ const {
   "../services/specialSourceConversationService"
 );
 
+const {
+  normalizePhone,
+  isCoachPhone,
+  getActiveGroups,
+  submitAttendance,
+  buildAttendanceSummary,
+} = require(
+  "../services/attendanceService"
+);
+
 const processedMessageIds = new Set();
-const MAX_PROCESSED_MESSAGE_IDS = 2000;
+
+const MAX_PROCESSED_MESSAGE_IDS =
+  2000;
 
 const userQueues = new Map();
 
@@ -58,6 +70,563 @@ const CLUB_MANAGER_PHONE =
 
 const SPECIAL_BRANCH =
   "גלי הדר – ראשון לציון";
+
+/*
+ * =========================================================
+ * מערכת נוכחות - הרשאות
+ * =========================================================
+ */
+
+/*
+ * בודק אם המספר ששולח את ההודעה
+ * הוא מספר המנהל.
+ */
+function isManagerPhone(phone) {
+  if (!CLUB_MANAGER_PHONE) {
+    return false;
+  }
+
+  return (
+    normalizePhone(phone) ===
+    normalizePhone(
+      CLUB_MANAGER_PHONE
+    )
+  );
+}
+
+/*
+ * מנקה שם שהגיע בדיווח נוכחות.
+ *
+ * מאפשר גם כתיבה כמו:
+ * • נועם
+ * - נועם
+ * ✅ נועם
+ */
+function cleanAttendanceName(
+  value = ""
+) {
+  return String(value)
+    .replace(
+      /^[\s*•\-–—✅☑️✔️]+/,
+      ""
+    )
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/*
+ * מפענח הודעת נוכחות.
+ *
+ * דוגמה:
+ *
+ * נוכחות צעירה
+ * סתיו
+ * רז
+ * יונתן לוי
+ *
+ * מחזיר:
+ * {
+ *   isAttendanceCommand: true,
+ *   groupName: "צעירה",
+ *   presentNames: [...]
+ * }
+ */
+function parseAttendanceCommand(
+  message = ""
+) {
+  const rawText =
+    String(message).trim();
+
+  if (!rawText) {
+    return {
+      isAttendanceCommand:
+        false,
+    };
+  }
+
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) =>
+      line.trim()
+    )
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return {
+      isAttendanceCommand:
+        false,
+    };
+  }
+
+  const firstLine =
+    lines[0]
+      .replace(/\*/g, "")
+      .trim();
+
+  if (
+    !/^נוכחות\b/.test(
+      firstLine
+    )
+  ) {
+    return {
+      isAttendanceCommand:
+        false,
+    };
+  }
+
+  const groupName =
+    firstLine
+      .replace(
+        /^נוכחות\s*[:\-–—]?\s*/,
+        ""
+      )
+      .replace(/\*/g, "")
+      .trim();
+
+  const presentNames =
+    lines
+      .slice(1)
+      .flatMap((line) =>
+        line.split(/[,;]/)
+      )
+      .map(
+        cleanAttendanceName
+      )
+      .filter(Boolean);
+
+  return {
+    isAttendanceCommand:
+      true,
+    groupName,
+    presentNames,
+  };
+}
+
+/*
+ * בונה רשימה קצרה של
+ * הקבוצות הקיימות.
+ */
+async function buildGroupsHelpMessage() {
+  try {
+    const groups =
+      await getActiveGroups();
+
+    if (
+      !Array.isArray(groups) ||
+      groups.length === 0
+    ) {
+      return "כרגע אין קבוצות פעילות במערכת.";
+    }
+
+    return [
+      "הקבוצות הפעילות:",
+      ...groups.map(
+        (group) =>
+          `• ${group.name}`
+      ),
+    ].join("\n");
+  } catch (error) {
+    console.error(
+      "❌ שגיאה בשליפת קבוצות:",
+      error.message
+    );
+
+    return "לא ניתן היה לשלוף כרגע את רשימת הקבוצות.";
+  }
+}
+
+/*
+ * הודעה שנשלחת למנהל אחרי
+ * דיווח נוכחות של מאמן.
+ */
+function buildManagerAttendanceMessage(
+  result
+) {
+  const dateText =
+    result?.session
+      ?.session_date ||
+    "";
+
+  const absentLines =
+    result.absent.length > 0
+      ? result.absent.map(
+          (trainee) =>
+            `❌ ${trainee.name}`
+        )
+      : [
+          "✅ אין נעדרים",
+        ];
+
+  return [
+    `📋 דיווח נוכחות – ${result.group.name}`,
+    "",
+    `📅 תאריך: ${dateText}`,
+    `👤 דווח על ידי: ${result.submittedBy}`,
+    "",
+    `✅ הגיעו: ${result.presentCount} מתוך ${result.total}`,
+    `❌ נעדרו: ${result.absentCount}`,
+    "",
+    "לא הגיעו:",
+    ...absentLines,
+  ].join("\n");
+}
+
+/*
+ * שולח למנהל את תוצאת
+ * דיווח הנוכחות.
+ */
+async function sendAttendanceToManager(
+  result
+) {
+  if (!CLUB_MANAGER_PHONE) {
+    console.warn(
+      "⚠️ CLUB_MANAGER_PHONE לא הוגדר - הנוכחות נשמרה אבל לא נשלחה למנהל."
+    );
+
+    return false;
+  }
+
+  try {
+    const managerMessage =
+      buildManagerAttendanceMessage(
+        result
+      );
+
+    await sendWhatsAppMessage(
+      CLUB_MANAGER_PHONE,
+      managerMessage
+    );
+
+    console.log(
+      "✅ דיווח הנוכחות נשלח למנהל:",
+      {
+        group:
+          result.group.name,
+        submittedBy:
+          result.submittedBy,
+        present:
+          result.presentCount,
+        absent:
+          result.absentCount,
+      }
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "❌ שליחת דיווח הנוכחות למנהל נכשלה:",
+      {
+        status:
+          error.response?.status,
+        data:
+          error.response?.data,
+        message:
+          error.message,
+      }
+    );
+
+    return false;
+  }
+}
+
+/*
+ * =========================================================
+ * טיפול באנשי צוות
+ * =========================================================
+ *
+ * חשוב:
+ * אנשי צוות נעצרים כאן ולא ממשיכים
+ * לבוט הלקוחות.
+ */
+async function handleStaffMessage({
+  userId,
+  userMessage,
+  staffPhone,
+  manager,
+}) {
+  const attendanceCommand =
+    parseAttendanceCommand(
+      userMessage
+    );
+
+  /*
+   * כרגע מאמנים מורשים רק
+   * לדווח נוכחות.
+   *
+   * פקודות ניהול מתאמנים
+   * יתווספו למנהל בלבד בשלב הבא.
+   */
+  if (
+    !attendanceCommand
+      .isAttendanceCommand
+  ) {
+    const groupsHelp =
+      await buildGroupsHelpMessage();
+
+    const staffReply =
+      manager
+        ? [
+            "🔐 זוהית כמנהל המערכת.",
+            "",
+            "כרגע מערכת הנוכחות תומכת בדיווח נוכחות.",
+            "",
+            "לדוגמה:",
+            "",
+            "נוכחות צעירה",
+            "סתיו",
+            "רז",
+            "יונתן לוי",
+            "",
+            groupsHelp,
+          ].join("\n")
+        : [
+            "🎾 זוהית כמאמן מורשה.",
+            "",
+            "כדי לדווח נוכחות יש לשלוח:",
+            "",
+            "נוכחות [שם קבוצה]",
+            "ולאחר מכן כל מתאמן שהגיע בשורה נפרדת.",
+            "",
+            "לדוגמה:",
+            "",
+            "נוכחות צעירה",
+            "סתיו",
+            "רז",
+            "יונתן לוי",
+            "",
+            groupsHelp,
+            "",
+            "ℹ️ מאמנים יכולים לדווח נוכחות בלבד. הוספה או שינוי של מתאמנים מתבצעים רק על ידי המנהל.",
+          ].join("\n");
+
+    await sendWhatsAppMessage(
+      userId,
+      staffReply
+    );
+
+    return true;
+  }
+
+  /*
+   * חייב להיות שם קבוצה.
+   */
+  if (
+    !attendanceCommand.groupName
+  ) {
+    const groupsHelp =
+      await buildGroupsHelpMessage();
+
+    const reply = [
+      "⚠️ חסר שם הקבוצה.",
+      "",
+      "יש לשלוח למשל:",
+      "",
+      "נוכחות צעירה",
+      "סתיו",
+      "רז",
+      "יונתן לוי",
+      "",
+      groupsHelp,
+    ].join("\n");
+
+    await sendWhatsAppMessage(
+      userId,
+      reply
+    );
+
+    return true;
+  }
+
+  /*
+   * כדי למנוע סימון בטעות של
+   * כל הקבוצה כנעדרת,
+   * לא מקבלים דיווח ריק.
+   */
+  if (
+    attendanceCommand
+      .presentNames.length === 0
+  ) {
+    const reply = [
+      "⚠️ לא נשלחו שמות של מתאמנים שהגיעו.",
+      "",
+      "הנוכחות לא נשמרה.",
+      "",
+      "יש לשלוח למשל:",
+      "",
+      `נוכחות ${attendanceCommand.groupName}`,
+      "שם מתאמן",
+      "שם מתאמן",
+      "שם מתאמן",
+    ].join("\n");
+
+    await sendWhatsAppMessage(
+      userId,
+      reply
+    );
+
+    return true;
+  }
+
+  try {
+    console.log(
+      "📋 מתקבל דיווח נוכחות:",
+      {
+        userId,
+        staffPhone,
+        manager,
+        group:
+          attendanceCommand
+            .groupName,
+        presentNames:
+          attendanceCommand
+            .presentNames,
+      }
+    );
+
+    const result =
+      await submitAttendance({
+        groupName:
+          attendanceCommand
+            .groupName,
+
+        presentNames:
+          attendanceCommand
+            .presentNames,
+
+        submittedByPhone:
+          staffPhone,
+      });
+
+    /*
+     * קבוצה לא קיימת /
+     * שם לא מוכר /
+     * שגיאת אימות.
+     */
+    if (!result.success) {
+      let reply =
+        result.message ||
+        "❌ לא ניתן היה לשמור את הנוכחות.";
+
+      if (
+        result.code ===
+        "GROUP_NOT_FOUND"
+      ) {
+        const groupsHelp =
+          await buildGroupsHelpMessage();
+
+        reply = [
+          reply,
+          "",
+          groupsHelp,
+        ].join("\n");
+      }
+
+      await sendWhatsAppMessage(
+        userId,
+        reply
+      );
+
+      console.warn(
+        "⚠️ דיווח נוכחות לא נשמר:",
+        {
+          code:
+            result.code,
+          group:
+            attendanceCommand
+              .groupName,
+          unknownNames:
+            result.unknownNames,
+        }
+      );
+
+      return true;
+    }
+
+    /*
+     * הנוכחות נשמרה.
+     */
+    const coachReply =
+      buildAttendanceSummary(
+        result
+      );
+
+    await sendWhatsAppMessage(
+      userId,
+      coachReply
+    );
+
+    console.log(
+      "✅ הנוכחות נשמרה:",
+      {
+        group:
+          result.group.name,
+        submittedBy:
+          result.submittedBy,
+        total:
+          result.total,
+        present:
+          result.presentCount,
+        absent:
+          result.absentCount,
+      }
+    );
+
+    /*
+     * אם המאמן דיווח,
+     * שולחים את רשימת החסרים למנהל.
+     *
+     * אם המנהל עצמו דיווח,
+     * לא שולחים לו הודעה כפולה.
+     */
+    if (!manager) {
+      const managerSent =
+        await sendAttendanceToManager(
+          result
+        );
+
+      if (!managerSent) {
+        await sendWhatsAppMessage(
+          userId,
+          [
+            "⚠️ הנוכחות נשמרה בהצלחה,",
+            "אך כרגע לא הצלחתי להעביר את הדיווח למנהל.",
+          ].join("\n")
+        );
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      "❌ שגיאה בטיפול בדיווח נוכחות:",
+      {
+        userId,
+        staffPhone,
+        message:
+          error.message,
+        stack:
+          error.stack,
+      }
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      [
+        "❌ אירעה שגיאה בשמירת הנוכחות.",
+        "הדיווח לא נשמר.",
+      ].join("\n")
+    );
+
+    return true;
+  }
+}
+
+/*
+ * =========================================================
+ * בוט לקוחות
+ * =========================================================
+ */
 
 /*
  * בודק האם כל פרטי הליד הרגיל נאספו.
@@ -97,7 +666,9 @@ function hasCompleteLeadDetails(user) {
  * בודק האם כבר קיימים בפרופיל
  * פרטים משמעותיים מהמערכת הישנה.
  */
-function hasExistingProfileData(user = {}) {
+function hasExistingProfileData(
+  user = {}
+) {
   return Boolean(
     user.name ||
       user.age ||
@@ -109,7 +680,8 @@ function hasExistingProfileData(user = {}) {
       user.branch ||
       user.phone ||
       user.goal ||
-      user.regular_flow_active === true ||
+      user.regular_flow_active ===
+        true ||
       user.summary_sent === true
   );
 }
@@ -126,8 +698,10 @@ function isWaitingForSource(
       .reverse()
       .find(
         (item) =>
-          item?.role === "assistant" &&
-          typeof item?.content === "string"
+          item?.role ===
+            "assistant" &&
+          typeof item?.content ===
+            "string"
       );
 
   if (!lastAssistantMessage) {
@@ -152,9 +726,13 @@ function cleanText(value = "") {
  * בודק אם ההודעה נראית כמו שאלה
  * ולא כמו תשובה לפרט שביקשנו.
  */
-function looksLikeQuestion(message = "") {
+function looksLikeQuestion(
+  message = ""
+) {
   const text =
-    cleanText(message).toLowerCase();
+    cleanText(
+      message
+    ).toLowerCase();
 
   if (!text) {
     return false;
@@ -182,25 +760,31 @@ function looksLikeQuestion(message = "") {
   ];
 
   return questionPatterns.some(
-    (pattern) => pattern.test(text)
+    (pattern) =>
+      pattern.test(text)
   );
 }
 
 /*
  * חילוץ גיל מתוך תשובה למסלול המיוחד.
  */
-function extractSpecialAge(message = "") {
-  const text = cleanText(message);
+function extractSpecialAge(
+  message = ""
+) {
+  const text =
+    cleanText(message);
 
-  const match = text.match(
-    /(?:בן|בת|גיל)?\s*(\d{1,3})/
-  );
+  const match =
+    text.match(
+      /(?:בן|בת|גיל)?\s*(\d{1,3})/
+    );
 
   if (!match) {
     return null;
   }
 
-  const age = Number(match[1]);
+  const age =
+    Number(match[1]);
 
   if (
     !Number.isInteger(age) ||
@@ -221,7 +805,8 @@ function buildSpecialFieldUpdate(
   field,
   userMessage
 ) {
-  const text = cleanText(userMessage);
+  const text =
+    cleanText(userMessage);
 
   if (!text) {
     return null;
@@ -230,7 +815,9 @@ function buildSpecialFieldUpdate(
   switch (field) {
     case "name": {
       if (
-        looksLikeQuestion(text) ||
+        looksLikeQuestion(
+          text
+        ) ||
         text.length < 2 ||
         text.length > 80 ||
         /\d/.test(text)
@@ -245,7 +832,9 @@ function buildSpecialFieldUpdate(
 
     case "age": {
       const age =
-        extractSpecialAge(text);
+        extractSpecialAge(
+          text
+        );
 
       if (!age) {
         return null;
@@ -262,7 +851,9 @@ function buildSpecialFieldUpdate(
 
     case "city": {
       if (
-        looksLikeQuestion(text) ||
+        looksLikeQuestion(
+          text
+        ) ||
         text.length < 2 ||
         text.length > 80
       ) {
@@ -276,7 +867,9 @@ function buildSpecialFieldUpdate(
 
     case "experience": {
       if (
-        looksLikeQuestion(text) ||
+        looksLikeQuestion(
+          text
+        ) ||
         text.length < 2 ||
         text.length > 500
       ) {
@@ -346,11 +939,6 @@ function shouldHandleSpecialFaqDuringOnboarding(
  * אם לקוח שכבר עבר למסלול הרגיל
  * מזכיר שוב במפורש את המקור המיוחד
  * שממנו הגיע, נחזיר אותו למסלול המיוחד.
- *
- * דוגמאות:
- * לקוח MOVE שכותב "מה לגבי מכבי?"
- * לקוח עמית שכותב "ומה דרך עמית?"
- * לקוח FreeFit שכותב "מה לגבי פריפיט?"
  */
 function shouldReturnToSpecialFlow(
   userMessage,
@@ -363,17 +951,14 @@ function shouldReturnToSpecialFlow(
 
   return (
     detectedSource !== null &&
-    detectedSource === currentSource
+    detectedSource ===
+      currentSource
   );
 }
 
 /*
  * מטפל בהמשך שיחה של לקוח
  * MOVE / עמית / FreeFit.
- *
- * מחזיר:
- * true  = ההודעה טופלה במסלול המיוחד.
- * false = ההודעה ממשיכה לבוט הרגיל.
  */
 async function handleSpecialSourceConversation({
   userId,
@@ -389,14 +974,6 @@ async function handleSpecialSourceConversation({
     return false;
   }
 
-  /*
-   * הלקוח כבר עבר בעבר לשיחה
-   * על המסלול הרגיל.
-   *
-   * כל עוד הוא לא חוזר במפורש
-   * לשאול על המקור המיוחד,
-   * ממשיכים בבוט הרגיל.
-   */
   if (
     currentUser.regular_flow_active ===
     true
@@ -442,16 +1019,6 @@ async function handleSpecialSourceConversation({
     }
   }
 
-  /*
-   * לקוח במסלול מיוחד מתעניין
-   * במפורש בחוג / מסלול / אימון רגיל.
-   *
-   * מפעילים מצב רגיל מתמשך.
-   *
-   * מקור ההגעה נשאר move / amit / freefit,
-   * אבל branch מתאפס כדי שהבוט הרגיל
-   * יוכל להתאים סניף רגיל בהמשך.
-   */
   if (
     isRegularProgramInterest(
       userMessage,
@@ -475,7 +1042,8 @@ async function handleSpecialSourceConversation({
         source:
           currentUser.source,
         regularFlowActive:
-          currentUser.regular_flow_active,
+          currentUser
+            .regular_flow_active,
         userMessage,
       }
     );
@@ -483,20 +1051,18 @@ async function handleSpecialSourceConversation({
     return false;
   }
 
-  /*
-   * לקוחות המסלולים המיוחדים
-   * משויכים לגלי הדר – ראשון לציון בלבד.
-   */
   if (
     currentUser.branch !==
     SPECIAL_BRANCH
   ) {
-    currentUser = await saveUser(
-      userId,
-      {
-        branch: SPECIAL_BRANCH,
-      }
-    );
+    currentUser =
+      await saveUser(
+        userId,
+        {
+          branch:
+            SPECIAL_BRANCH,
+        }
+      );
   }
 
   const missingField =
@@ -504,10 +1070,6 @@ async function handleSpecialSourceConversation({
       currentUser
     );
 
-  /*
-   * כל הפרטים כבר נאספו:
-   * עונים דרך FAQ המסלול המיוחד.
-   */
   if (!missingField) {
     await addMessage(
       userId,
@@ -545,13 +1107,6 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
-  /*
-   * הלקוח עדיין באמצע מסירת פרטים,
-   * אבל שאל שאלה במקום לענות.
-   *
-   * עונים לשאלה ואז מחזירים אותו
-   * בדיוק לשאלה שחיכתה לו.
-   */
   if (
     shouldHandleSpecialFaqDuringOnboarding(
       userMessage
@@ -618,10 +1173,6 @@ async function handleSpecialSourceConversation({
     userMessage
   );
 
-  /*
-   * לא מקבלים תשובה לא תקינה
-   * בתור שם / גיל / עיר / ניסיון.
-   */
   if (!fieldUpdate) {
     const invalidReply =
       buildInvalidSpecialFieldReply(
@@ -653,13 +1204,15 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
-  currentUser = await saveUser(
-    userId,
-    {
-      ...fieldUpdate,
-      branch: SPECIAL_BRANCH,
-    }
-  );
+  currentUser =
+    await saveUser(
+      userId,
+      {
+        ...fieldUpdate,
+        branch:
+          SPECIAL_BRANCH,
+      }
+    );
 
   console.log(
     "💾 פרט נשמר במסלול מיוחד:",
@@ -681,9 +1234,6 @@ async function handleSpecialSourceConversation({
       currentUser
     );
 
-  /*
-   * יש עוד פרט שצריך לאסוף.
-   */
   if (nextMissingField) {
     const nextQuestion =
       getQuestionForField(
@@ -704,9 +1254,6 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
-  /*
-   * כל הפרטים נאספו.
-   */
   const rulesReply =
     buildSpecialRulesMessage(
       currentUser.source
@@ -752,16 +1299,23 @@ function formatManagerLeadMessage(
   user,
   conversationHistory = []
 ) {
-  const cleanPhone = String(
-    user.phone || ""
-  ).replace(/\D/g, "");
+  const cleanPhone =
+    String(
+      user.phone || ""
+    ).replace(/\D/g, "");
 
   let internationalPhone =
     cleanPhone;
 
-  if (cleanPhone.startsWith("0")) {
+  if (
+    cleanPhone.startsWith(
+      "0"
+    )
+  ) {
     internationalPhone =
-      `972${cleanPhone.substring(1)}`;
+      `972${cleanPhone.substring(
+        1
+      )}`;
   }
 
   const whatsappLink =
@@ -772,7 +1326,9 @@ function formatManagerLeadMessage(
   const formattedConversation =
     conversationHistory
       .filter(
-        (conversationMessage) =>
+        (
+          conversationMessage
+        ) =>
           conversationMessage?.content &&
           [
             "user",
@@ -893,10 +1449,13 @@ function enqueueUserMessage(
 
   currentTask.finally(() => {
     if (
-      userQueues.get(userId) ===
-      currentTask
+      userQueues.get(
+        userId
+      ) === currentTask
     ) {
-      userQueues.delete(userId);
+      userQueues.delete(
+        userId
+      );
     }
   });
 
@@ -986,7 +1545,9 @@ async function processIncomingMessage(
     return;
   }
 
-  if (message.type !== "text") {
+  if (
+    message.type !== "text"
+  ) {
     return;
   }
 
@@ -997,22 +1558,28 @@ async function processIncomingMessage(
     message.chat_id ||
     message.from;
 
-  if (!userMessage || !userId) {
+  if (
+    !userMessage ||
+    !userId
+  ) {
     return;
   }
+
+  const detectedPhone =
+    whatsappIdToPhone(
+      userId
+    );
 
   console.log(
     "🔍 מזהי Whapi:",
     {
-      from: message.from,
+      from:
+        message.from,
       chat_id:
         message.chat_id,
       selectedUserId:
         userId,
-      detectedPhone:
-        whatsappIdToPhone(
-          userId
-        ),
+      detectedPhone,
     }
   );
 
@@ -1031,7 +1598,9 @@ async function processIncomingMessage(
       userId
     );
 
-    await clearUser(userId);
+    await clearUser(
+      userId
+    );
 
     const resetReply =
       "השיחה והפרטים שנשמרו אופסו בהצלחה 😊";
@@ -1050,12 +1619,18 @@ async function processIncomingMessage(
 
   /*
    * בדיקת מנהל.
+   *
+   * משאירים אותה לפני ניתוב
+   * אנשי הצוות כדי שהפקודה
+   * הישנה תמשיך לעבוד.
    */
   if (
     userMessage ===
     "בדיקת מנהל"
   ) {
-    if (!CLUB_MANAGER_PHONE) {
+    if (
+      !CLUB_MANAGER_PHONE
+    ) {
       await sendWhatsAppMessage(
         userId,
         "❌ מספר מנהל המועדון לא מוגדר."
@@ -1098,7 +1673,8 @@ async function processIncomingMessage(
       );
 
       const errorMessage =
-        error.response?.data?.message ||
+        error.response?.data
+          ?.message ||
         error.message;
 
       await sendWhatsAppMessage(
@@ -1110,8 +1686,64 @@ async function processIncomingMessage(
     return;
   }
 
+  /*
+   * =========================================================
+   * ניתוב אנשי צוות
+   * =========================================================
+   *
+   * חשוב מאוד:
+   * הקטע הזה נמצא לפני getUser,
+   * לפני שער מקור ההגעה,
+   * ולפני כל בוט הלקוחות.
+   */
+  const manager =
+    isManagerPhone(
+      detectedPhone
+    );
+
+  const coach =
+    isCoachPhone(
+      detectedPhone
+    );
+
+  if (
+    manager ||
+    coach
+  ) {
+    console.log(
+      "🔐 הודעת איש צוות זוהתה:",
+      {
+        userId,
+        phone:
+          detectedPhone,
+        role:
+          manager
+            ? "manager"
+            : "coach",
+      }
+    );
+
+    await handleStaffMessage({
+      userId,
+      userMessage,
+      staffPhone:
+        detectedPhone,
+      manager,
+    });
+
+    return;
+  }
+
+  /*
+   * =========================================================
+   * מכאן והלאה - לקוחות בלבד
+   * =========================================================
+   */
+
   let currentUser =
-    await getUser(userId);
+    await getUser(
+      userId
+    );
 
   const previousConversationHistory =
     await getConversation(
@@ -1143,7 +1775,8 @@ async function processIncomingMessage(
       await saveUser(
         userId,
         {
-          source: "regular",
+          source:
+            "regular",
           source_confirmed:
             true,
           regular_flow_active:
@@ -1170,17 +1803,15 @@ async function processIncomingMessage(
     ) &&
     !waitingForSource
   ) {
-    const detectedPhone =
+    const customerPhone =
       currentUser.phone ||
-      whatsappIdToPhone(
-        userId
-      );
+      detectedPhone;
 
     await saveUser(
       userId,
       {
         phone:
-          detectedPhone,
+          customerPhone,
       }
     );
 
@@ -1238,10 +1869,6 @@ async function processIncomingMessage(
         false,
     };
 
-    /*
-     * המסלולים המיוחדים
-     * קיימים בגלי הדר בלבד.
-     */
     if (
       sourceResult.isSpecial
     ) {
@@ -1272,9 +1899,6 @@ async function processIncomingMessage(
       }
     );
 
-    /*
-     * MOVE / עמית / FreeFit.
-     */
     if (
       sourceResult.isSpecial
     ) {
@@ -1308,9 +1932,6 @@ async function processIncomingMessage(
       return;
     }
 
-    /*
-     * לקוח רגיל.
-     */
     const regularEntryReply =
       [
         "מעולה, תודה 😊",
@@ -1339,17 +1960,6 @@ async function processIncomingMessage(
     return;
   }
 
-  /*
-   * לקוחות שהגיעו דרך
-   * MOVE / קופת חולים / עמית / FreeFit.
-   *
-   * אם regular_flow_active = TRUE,
-   * הם ממשיכים בבוט הרגיל.
-   *
-   * אם הם מזכירים שוב במפורש את
-   * המקור המיוחד שלהם, הם יכולים
-   * לחזור למסלול המיוחד.
-   */
   if (
     currentUser.source_confirmed ===
       true &&
@@ -1370,14 +1980,10 @@ async function processIncomingMessage(
       return;
     }
 
-    /*
-     * ייתכן שבתוך הטיפול נשמר
-     * regular_flow_active או אופס branch.
-     * טוענים מחדש את הפרופיל לפני
-     * הכניסה לבוט הרגיל.
-     */
     currentUser =
-      await getUser(userId);
+      await getUser(
+        userId
+      );
   }
 
   /*
@@ -1414,9 +2020,7 @@ async function processIncomingMessage(
     !extractedDetails.phone
   ) {
     extractedDetails.phone =
-      whatsappIdToPhone(
-        userId
-      );
+      detectedPhone;
   }
 
   const updatedUser =
@@ -1481,7 +2085,8 @@ async function processIncomingMessage(
         updatedUser.source,
 
       regularFlowActive:
-        updatedUser.regular_flow_active,
+        updatedUser
+          .regular_flow_active,
     }
   );
 
@@ -1506,7 +2111,8 @@ async function processIncomingMessage(
       source:
         updatedUser.source,
       regularFlowActive:
-        updatedUser.regular_flow_active,
+        updatedUser
+          .regular_flow_active,
       summarySent:
         updatedUser.summary_sent,
       completeLead,
@@ -1526,7 +2132,8 @@ async function processIncomingMessage(
 
   if (
     !reply ||
-    typeof reply !== "string"
+    typeof reply !==
+      "string"
   ) {
     throw new Error(
       "The bot generated an empty reply"
@@ -1548,12 +2155,10 @@ async function processIncomingMessage(
     reply
   );
 
-  /*
-   * createReply עשוי לשמור
-   * את הפרט האחרון של הליד.
-   */
   const finalUser =
-    await getUser(userId);
+    await getUser(
+      userId
+    );
 
   const finalCompleteLead =
     hasCompleteLeadDetails(
@@ -1581,7 +2186,8 @@ async function processIncomingMessage(
       source:
         finalUser.source,
       regularFlowActive:
-        finalUser.regular_flow_active,
+        finalUser
+          .regular_flow_active,
       summarySent:
         finalUser.summary_sent,
       completeLead:
@@ -1646,7 +2252,9 @@ async function handleWebhook(
       req.body?.messages;
 
     if (
-      !Array.isArray(messages)
+      !Array.isArray(
+        messages
+      )
     ) {
       return;
     }
@@ -1694,7 +2302,8 @@ async function handleWebhook(
           } catch (error) {
             console.error(
               `❌ שגיאה בעיבוד הודעה עבור ${userId}:`,
-              error.response?.data ||
+              error.response
+                ?.data ||
                 error.message
             );
           }

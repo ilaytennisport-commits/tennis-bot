@@ -30,9 +30,6 @@ function normalizePhone(phone = "") {
     .replace(/\D/g, "")
     .trim();
 
-  /*
-   * 97254... -> 054...
-   */
   if (
     value.startsWith("972") &&
     value.length >= 11
@@ -60,17 +57,6 @@ function parsePhoneList(
  * =========================================================
  * מנהלים
  * =========================================================
- *
- * משתנה חדש:
- *
- * MANAGER_PHONES
- *
- * לדוגמה:
- * 0500000000,0501111111
- *
- * אם MANAGER_PHONES עדיין לא הוגדר,
- * המערכת תשתמש ב-CLUB_MANAGER_PHONE
- * הישן כדי לא לשבור את המערכת.
  */
 
 function getManagerPhones() {
@@ -180,9 +166,6 @@ function getStaffName(phone) {
   return "איש צוות";
 }
 
-/*
- * תאימות לקוד הקיים.
- */
 function getCoachName(phone) {
   return getStaffName(
     phone
@@ -191,7 +174,7 @@ function getCoachName(phone) {
 
 /*
  * =========================================================
- * עזרי תאריך
+ * תאריך ישראל
  * =========================================================
  */
 
@@ -215,6 +198,28 @@ function getIsraelDateString() {
 
 /*
  * =========================================================
+ * ניקוי טקסט ושמות
+ * =========================================================
+ */
+
+function cleanValue(
+  value = ""
+) {
+  return String(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeName(
+  name = ""
+) {
+  return cleanValue(name)
+    .replace(/[.,!?;:]/g, "")
+    .toLowerCase();
+}
+
+/*
+ * =========================================================
  * קבוצות
  * =========================================================
  */
@@ -222,6 +227,13 @@ function getIsraelDateString() {
 async function getActiveGroupByName(
   groupName
 ) {
+  const cleanGroupName =
+    cleanValue(groupName);
+
+  if (!cleanGroupName) {
+    return null;
+  }
+
   const result =
     await pool.query(
       `
@@ -237,7 +249,7 @@ async function getActiveGroupByName(
           AND active = TRUE
         LIMIT 1
       `,
-      [groupName]
+      [cleanGroupName]
     );
 
   return result.rows[0] || null;
@@ -290,12 +302,25 @@ async function getActiveTraineesByGroupId(
   return result.rows;
 }
 
-function normalizeName(name = "") {
-  return String(name)
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[.,!?;:]/g, "")
-    .toLowerCase();
+async function getAllTraineesByGroupId(
+  groupId
+) {
+  const result =
+    await pool.query(
+      `
+        SELECT
+          id,
+          name,
+          notes,
+          active
+        FROM trainees
+        WHERE group_id = $1
+        ORDER BY name
+      `,
+      [groupId]
+    );
+
+  return result.rows;
 }
 
 function findMatchingTrainee(
@@ -307,6 +332,10 @@ function findMatchingTrainee(
       inputName
     );
 
+  if (!normalizedInput) {
+    return null;
+  }
+
   return (
     trainees.find(
       (trainee) =>
@@ -315,6 +344,535 @@ function findMatchingTrainee(
         ) === normalizedInput
     ) || null
   );
+}
+
+/*
+ * =========================================================
+ * רשימת קבוצה
+ * =========================================================
+ */
+
+async function getGroupRoster(
+  groupName
+) {
+  const group =
+    await getActiveGroupByName(
+      groupName
+    );
+
+  if (!group) {
+    return {
+      success: false,
+      code:
+        "GROUP_NOT_FOUND",
+      message:
+        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+    };
+  }
+
+  const trainees =
+    await getActiveTraineesByGroupId(
+      group.id
+    );
+
+  return {
+    success: true,
+    group,
+    trainees,
+    total:
+      trainees.length,
+  };
+}
+
+/*
+ * =========================================================
+ * הוספת מתאמן
+ * =========================================================
+ */
+
+async function addTrainee({
+  groupName,
+  traineeName,
+  notes = null,
+}) {
+  const cleanName =
+    cleanValue(
+      traineeName
+    );
+
+  const cleanNotes =
+    cleanValue(
+      notes || ""
+    ) || null;
+
+  if (!cleanName) {
+    return {
+      success: false,
+      code:
+        "INVALID_NAME",
+      message:
+        "❌ חסר שם המתאמן.",
+    };
+  }
+
+  const group =
+    await getActiveGroupByName(
+      groupName
+    );
+
+  if (!group) {
+    return {
+      success: false,
+      code:
+        "GROUP_NOT_FOUND",
+      message:
+        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+    };
+  }
+
+  const allTrainees =
+    await getAllTraineesByGroupId(
+      group.id
+    );
+
+  const existing =
+    findMatchingTrainee(
+      cleanName,
+      allTrainees
+    );
+
+  /*
+   * כבר פעיל בקבוצה
+   */
+  if (
+    existing &&
+    existing.active
+  ) {
+    return {
+      success: false,
+      code:
+        "TRAINEE_ALREADY_EXISTS",
+      group,
+      trainee:
+        existing,
+      message:
+        `⚠️ ${existing.name} כבר נמצא בקבוצת ${group.name}.`,
+    };
+  }
+
+  /*
+   * היה בעבר בקבוצה והוסר:
+   * מחזירים אותו לפעילות.
+   */
+  if (
+    existing &&
+    !existing.active
+  ) {
+    const result =
+      await pool.query(
+        `
+          UPDATE trainees
+          SET
+            active = TRUE,
+            notes =
+              CASE
+                WHEN $2::TEXT IS NOT NULL
+                  THEN $2
+                ELSE notes
+              END,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            group_id,
+            name,
+            notes,
+            active
+        `,
+        [
+          existing.id,
+          cleanNotes,
+        ]
+      );
+
+    return {
+      success: true,
+      code:
+        "TRAINEE_REACTIVATED",
+      group,
+      trainee:
+        result.rows[0],
+      message:
+        `✅ ${result.rows[0].name} הוחזר לקבוצת ${group.name}.`,
+    };
+  }
+
+  const result =
+    await pool.query(
+      `
+        INSERT INTO trainees (
+          group_id,
+          name,
+          notes,
+          active
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          TRUE
+        )
+        RETURNING
+          id,
+          group_id,
+          name,
+          notes,
+          active
+      `,
+      [
+        group.id,
+        cleanName,
+        cleanNotes,
+      ]
+    );
+
+  return {
+    success: true,
+    code:
+      "TRAINEE_ADDED",
+    group,
+    trainee:
+      result.rows[0],
+    message:
+      `✅ ${result.rows[0].name} נוסף לקבוצת ${group.name}.`,
+  };
+}
+
+/*
+ * =========================================================
+ * הסרת מתאמן
+ * =========================================================
+ *
+ * הסרה רכה בלבד.
+ * לא מוחקים את המתאמן מה-DB,
+ * כדי לשמור היסטוריית נוכחות.
+ */
+
+async function removeTrainee({
+  groupName,
+  traineeName,
+}) {
+  const cleanName =
+    cleanValue(
+      traineeName
+    );
+
+  if (!cleanName) {
+    return {
+      success: false,
+      code:
+        "INVALID_NAME",
+      message:
+        "❌ חסר שם המתאמן.",
+    };
+  }
+
+  const group =
+    await getActiveGroupByName(
+      groupName
+    );
+
+  if (!group) {
+    return {
+      success: false,
+      code:
+        "GROUP_NOT_FOUND",
+      message:
+        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+    };
+  }
+
+  const trainees =
+    await getActiveTraineesByGroupId(
+      group.id
+    );
+
+  const trainee =
+    findMatchingTrainee(
+      cleanName,
+      trainees
+    );
+
+  if (!trainee) {
+    return {
+      success: false,
+      code:
+        "TRAINEE_NOT_FOUND",
+      group,
+      message:
+        `❌ לא מצאתי מתאמן פעיל בשם "${cleanName}" בקבוצת ${group.name}.`,
+    };
+  }
+
+  const result =
+    await pool.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING
+          id,
+          group_id,
+          name,
+          notes,
+          active
+      `,
+      [
+        trainee.id,
+      ]
+    );
+
+  return {
+    success: true,
+    code:
+      "TRAINEE_REMOVED",
+    group,
+    trainee:
+      result.rows[0],
+    message:
+      `✅ ${result.rows[0].name} הוסר מקבוצת ${group.name}.`,
+  };
+}
+
+/*
+ * =========================================================
+ * העברת מתאמן בין קבוצות
+ * =========================================================
+ */
+
+async function moveTrainee({
+  fromGroupName,
+  toGroupName,
+  traineeName,
+}) {
+  const cleanName =
+    cleanValue(
+      traineeName
+    );
+
+  if (!cleanName) {
+    return {
+      success: false,
+      code:
+        "INVALID_NAME",
+      message:
+        "❌ חסר שם המתאמן.",
+    };
+  }
+
+  const fromGroup =
+    await getActiveGroupByName(
+      fromGroupName
+    );
+
+  if (!fromGroup) {
+    return {
+      success: false,
+      code:
+        "SOURCE_GROUP_NOT_FOUND",
+      message:
+        `❌ לא מצאתי קבוצה בשם "${fromGroupName}".`,
+    };
+  }
+
+  const toGroup =
+    await getActiveGroupByName(
+      toGroupName
+    );
+
+  if (!toGroup) {
+    return {
+      success: false,
+      code:
+        "TARGET_GROUP_NOT_FOUND",
+      message:
+        `❌ לא מצאתי קבוצה בשם "${toGroupName}".`,
+    };
+  }
+
+  if (
+    fromGroup.id ===
+    toGroup.id
+  ) {
+    return {
+      success: false,
+      code:
+        "SAME_GROUP",
+      message:
+        "⚠️ קבוצת המקור וקבוצת היעד זהות.",
+    };
+  }
+
+  const sourceTrainees =
+    await getActiveTraineesByGroupId(
+      fromGroup.id
+    );
+
+  const sourceTrainee =
+    findMatchingTrainee(
+      cleanName,
+      sourceTrainees
+    );
+
+  if (!sourceTrainee) {
+    return {
+      success: false,
+      code:
+        "TRAINEE_NOT_FOUND",
+      message:
+        `❌ לא מצאתי את "${cleanName}" בקבוצת ${fromGroup.name}.`,
+    };
+  }
+
+  const targetTrainees =
+    await getAllTraineesByGroupId(
+      toGroup.id
+    );
+
+  const existingTarget =
+    findMatchingTrainee(
+      cleanName,
+      targetTrainees
+    );
+
+  if (
+    existingTarget &&
+    existingTarget.active
+  ) {
+    return {
+      success: false,
+      code:
+        "TRAINEE_ALREADY_IN_TARGET",
+      message:
+        `⚠️ ${existingTarget.name} כבר נמצא בקבוצת ${toGroup.name}.`,
+    };
+  }
+
+  const client =
+    await pool.connect();
+
+  try {
+    await client.query(
+      "BEGIN"
+    );
+
+    /*
+     * משביתים את הרשומה בקבוצת המקור.
+     */
+    await client.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        sourceTrainee.id,
+      ]
+    );
+
+    let targetTrainee;
+
+    /*
+     * אם הייתה רשומה ישנה בקבוצת היעד,
+     * מפעילים אותה מחדש.
+     */
+    if (existingTarget) {
+      const reactivateResult =
+        await client.query(
+          `
+            UPDATE trainees
+            SET
+              active = TRUE,
+              notes = $2,
+              updated_at = NOW()
+            WHERE id = $1
+            RETURNING
+              id,
+              group_id,
+              name,
+              notes,
+              active
+          `,
+          [
+            existingTarget.id,
+            sourceTrainee.notes,
+          ]
+        );
+
+      targetTrainee =
+        reactivateResult.rows[0];
+    } else {
+      const insertResult =
+        await client.query(
+          `
+            INSERT INTO trainees (
+              group_id,
+              name,
+              notes,
+              active
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              TRUE
+            )
+            RETURNING
+              id,
+              group_id,
+              name,
+              notes,
+              active
+          `,
+          [
+            toGroup.id,
+            sourceTrainee.name,
+            sourceTrainee.notes,
+          ]
+        );
+
+      targetTrainee =
+        insertResult.rows[0];
+    }
+
+    await client.query(
+      "COMMIT"
+    );
+
+    return {
+      success: true,
+      code:
+        "TRAINEE_MOVED",
+      fromGroup,
+      toGroup,
+      trainee:
+        targetTrainee,
+      message:
+        `✅ ${sourceTrainee.name} הועבר מקבוצת ${fromGroup.name} לקבוצת ${toGroup.name}.`,
+    };
+  } catch (error) {
+    await client.query(
+      "ROLLBACK"
+    );
+
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /*
@@ -488,8 +1046,8 @@ async function submitAttendance({
   }
 
   /*
-   * שמות לא מוכרים לעולם
-   * לא מתווספים אוטומטית.
+   * שם לא מוכר אינו מתווסף
+   * אוטומטית בשום מצב.
    */
   if (
     unknownNames.length > 0
@@ -637,6 +1195,50 @@ function buildAttendanceSummary(
   ].join("\n");
 }
 
+/*
+ * =========================================================
+ * בניית רשימת קבוצה
+ * =========================================================
+ */
+
+function buildGroupRosterMessage(
+  result
+) {
+  if (!result?.success) {
+    return (
+      result?.message ||
+      "❌ לא ניתן היה לקבל את רשימת הקבוצה."
+    );
+  }
+
+  const traineeLines =
+    result.trainees.length > 0
+      ? result.trainees.map(
+          (
+            trainee,
+            index
+          ) => {
+            const notes =
+              trainee.notes
+                ? ` (${trainee.notes})`
+                : "";
+
+            return `${index + 1}. ${trainee.name}${notes}`;
+          }
+        )
+      : [
+          "אין מתאמנים פעילים.",
+        ];
+
+  return [
+    `👥 קבוצת ${result.group.name}`,
+    "",
+    `סה״כ מתאמנים: ${result.total}`,
+    "",
+    ...traineeLines,
+  ].join("\n");
+}
+
 module.exports = {
   normalizePhone,
 
@@ -651,7 +1253,16 @@ module.exports = {
 
   getActiveGroupByName,
   getActiveGroups,
+
   getActiveTraineesByGroupId,
+  getAllTraineesByGroupId,
+
+  getGroupRoster,
+  buildGroupRosterMessage,
+
+  addTrainee,
+  removeTrainee,
+  moveTrainee,
 
   submitAttendance,
   buildAttendanceSummary,

@@ -54,6 +54,13 @@ const {
   isManagerPhone,
   isCoachPhone,
   getActiveGroups,
+
+  getGroupRoster,
+  buildGroupRosterMessage,
+  addTrainee,
+  removeTrainee,
+  moveTrainee,
+
   submitAttendance,
   buildAttendanceSummary,
 } = require(
@@ -70,8 +77,8 @@ const userQueues =
   new Map();
 
 /*
- * המנהל הראשי נשאר עבור
- * מערכת הלידים הקיימת.
+ * הלידים הרגילים עדיין נשלחים
+ * למנהל הראשי הקיים.
  */
 const CLUB_MANAGER_PHONE =
   process.env.CLUB_MANAGER_PHONE;
@@ -106,8 +113,7 @@ function parseAttendanceCommand(
 
   if (!rawText) {
     return {
-      isAttendanceCommand:
-        false,
+      isAttendanceCommand: false,
     };
   }
 
@@ -119,12 +125,9 @@ function parseAttendanceCommand(
       )
       .filter(Boolean);
 
-  if (
-    lines.length === 0
-  ) {
+  if (lines.length === 0) {
     return {
-      isAttendanceCommand:
-        false,
+      isAttendanceCommand: false,
     };
   }
 
@@ -135,11 +138,6 @@ function parseAttendanceCommand(
 
   let groupName = "";
 
-  /*
-   * אפשרות:
-   *
-   * נוכחות צעירה
-   */
   const attendanceMatch =
     firstLine.match(
       /^נוכחות\s*[:\-–—]?\s*(.*)$/i
@@ -151,13 +149,6 @@ function parseAttendanceCommand(
         attendanceMatch[1]
       );
   } else {
-    /*
-     * אפשר גם:
-     *
-     * צעירה
-     * סתיו
-     * רז
-     */
     const possibleGroupName =
       cleanAttendanceName(
         firstLine
@@ -177,8 +168,7 @@ function parseAttendanceCommand(
         possibleGroupName;
     } else {
       return {
-        isAttendanceCommand:
-          false,
+        isAttendanceCommand: false,
       };
     }
   }
@@ -195,11 +185,316 @@ function parseAttendanceCommand(
       .filter(Boolean);
 
   return {
-    isAttendanceCommand:
-      true,
+    isAttendanceCommand: true,
     groupName,
     presentNames,
   };
+}
+
+/*
+ * =========================================================
+ * פקודות ניהול
+ * =========================================================
+ *
+ * רשימת קבוצה צעירה
+ *
+ * הוסף מתאמן צעירה | ישראל ישראלי
+ * הוסף מתאמן צעירה | ישראל ישראלי | חדש
+ *
+ * הסר מתאמן צעירה | ישראל ישראלי
+ *
+ * העבר מתאמן צעירה | בוגרת | ישראל ישראלי
+ */
+
+function cleanManagerPart(
+  value = ""
+) {
+  return String(value)
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseManagerCommand(
+  message = ""
+) {
+  const text =
+    String(message)
+      .replace(/\r/g, "")
+      .trim();
+
+  if (!text) {
+    return null;
+  }
+
+  /*
+   * רשימת קבוצה צעירה
+   */
+  const rosterMatch =
+    text.match(
+      /^רשימת\s+קבוצה\s+(.+)$/i
+    );
+
+  if (rosterMatch) {
+    return {
+      type: "LIST_GROUP",
+      groupName:
+        cleanManagerPart(
+          rosterMatch[1]
+        ),
+    };
+  }
+
+  /*
+   * הוסף מתאמן צעירה | ישראל ישראלי | חדש
+   */
+  const addMatch =
+    text.match(
+      /^הוסף\s+מתאמן\s+([^|]+)\|([^|]+)(?:\|(.+))?$/i
+    );
+
+  if (addMatch) {
+    return {
+      type: "ADD_TRAINEE",
+
+      groupName:
+        cleanManagerPart(
+          addMatch[1]
+        ),
+
+      traineeName:
+        cleanManagerPart(
+          addMatch[2]
+        ),
+
+      notes:
+        addMatch[3]
+          ? cleanManagerPart(
+              addMatch[3]
+            )
+          : null,
+    };
+  }
+
+  /*
+   * הסר מתאמן צעירה | ישראל ישראלי
+   */
+  const removeMatch =
+    text.match(
+      /^הסר\s+מתאמן\s+([^|]+)\|(.+)$/i
+    );
+
+  if (removeMatch) {
+    return {
+      type: "REMOVE_TRAINEE",
+
+      groupName:
+        cleanManagerPart(
+          removeMatch[1]
+        ),
+
+      traineeName:
+        cleanManagerPart(
+          removeMatch[2]
+        ),
+    };
+  }
+
+  /*
+   * העבר מתאמן צעירה | בוגרת | ישראל ישראלי
+   */
+  const moveMatch =
+    text.match(
+      /^העבר\s+מתאמן\s+([^|]+)\|([^|]+)\|(.+)$/i
+    );
+
+  if (moveMatch) {
+    return {
+      type: "MOVE_TRAINEE",
+
+      fromGroupName:
+        cleanManagerPart(
+          moveMatch[1]
+        ),
+
+      toGroupName:
+        cleanManagerPart(
+          moveMatch[2]
+        ),
+
+      traineeName:
+        cleanManagerPart(
+          moveMatch[3]
+        ),
+    };
+  }
+
+  /*
+   * מזהה ניסיון להשתמש בפקודת ניהול,
+   * גם אם התחביר שגוי.
+   */
+  if (
+    /^(רשימת\s+קבוצה|הוסף\s+מתאמן|הסר\s+מתאמן|העבר\s+מתאמן)\b/i.test(
+      text
+    )
+  ) {
+    return {
+      type: "INVALID_MANAGER_COMMAND",
+    };
+  }
+
+  return null;
+}
+
+function buildManagerCommandsHelp() {
+  return [
+    "🔐 פקודות מנהל:",
+    "",
+    "📋 הצגת רשימה:",
+    "רשימת קבוצה צעירה",
+    "",
+    "➕ הוספת מתאמן:",
+    "הוסף מתאמן צעירה | ישראל ישראלי",
+    "",
+    "אפשר גם עם הערה:",
+    "הוסף מתאמן צעירה | ישראל ישראלי | חדש",
+    "",
+    "➖ הסרת מתאמן:",
+    "הסר מתאמן צעירה | ישראל ישראלי",
+    "",
+    "🔄 העברה בין קבוצות:",
+    "העבר מתאמן צעירה | בוגרת | ישראל ישראלי",
+    "",
+    "📋 דיווח נוכחות:",
+    "נוכחות צעירה",
+    "סתיו",
+    "רז",
+    "יונתן לוי",
+  ].join("\n");
+}
+
+async function handleManagerCommand({
+  userId,
+  command,
+}) {
+  try {
+    let result;
+
+    switch (command.type) {
+      case "LIST_GROUP": {
+        result =
+          await getGroupRoster(
+            command.groupName
+          );
+
+        const reply =
+          buildGroupRosterMessage(
+            result
+          );
+
+        await sendWhatsAppMessage(
+          userId,
+          reply
+        );
+
+        return true;
+      }
+
+      case "ADD_TRAINEE": {
+        result =
+          await addTrainee({
+            groupName:
+              command.groupName,
+
+            traineeName:
+              command.traineeName,
+
+            notes:
+              command.notes,
+          });
+
+        await sendWhatsAppMessage(
+          userId,
+          result.message
+        );
+
+        return true;
+      }
+
+      case "REMOVE_TRAINEE": {
+        result =
+          await removeTrainee({
+            groupName:
+              command.groupName,
+
+            traineeName:
+              command.traineeName,
+          });
+
+        await sendWhatsAppMessage(
+          userId,
+          result.message
+        );
+
+        return true;
+      }
+
+      case "MOVE_TRAINEE": {
+        result =
+          await moveTrainee({
+            fromGroupName:
+              command.fromGroupName,
+
+            toGroupName:
+              command.toGroupName,
+
+            traineeName:
+              command.traineeName,
+          });
+
+        await sendWhatsAppMessage(
+          userId,
+          result.message
+        );
+
+        return true;
+      }
+
+      case "INVALID_MANAGER_COMMAND": {
+        await sendWhatsAppMessage(
+          userId,
+          [
+            "⚠️ פקודת הניהול לא נכתבה בפורמט הנכון.",
+            "",
+            buildManagerCommandsHelp(),
+          ].join("\n")
+        );
+
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  } catch (error) {
+    console.error(
+      "❌ שגיאה בפקודת מנהל:",
+      {
+        command,
+        message:
+          error.message,
+        stack:
+          error.stack,
+      }
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      "❌ אירעה שגיאה בביצוע פעולת הניהול."
+    );
+
+    return true;
+  }
 }
 
 async function buildGroupsHelpMessage() {
@@ -231,13 +526,50 @@ async function buildGroupsHelpMessage() {
   }
 }
 
+function formatAttendanceDate(
+  value
+) {
+  if (!value) {
+    return "";
+  }
+
+  if (
+    typeof value ===
+    "string"
+  ) {
+    return value
+      .slice(0, 10);
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "he-IL",
+      {
+        timeZone:
+          "Asia/Jerusalem",
+        year:
+          "numeric",
+        month:
+          "2-digit",
+        day:
+          "2-digit",
+      }
+    ).format(
+      new Date(value)
+    );
+  } catch {
+    return String(value);
+  }
+}
+
 function buildManagerAttendanceMessage(
   result
 ) {
   const dateText =
-    result?.session
-      ?.session_date ||
-    "";
+    formatAttendanceDate(
+      result?.session
+        ?.session_date
+    );
 
   const absentLines =
     result.absent.length > 0
@@ -263,12 +595,6 @@ function buildManagerAttendanceMessage(
   ].join("\n");
 }
 
-/*
- * שולח דיווח נוכחות לכל המנהלים.
- *
- * אם אחד המנהלים הוא זה שדיווח,
- * לא שולחים אליו שוב את אותו הדיווח.
- */
 async function sendAttendanceToManagers(
   result,
   reporterPhone
@@ -298,10 +624,6 @@ async function sendAttendanceToManagers(
         normalizedReporter
     );
 
-  /*
-   * למשל אם מוגדר רק מנהל אחד
-   * והוא עצמו דיווח.
-   */
   if (
     recipients.length === 0
   ) {
@@ -324,33 +646,17 @@ async function sendAttendanceToManagers(
     const managerPhone of recipients
   ) {
     try {
-      console.log(
-        "📨 שולח דיווח נוכחות למנהל:",
-        {
-          group:
-            result.group.name,
-          managerPhone,
-          submittedBy:
-            result.submittedBy,
-          present:
-            result.presentCount,
-          absent:
-            result.absentCount,
-        }
+      await sendWhatsAppMessage(
+        managerPhone,
+        managerMessage
       );
 
-      const managerResult =
-        await sendWhatsAppMessage(
-          managerPhone,
-          managerMessage
-        );
-
       console.log(
-        "✅ דיווח הנוכחות נשלח למנהל:",
+        "✅ דיווח נוכחות נשלח למנהל:",
         {
           managerPhone,
-          result:
-            managerResult,
+          group:
+            result.group.name,
         }
       );
     } catch (error) {
@@ -387,6 +693,43 @@ async function handleStaffMessage({
   staffPhone,
   manager,
 }) {
+  /*
+   * קודם בודקים אם זו פקודת ניהול.
+   */
+  const managerCommand =
+    parseManagerCommand(
+      userMessage
+    );
+
+  if (managerCommand) {
+    /*
+     * מאמן רגיל לעולם לא יכול
+     * לשנות את רשימת המתאמנים.
+     */
+    if (!manager) {
+      await sendWhatsAppMessage(
+        userId,
+        [
+          "❌ אין לך הרשאה לבצע את הפעולה הזו.",
+          "",
+          "מאמנים יכולים לדווח נוכחות בלבד.",
+          "הוספה, הסרה או העברה של מתאמנים מתבצעת רק על ידי מנהל.",
+        ].join("\n")
+      );
+
+      return true;
+    }
+
+    return handleManagerCommand({
+      userId,
+      command:
+        managerCommand,
+    });
+  }
+
+  /*
+   * לאחר מכן בודקים נוכחות.
+   */
   const attendanceCommand =
     parseAttendanceCommand(
       userMessage
@@ -402,23 +745,7 @@ async function handleStaffMessage({
     const staffReply =
       manager
         ? [
-            "🔐 זוהית כמנהל המערכת.",
-            "",
-            "כרגע מערכת הנוכחות תומכת בדיווח נוכחות.",
-            "",
-            "אפשר לשלוח:",
-            "",
-            "נוכחות צעירה",
-            "סתיו",
-            "רז",
-            "יונתן לוי",
-            "",
-            "או פשוט:",
-            "",
-            "צעירה",
-            "סתיו",
-            "רז",
-            "יונתן לוי",
+            buildManagerCommandsHelp(),
             "",
             groupsHelp,
           ].join("\n")
@@ -441,7 +768,7 @@ async function handleStaffMessage({
             "",
             groupsHelp,
             "",
-            "ℹ️ מאמנים יכולים לדווח נוכחות בלבד. הוספה או שינוי של מתאמנים מתבצעים רק על ידי מנהל.",
+            "ℹ️ מאמנים יכולים לדווח נוכחות בלבד.",
           ].join("\n");
 
     await sendWhatsAppMessage(
@@ -458,74 +785,49 @@ async function handleStaffMessage({
     const groupsHelp =
       await buildGroupsHelpMessage();
 
-    const reply = [
-      "⚠️ חסר שם הקבוצה.",
-      "",
-      "יש לשלוח למשל:",
-      "",
-      "נוכחות צעירה",
-      "סתיו",
-      "רז",
-      "יונתן לוי",
-      "",
-      groupsHelp,
-    ].join("\n");
-
     await sendWhatsAppMessage(
       userId,
-      reply
+      [
+        "⚠️ חסר שם הקבוצה.",
+        "",
+        "יש לשלוח למשל:",
+        "",
+        "נוכחות צעירה",
+        "סתיו",
+        "רז",
+        "",
+        groupsHelp,
+      ].join("\n")
     );
 
     return true;
   }
 
-  /*
-   * לא שומרים דיווח ריק,
-   * כדי לא לסמן בטעות
-   * קבוצה שלמה כנעדרת.
-   */
   if (
     attendanceCommand
       .presentNames
       .length === 0
   ) {
-    const reply = [
-      "⚠️ לא נשלחו שמות של מתאמנים שהגיעו.",
-      "",
-      "הנוכחות לא נשמרה.",
-      "",
-      "יש לשלוח למשל:",
-      "",
-      `נוכחות ${attendanceCommand.groupName}`,
-      "שם מתאמן",
-      "שם מתאמן",
-      "שם מתאמן",
-    ].join("\n");
-
     await sendWhatsAppMessage(
       userId,
-      reply
+      [
+        "⚠️ לא נשלחו שמות של מתאמנים שהגיעו.",
+        "",
+        "הנוכחות לא נשמרה.",
+        "",
+        "יש לשלוח למשל:",
+        "",
+        `נוכחות ${attendanceCommand.groupName}`,
+        "שם מתאמן",
+        "שם מתאמן",
+        "שם מתאמן",
+      ].join("\n")
     );
 
     return true;
   }
 
   try {
-    console.log(
-      "📋 מתקבל דיווח נוכחות:",
-      {
-        userId,
-        staffPhone,
-        manager,
-        group:
-          attendanceCommand
-            .groupName,
-        presentNames:
-          attendanceCommand
-            .presentNames,
-      }
-    );
-
     const result =
       await submitAttendance({
         groupName:
@@ -564,26 +866,9 @@ async function handleStaffMessage({
         reply
       );
 
-      console.warn(
-        "⚠️ דיווח נוכחות לא נשמר:",
-        {
-          code:
-            result.code,
-          group:
-            attendanceCommand
-              .groupName,
-          unknownNames:
-            result.unknownNames,
-        }
-      );
-
       return true;
     }
 
-    /*
-     * שולחים למי שדיווח
-     * את הסיכום המלא.
-     */
     const staffReply =
       buildAttendanceSummary(
         result
@@ -594,29 +879,6 @@ async function handleStaffMessage({
       staffReply
     );
 
-    console.log(
-      "✅ הנוכחות נשמרה:",
-      {
-        group:
-          result.group.name,
-        submittedBy:
-          result.submittedBy,
-        total:
-          result.total,
-        present:
-          result.presentCount,
-        absent:
-          result.absentCount,
-      }
-    );
-
-    /*
-     * דיווח מאמן:
-     * נשלח לכל המנהלים.
-     *
-     * דיווח מנהל:
-     * נשלח רק למנהל/ים האחרים.
-     */
     const managersSent =
       await sendAttendanceToManagers(
         result,
@@ -665,10 +927,14 @@ async function handleStaffMessage({
  * =========================================================
  */
 
-function hasCompleteLeadDetails(user) {
+function hasCompleteLeadDetails(
+  user
+) {
   const hasName =
-    typeof user.name === "string" &&
-    user.name.trim().length > 0;
+    typeof user.name ===
+      "string" &&
+    user.name.trim().length >
+      0;
 
   const hasAge =
     user.age !== null &&
@@ -678,16 +944,22 @@ function hasCompleteLeadDetails(user) {
       .length > 0;
 
   const hasBranch =
-    typeof user.branch === "string" &&
-    user.branch.trim().length > 0;
+    typeof user.branch ===
+      "string" &&
+    user.branch.trim().length >
+      0;
 
   const hasPhone =
-    typeof user.phone === "string" &&
-    user.phone.trim().length > 0;
+    typeof user.phone ===
+      "string" &&
+    user.phone.trim().length >
+      0;
 
   const hasGoal =
-    typeof user.goal === "string" &&
-    user.goal.trim().length > 0;
+    typeof user.goal ===
+      "string" &&
+    user.goal.trim().length >
+      0;
 
   return (
     hasName &&
@@ -744,7 +1016,9 @@ function isWaitingForSource(
     );
 }
 
-function cleanText(value = "") {
+function cleanText(
+  value = ""
+) {
   return String(value)
     .replace(/\s+/g, " ")
     .trim();
@@ -762,9 +1036,7 @@ function looksLikeQuestion(
     return false;
   }
 
-  if (
-    text.includes("?")
-  ) {
+  if (text.includes("?")) {
     return true;
   }
 
@@ -849,8 +1121,7 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        name:
-          text,
+        name: text,
       };
     }
 
@@ -885,8 +1156,7 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        city:
-          text,
+        city: text,
       };
     }
 
@@ -902,8 +1172,7 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        experience:
-          text,
+        experience: text,
       };
     }
 
@@ -984,7 +1253,8 @@ async function handleSpecialSourceConversation({
   }
 
   if (
-    currentUser.regular_flow_active ===
+    currentUser
+      .regular_flow_active ===
     true
   ) {
     if (
@@ -1003,27 +1273,7 @@ async function handleSpecialSourceConversation({
               SPECIAL_BRANCH,
           }
         );
-
-      console.log(
-        "🔙 לקוח חזר מהמסלול הרגיל למסלול המיוחד:",
-        {
-          userId,
-          source:
-            currentUser.source,
-          userMessage,
-        }
-      );
     } else {
-      console.log(
-        "➡️ ממשיך בשיחה על המסלול הרגיל:",
-        {
-          userId,
-          source:
-            currentUser.source,
-          userMessage,
-        }
-      );
-
       return false;
     }
   }
@@ -1034,27 +1284,13 @@ async function handleSpecialSourceConversation({
       currentUser.source
     )
   ) {
-    currentUser =
-      await saveUser(
-        userId,
-        {
-          regular_flow_active:
-            true,
-          branch:
-            null,
-        }
-      );
-
-    console.log(
-      "💰 לקוח ממסלול מיוחד עבר להתעניין במסלול הרגיל:",
+    await saveUser(
+      userId,
       {
-        userId,
-        source:
-          currentUser.source,
-        regularFlowActive:
-          currentUser
-            .regular_flow_active,
-        userMessage,
+        regular_flow_active:
+          true,
+        branch:
+          null,
       }
     );
 
@@ -1104,16 +1340,6 @@ async function handleSpecialSourceConversation({
       faqReply
     );
 
-    console.log(
-      "💬 FAQ במסלול מיוחד:",
-      {
-        userId,
-        source:
-          currentUser.source,
-        userMessage,
-      }
-    );
-
     return true;
   }
 
@@ -1157,17 +1383,6 @@ async function handleSpecialSourceConversation({
       combinedReply
     );
 
-    console.log(
-      "💬 FAQ במהלך איסוף פרטים במסלול מיוחד:",
-      {
-        userId,
-        source:
-          currentUser.source,
-        missingField,
-        userMessage,
-      }
-    );
-
     return true;
   }
 
@@ -1200,17 +1415,6 @@ async function handleSpecialSourceConversation({
       invalidReply
     );
 
-    console.log(
-      "⚠️ תשובה לא תקינה במסלול מיוחד:",
-      {
-        userId,
-        source:
-          currentUser.source,
-        missingField,
-        userMessage,
-      }
-    );
-
     return true;
   }
 
@@ -1223,21 +1427,6 @@ async function handleSpecialSourceConversation({
           SPECIAL_BRANCH,
       }
     );
-
-  console.log(
-    "💾 פרט נשמר במסלול מיוחד:",
-    {
-      userId,
-      source:
-        currentUser.source,
-      field:
-        missingField,
-      value:
-        fieldUpdate[
-          missingField
-        ],
-    }
-  );
 
   const nextMissingField =
     getMissingSpecialField(
@@ -1278,25 +1467,6 @@ async function handleSpecialSourceConversation({
   await sendWhatsAppMessage(
     userId,
     rulesReply
-  );
-
-  console.log(
-    "✅ מסלול מיוחד הושלם:",
-    {
-      userId,
-      source:
-        currentUser.source,
-      name:
-        currentUser.name,
-      age:
-        currentUser.age,
-      city:
-        currentUser.city,
-      experience:
-        currentUser.experience,
-      branch:
-        currentUser.branch,
-    }
   );
 
   return true;
@@ -1407,7 +1577,9 @@ function formatManagerLeadMessage(
   ].join("\n");
 }
 
-function getMessageId(message) {
+function getMessageId(
+  message
+) {
   return (
     message?.id ||
     message?.message_id ||
@@ -1452,9 +1624,7 @@ function enqueueUserMessage(
 
   const currentTask =
     previousTask
-      .catch(() => {
-        // שגיאה קודמת לא תעצור את התור.
-      })
+      .catch(() => {})
       .then(task);
 
   userQueues.set(
@@ -1503,31 +1673,9 @@ async function sendLeadToManager(
         updatedConversationHistory
       );
 
-    console.log(
-      "📨 מנסה לשלוח ליד למנהל:",
-      {
-        customerPhone:
-          updatedUser.phone,
-        customerName:
-          updatedUser.name,
-        customerAge:
-          updatedUser.age,
-        goal:
-          updatedUser.goal,
-        messageLength:
-          managerMessage.length,
-      }
-    );
-
-    const managerResult =
-      await sendWhatsAppMessage(
-        CLUB_MANAGER_PHONE,
-        managerMessage
-      );
-
-    console.log(
-      "✅ תשובת Whapi בשליחת הליד למנהל:",
-      managerResult
+    await sendWhatsAppMessage(
+      CLUB_MANAGER_PHONE,
+      managerMessage
     );
 
     return true;
@@ -1587,25 +1735,9 @@ async function processIncomingMessage(
     );
 
   console.log(
-    "🔍 מזהי Whapi:",
-    {
-      from:
-        message.from,
-      chat_id:
-        message.chat_id,
-      selectedUserId:
-        userId,
-      detectedPhone,
-    }
-  );
-
-  console.log(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
-  /*
-   * איפוס
-   */
   if (
     userMessage ===
     "איפוס שיחה"
@@ -1618,16 +1750,9 @@ async function processIncomingMessage(
       userId
     );
 
-    const resetReply =
-      "השיחה והפרטים שנשמרו אופסו בהצלחה 😊";
-
     await sendWhatsAppMessage(
       userId,
-      resetReply
-    );
-
-    console.log(
-      `✅ השיחה אופסה עבור ${userId}`
+      "השיחה והפרטים שנשמרו אופסו בהצלחה 😊"
     );
 
     return;
@@ -1643,10 +1768,6 @@ async function processIncomingMessage(
       detectedPhone
     );
 
-  /*
-   * בדיקת מנהל זמינה
-   * למנהלים בלבד.
-   */
   if (
     userMessage ===
     "בדיקת מנהל"
@@ -1663,95 +1784,51 @@ async function processIncomingMessage(
     const managerPhones =
       getManagerPhones();
 
-    if (
-      managerPhones.length === 0
+    let sentCount =
+      0;
+
+    for (
+      const managerPhone of
+        managerPhones
     ) {
-      await sendWhatsAppMessage(
-        userId,
-        "❌ לא הוגדרו מנהלים במערכת."
-      );
-
-      return;
-    }
-
-    try {
-      let sentCount =
-        0;
-
-      for (
-        const managerPhone of
-          managerPhones
+      if (
+        normalizePhone(
+          managerPhone
+        ) ===
+        normalizePhone(
+          detectedPhone
+        )
       ) {
-        if (
-          normalizePhone(
-            managerPhone
-          ) ===
-          normalizePhone(
-            detectedPhone
-          )
-        ) {
-          continue;
-        }
-
-        await sendWhatsAppMessage(
-          managerPhone,
-          "🧪 הודעת בדיקה ממערכת הניהול של Tennis Sport"
-        );
-
-        sentCount +=
-          1;
+        continue;
       }
 
       await sendWhatsAppMessage(
-        userId,
-        sentCount > 0
-          ? `✅ הודעת הבדיקה נשלחה ל-${sentCount} מנהלים נוספים.`
-          : "✅ אתה המנהל היחיד שמוגדר כרגע במערכת."
-      );
-    } catch (error) {
-      console.error(
-        "❌ בדיקת מנהלים נכשלה:",
-        {
-          status:
-            error.response?.status,
-          data:
-            error.response?.data,
-          message:
-            error.message,
-        }
+        managerPhone,
+        "🧪 הודעת בדיקה ממערכת הניהול של Tennis Sport"
       );
 
-      await sendWhatsAppMessage(
-        userId,
-        "❌ בדיקת המנהלים נכשלה."
-      );
+      sentCount +=
+        1;
     }
+
+    await sendWhatsAppMessage(
+      userId,
+      sentCount > 0
+        ? `✅ הודעת הבדיקה נשלחה ל-${sentCount} מנהלים נוספים.`
+        : "✅ אתה המנהל היחיד שמוגדר כרגע במערכת."
+    );
 
     return;
   }
 
   /*
-   * =========================================================
-   * ניתוב אנשי צוות
-   * =========================================================
+   * אנשי צוות תמיד נעצרים כאן
+   * ולא נכנסים לבוט הלקוחות.
    */
   if (
     manager ||
     coach
   ) {
-    console.log(
-      "🔐 הודעת איש צוות זוהתה:",
-      {
-        userId,
-        phone:
-          detectedPhone,
-        role:
-          manager
-            ? "manager"
-            : "coach",
-      }
-    );
-
     await handleStaffMessage({
       userId,
       userMessage,
@@ -1765,7 +1842,7 @@ async function processIncomingMessage(
 
   /*
    * =========================================================
-   * מכאן והלאה - לקוחות
+   * לקוחות
    * =========================================================
    */
 
@@ -1809,15 +1886,6 @@ async function processIncomingMessage(
             false,
         }
       );
-
-    console.log(
-      "🧭 לקוח קיים סומן אוטומטית כ-regular:",
-      {
-        userId,
-        source:
-          currentUser.source,
-      }
-    );
   }
 
   if (
@@ -1856,13 +1924,6 @@ async function processIncomingMessage(
     await sendWhatsAppMessage(
       userId,
       welcomeReply
-    );
-
-    console.log(
-      "🚪 שער הכניסה נשלח ללקוח חדש:",
-      {
-        userId,
-      }
     );
 
     return;
@@ -1907,17 +1968,6 @@ async function processIncomingMessage(
       userMessage
     );
 
-    console.log(
-      "🧭 מקור הגעה זוהה:",
-      {
-        userId,
-        source:
-          sourceResult.source,
-        isSpecial:
-          sourceResult.isSpecial,
-      }
-    );
-
     if (
       sourceResult.isSpecial
     ) {
@@ -1935,17 +1985,6 @@ async function processIncomingMessage(
       await sendWhatsAppMessage(
         userId,
         specialSourceReply
-      );
-
-      console.log(
-        "🔐 הלקוח נותב למסלול מיוחד:",
-        {
-          userId,
-          source:
-            sourceResult.source,
-          branch:
-            SPECIAL_BRANCH,
-        }
       );
 
       return;
@@ -1967,13 +2006,6 @@ async function processIncomingMessage(
     await sendWhatsAppMessage(
       userId,
       regularEntryReply
-    );
-
-    console.log(
-      "➡️ הלקוח נותב למסלול הרגיל:",
-      {
-        userId,
-      }
     );
 
     return;
@@ -2022,15 +2054,6 @@ async function processIncomingMessage(
     profileUpdates
   );
 
-  console.log(
-    "🧩 פרטים שחולצו מההודעה:",
-    {
-      userMessage,
-      currentUser,
-      extractedDetails,
-    }
-  );
-
   if (
     !currentUser.phone &&
     !extractedDetails.phone
@@ -2044,11 +2067,6 @@ async function processIncomingMessage(
       userId,
       extractedDetails
     );
-
-  console.log(
-    "👤 פרטי המשתמש שנשמרו:",
-    updatedUser
-  );
 
   await addMessage(
     userId,
@@ -2065,27 +2083,6 @@ async function processIncomingMessage(
     hasCompleteLeadDetails(
       updatedUser
     );
-
-  console.log(
-    "🔍 בדיקת שדות ליד:",
-    {
-      name:
-        updatedUser.name,
-      age:
-        updatedUser.age,
-      branch:
-        updatedUser.branch,
-      phone:
-        updatedUser.phone,
-      goal:
-        updatedUser.goal,
-      source:
-        updatedUser.source,
-      regularFlowActive:
-        updatedUser
-          .regular_flow_active,
-    }
-  );
 
   const shouldSendLeadSummary =
     completeLead &&
@@ -2118,10 +2115,6 @@ async function processIncomingMessage(
     reply
   );
 
-  console.log(
-    `🤖 תשובת הבוט: ${reply}`
-  );
-
   await sendWhatsAppMessage(
     userId,
     reply
@@ -2142,32 +2135,6 @@ async function processIncomingMessage(
     finalUser.summary_sent !==
       true;
 
-  console.log(
-    "📋 בדיקה סופית לשליחת ליד:",
-    {
-      name:
-        finalUser.name,
-      age:
-        finalUser.age,
-      branch:
-        finalUser.branch,
-      phone:
-        finalUser.phone,
-      goal:
-        finalUser.goal,
-      source:
-        finalUser.source,
-      regularFlowActive:
-        finalUser
-          .regular_flow_active,
-      summarySent:
-        finalUser.summary_sent,
-      completeLead:
-        finalCompleteLead,
-      shouldSendManagerLead,
-    }
-  );
-
   if (
     shouldSendManagerLead
   ) {
@@ -2183,20 +2150,8 @@ async function processIncomingMessage(
       await markSummarySent(
         userId
       );
-
-      console.log(
-        `📋 הליד נשלח למנהל וסומן כנשלח עבור ${userId}`
-      );
-    } else {
-      console.warn(
-        `⚠️ שליחת הליד למנהל נכשלה עבור ${userId}`
-      );
     }
   }
-
-  console.log(
-    `✅ התשובה נשלחה ל-${userId}`
-  );
 }
 
 async function handleWebhook(
@@ -2204,8 +2159,7 @@ async function handleWebhook(
   res
 ) {
   res.status(200).json({
-    success:
-      true,
+    success: true,
     message:
       "Webhook received",
   });
@@ -2243,10 +2197,6 @@ async function handleWebhook(
           messageId
         )
       ) {
-        console.log(
-          `♻️ הודעה כפולה דולגה: ${messageId}`
-        );
-
         continue;
       }
 

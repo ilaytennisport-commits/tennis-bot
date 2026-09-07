@@ -53,6 +53,7 @@ const {
   getManagerPhones,
   isManagerPhone,
   isCoachPhone,
+  getStaffName,
   getActiveGroups,
 
   getGroupRoster,
@@ -77,8 +78,8 @@ const userQueues =
   new Map();
 
 /*
- * הלידים הרגילים עדיין נשלחים
- * למנהל הראשי הקיים.
+ * מערכת הלידים הקיימת
+ * עדיין משתמשת במנהל הראשי.
  */
 const CLUB_MANAGER_PHONE =
   process.env.CLUB_MANAGER_PHONE;
@@ -195,15 +196,6 @@ function parseAttendanceCommand(
  * =========================================================
  * פקודות ניהול
  * =========================================================
- *
- * רשימת קבוצה צעירה
- *
- * הוסף מתאמן צעירה | ישראל ישראלי
- * הוסף מתאמן צעירה | ישראל ישראלי | חדש
- *
- * הסר מתאמן צעירה | ישראל ישראלי
- *
- * העבר מתאמן צעירה | בוגרת | ישראל ישראלי
  */
 
 function cleanManagerPart(
@@ -246,6 +238,7 @@ function parseManagerCommand(
   }
 
   /*
+   * הוסף מתאמן צעירה | ישראל ישראלי
    * הוסף מתאמן צעירה | ישראל ישראלי | חדש
    */
   const addMatch =
@@ -329,10 +322,6 @@ function parseManagerCommand(
     };
   }
 
-  /*
-   * מזהה ניסיון להשתמש בפקודת ניהול,
-   * גם אם התחביר שגוי.
-   */
   if (
     /^(רשימת\s+קבוצה|הוסף\s+מתאמן|הסר\s+מתאמן|העבר\s+מתאמן)\b/i.test(
       text
@@ -373,9 +362,175 @@ function buildManagerCommandsHelp() {
   ].join("\n");
 }
 
+/*
+ * =========================================================
+ * התראות שינויי מנהל
+ * =========================================================
+ */
+
+function buildManagerAdminNotification({
+  action,
+  result,
+  managerPhone,
+}) {
+  const managerName =
+    getStaffName(
+      managerPhone
+    );
+
+  if (
+    action ===
+    "ADD_TRAINEE"
+  ) {
+    const notes =
+      result.trainee?.notes
+        ? `\n📝 הערה: ${result.trainee.notes}`
+        : "";
+
+    return [
+      "🔐 עדכון רשימת מתאמנים",
+      "",
+      `👤 בוצע על ידי: ${managerName}`,
+      "",
+      "➕ נוסף מתאמן",
+      `🎾 שם: ${result.trainee.name}`,
+      `👥 קבוצה: ${result.group.name}${notes}`,
+    ].join("\n");
+  }
+
+  if (
+    action ===
+    "REMOVE_TRAINEE"
+  ) {
+    return [
+      "🔐 עדכון רשימת מתאמנים",
+      "",
+      `👤 בוצע על ידי: ${managerName}`,
+      "",
+      "➖ הוסר מתאמן",
+      `🎾 שם: ${result.trainee.name}`,
+      `👥 קבוצה: ${result.group.name}`,
+    ].join("\n");
+  }
+
+  if (
+    action ===
+    "MOVE_TRAINEE"
+  ) {
+    return [
+      "🔐 עדכון רשימת מתאמנים",
+      "",
+      `👤 בוצע על ידי: ${managerName}`,
+      "",
+      "🔄 מתאמן הועבר קבוצה",
+      `🎾 שם: ${result.trainee.name}`,
+      `⬅️ מקבוצה: ${result.fromGroup.name}`,
+      `➡️ לקבוצה: ${result.toGroup.name}`,
+    ].join("\n");
+  }
+
+  return null;
+}
+
+async function sendManagerAdminNotification({
+  action,
+  result,
+  managerPhone,
+}) {
+  const managerPhones =
+    getManagerPhones();
+
+  if (
+    managerPhones.length === 0
+  ) {
+    console.warn(
+      "⚠️ לא הוגדרו מנהלים לקבלת עדכון."
+    );
+
+    return false;
+  }
+
+  const normalizedReporter =
+    normalizePhone(
+      managerPhone
+    );
+
+  const recipients =
+    managerPhones.filter(
+      (phone) =>
+        normalizePhone(phone) !==
+        normalizedReporter
+    );
+
+  /*
+   * אם יש רק מנהל אחד,
+   * אין למי לשלוח עדכון נוסף.
+   */
+  if (
+    recipients.length === 0
+  ) {
+    return true;
+  }
+
+  const notification =
+    buildManagerAdminNotification({
+      action,
+      result,
+      managerPhone,
+    });
+
+  if (!notification) {
+    return true;
+  }
+
+  let allSent =
+    true;
+
+  for (
+    const recipient of recipients
+  ) {
+    try {
+      await sendWhatsAppMessage(
+        recipient,
+        notification
+      );
+
+      console.log(
+        "✅ עדכון שינוי ברשימת מתאמנים נשלח למנהל:",
+        {
+          recipient,
+          action,
+          trainee:
+            result.trainee?.name,
+        }
+      );
+    } catch (error) {
+      allSent =
+        false;
+
+      console.error(
+        "❌ שליחת עדכון שינוי למנהל נכשלה:",
+        {
+          recipient,
+          action,
+          status:
+            error.response?.status,
+          data:
+            error.response?.data,
+          message:
+            error.message,
+        }
+      );
+    }
+  }
+
+  return allSent;
+}
+
 async function handleManagerCommand({
   userId,
   command,
+  managerPhone,
 }) {
   try {
     let result;
@@ -418,6 +573,26 @@ async function handleManagerCommand({
           result.message
         );
 
+        if (result.success) {
+          const notificationSent =
+            await sendManagerAdminNotification({
+              action:
+                "ADD_TRAINEE",
+              result,
+              managerPhone,
+            });
+
+          if (!notificationSent) {
+            await sendWhatsAppMessage(
+              userId,
+              [
+                "⚠️ השינוי נשמר בהצלחה,",
+                "אך לא הצלחתי לעדכן את כל המנהלים.",
+              ].join("\n")
+            );
+          }
+        }
+
         return true;
       }
 
@@ -435,6 +610,26 @@ async function handleManagerCommand({
           userId,
           result.message
         );
+
+        if (result.success) {
+          const notificationSent =
+            await sendManagerAdminNotification({
+              action:
+                "REMOVE_TRAINEE",
+              result,
+              managerPhone,
+            });
+
+          if (!notificationSent) {
+            await sendWhatsAppMessage(
+              userId,
+              [
+                "⚠️ השינוי נשמר בהצלחה,",
+                "אך לא הצלחתי לעדכן את כל המנהלים.",
+              ].join("\n")
+            );
+          }
+        }
 
         return true;
       }
@@ -456,6 +651,26 @@ async function handleManagerCommand({
           userId,
           result.message
         );
+
+        if (result.success) {
+          const notificationSent =
+            await sendManagerAdminNotification({
+              action:
+                "MOVE_TRAINEE",
+              result,
+              managerPhone,
+            });
+
+          if (!notificationSent) {
+            await sendWhatsAppMessage(
+              userId,
+              [
+                "⚠️ השינוי נשמר בהצלחה,",
+                "אך לא הצלחתי לעדכן את כל המנהלים.",
+              ].join("\n")
+            );
+          }
+        }
 
         return true;
       }
@@ -496,6 +711,12 @@ async function handleManagerCommand({
     return true;
   }
 }
+
+/*
+ * =========================================================
+ * עזרי קבוצות
+ * =========================================================
+ */
 
 async function buildGroupsHelpMessage() {
   try {
@@ -694,7 +915,7 @@ async function handleStaffMessage({
   manager,
 }) {
   /*
-   * קודם בודקים אם זו פקודת ניהול.
+   * פקודות ניהול נבדקות לפני נוכחות.
    */
   const managerCommand =
     parseManagerCommand(
@@ -702,10 +923,6 @@ async function handleStaffMessage({
     );
 
   if (managerCommand) {
-    /*
-     * מאמן רגיל לעולם לא יכול
-     * לשנות את רשימת המתאמנים.
-     */
     if (!manager) {
       await sendWhatsAppMessage(
         userId,
@@ -724,12 +941,11 @@ async function handleStaffMessage({
       userId,
       command:
         managerCommand,
+      managerPhone:
+        staffPhone,
     });
   }
 
-  /*
-   * לאחר מכן בודקים נוכחות.
-   */
   const attendanceCommand =
     parseAttendanceCommand(
       userMessage
@@ -803,6 +1019,11 @@ async function handleStaffMessage({
     return true;
   }
 
+  /*
+   * לא שומרים דיווח ריק,
+   * כדי לא לסמן את כל הקבוצה
+   * כנעדרת בטעות.
+   */
   if (
     attendanceCommand
       .presentNames
@@ -1472,6 +1693,12 @@ async function handleSpecialSourceConversation({
   return true;
 }
 
+/*
+ * =========================================================
+ * מערכת לידים
+ * =========================================================
+ */
+
 function formatManagerLeadMessage(
   user,
   conversationHistory = []
@@ -1696,6 +1923,12 @@ async function sendLeadToManager(
   }
 }
 
+/*
+ * =========================================================
+ * עיבוד הודעה נכנסת
+ * =========================================================
+ */
+
 async function processIncomingMessage(
   message
 ) {
@@ -1738,6 +1971,9 @@ async function processIncomingMessage(
     `📨 הודעה מ-${userId}: ${userMessage}`
   );
 
+  /*
+   * איפוס
+   */
   if (
     userMessage ===
     "איפוס שיחה"
@@ -1768,6 +2004,9 @@ async function processIncomingMessage(
       detectedPhone
     );
 
+  /*
+   * בדיקת מנהל
+   */
   if (
     userMessage ===
     "בדיקת מנהל"
@@ -1822,7 +2061,7 @@ async function processIncomingMessage(
   }
 
   /*
-   * אנשי צוות תמיד נעצרים כאן
+   * אנשי צוות נעצרים כאן,
    * ולא נכנסים לבוט הלקוחות.
    */
   if (
@@ -2153,6 +2392,12 @@ async function processIncomingMessage(
     }
   }
 }
+
+/*
+ * =========================================================
+ * Webhook
+ * =========================================================
+ */
 
 async function handleWebhook(
   req,

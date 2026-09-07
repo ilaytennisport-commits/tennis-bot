@@ -138,6 +138,12 @@ function parsePhoneList(
     .filter(Boolean);
 }
 
+/*
+ * =========================================================
+ * מנהלים
+ * =========================================================
+ */
+
 function getManagerPhones() {
   const managerPhones =
     parsePhoneList(
@@ -180,6 +186,12 @@ function isManagerPhone(phone) {
   );
 }
 
+/*
+ * =========================================================
+ * מאמנים
+ * =========================================================
+ */
+
 function getCoachPhones() {
   return parsePhoneList(
     process.env.COACH_PHONES ||
@@ -199,6 +211,12 @@ function isCoachPhone(phone) {
     normalizedPhone
   );
 }
+
+/*
+ * =========================================================
+ * שמות אנשי צוות
+ * =========================================================
+ */
 
 function getStaffName(phone) {
   const normalizedPhone =
@@ -302,7 +320,7 @@ function normalizeGroupText(
 
 /*
  * =========================================================
- * סניף
+ * זיהוי סניף
  * =========================================================
  */
 
@@ -408,7 +426,7 @@ function parseGaliHadarSlot(
   }
 
   /*
-   * חייב להיות כתוב גלי הדר כדי שלא נבלבל
+   * חייב להיות כתוב גלי הדר כדי שלא נתבלבל
    * עם קבוצות של בית חשמונאי.
    */
   if (
@@ -495,11 +513,50 @@ function parseGaliHadarSlot(
 
 /*
  * =========================================================
+ * זיהוי מתאמן גמיש
+ * =========================================================
+ *
+ * לדוגמה:
+ * שירה קנדלקר - ראשון או רביעי 16:00
+ *
+ * המתאמן יופיע ברשימת האימון.
+ * אם דווח כנוכח - נשמור נוכחות.
+ * אם לא דווח - לא נרשום לו היעדרות.
+ * =========================================================
+ */
+
+function isFlexibleTrainee(
+  trainee
+) {
+  const notes =
+    cleanValue(
+      trainee?.notes || ""
+    ).toLowerCase();
+
+  if (!notes) {
+    return false;
+  }
+
+  return (
+    notes.includes(
+      "ראשון או רביעי"
+    ) ||
+    notes.includes(
+      "גמיש"
+    )
+  );
+}
+
+/*
+ * =========================================================
  * כינויים לקבוצות הקבועות
  * =========================================================
  */
 
 const GROUP_ALIASES = [
+  /*
+   * גלי הדר
+   */
   {
     branch:
       BRANCH_GALI_HADAR,
@@ -581,6 +638,9 @@ const GROUP_ALIASES = [
     ],
   },
 
+  /*
+   * בית חשמונאי
+   */
   {
     branch:
       BRANCH_BEIT_HASHMONAI,
@@ -665,7 +725,7 @@ const GROUP_ALIASES = [
 
 /*
  * =========================================================
- * קבוצות רגילות
+ * קבוצות פעילות
  * =========================================================
  */
 
@@ -974,7 +1034,7 @@ async function getActiveGroupByName(
 
 /*
  * =========================================================
- * מתאמנים רגילים
+ * מתאמנים
  * =========================================================
  */
 
@@ -1052,7 +1112,7 @@ function findMatchingTrainee(
 
 /*
  * =========================================================
- * גלי הדר – קבלת roster לפי יום ושעה
+ * גלי הדר – רשימה לפי יום ושעה
  * =========================================================
  */
 
@@ -1086,7 +1146,7 @@ async function getGaliHadarSlotRoster(
 
 /*
  * =========================================================
- * יצירת קבוצת נוכחות פנימית למפגש גלי הדר
+ * קבוצת נוכחות פנימית למפגש גלי הדר
  * =========================================================
  */
 
@@ -1146,9 +1206,6 @@ async function ensureGaliHadarAttendanceGroup(
       slot
     );
 
-  /*
-   * מסנכרנים את הילדים הפעילים של אותו מפגש.
-   */
   for (
     const slotTrainee of
       slotRoster
@@ -1210,10 +1267,6 @@ async function ensureGaliHadarAttendanceGroup(
     );
   }
 
-  /*
-   * ילד שהיה בעבר במפגש הזה אבל כבר לא משובץ אליו
-   * לא יישאר בטעות כפעיל.
-   */
   const activeNames =
     slotRoster.map(
       (trainee) =>
@@ -1292,9 +1345,12 @@ async function getGroupRoster(
       success: true,
       group,
       trainees,
+
       total:
         trainees.length,
+
       slot,
+
       isTrainingSlot:
         true,
     };
@@ -1335,6 +1391,7 @@ async function getGroupRoster(
     success: true,
     group,
     trainees,
+
     total:
       trainees.length,
   };
@@ -1342,7 +1399,7 @@ async function getGroupRoster(
 
 /*
  * =========================================================
- * הוספת מתאמן לקבוצה קבועה
+ * הוספת מתאמן
  * =========================================================
  */
 
@@ -1364,8 +1421,10 @@ async function addTrainee({
   if (!cleanName) {
     return {
       success: false,
+
       code:
         "INVALID_NAME",
+
       message:
         "❌ חסר שם המתאמן.",
     };
@@ -1381,10 +1440,13 @@ async function addTrainee({
   ) {
     return {
       success: false,
+
       code:
         resolution.code,
+
       message:
         resolution.message,
+
       matches:
         resolution.matches ||
         [],
@@ -1411,11 +1473,15 @@ async function addTrainee({
   ) {
     return {
       success: false,
+
       code:
         "TRAINEE_ALREADY_EXISTS",
+
       group,
+
       trainee:
         existing,
+
       message:
         `⚠️ ${existing.name} כבר נמצא בקבוצת ${group.name}.`,
     };
@@ -1454,11 +1520,15 @@ async function addTrainee({
 
     return {
       success: true,
+
       code:
         "TRAINEE_REACTIVATED",
+
       group,
+
       trainee:
         result.rows[0],
+
       message:
         `✅ ${result.rows[0].name} הוחזר לקבוצת ${group.name}.`,
     };
@@ -1495,11 +1565,15 @@ async function addTrainee({
 
   return {
     success: true,
+
     code:
       "TRAINEE_ADDED",
+
     group,
+
     trainee:
       result.rows[0],
+
     message:
       `✅ ${result.rows[0].name} נוסף לקבוצת ${group.name}.`,
   };
@@ -1523,8 +1597,10 @@ async function removeTrainee({
   if (!cleanName) {
     return {
       success: false,
+
       code:
         "INVALID_NAME",
+
       message:
         "❌ חסר שם המתאמן.",
     };
@@ -1540,10 +1616,13 @@ async function removeTrainee({
   ) {
     return {
       success: false,
+
       code:
         resolution.code,
+
       message:
         resolution.message,
+
       matches:
         resolution.matches ||
         [],
@@ -1567,9 +1646,12 @@ async function removeTrainee({
   if (!trainee) {
     return {
       success: false,
+
       code:
         "TRAINEE_NOT_FOUND",
+
       group,
+
       message:
         `❌ לא מצאתי מתאמן פעיל בשם "${cleanName}" בקבוצת ${group.name}.`,
     };
@@ -1597,11 +1679,15 @@ async function removeTrainee({
 
   return {
     success: true,
+
     code:
       "TRAINEE_REMOVED",
+
     group,
+
     trainee:
       result.rows[0],
+
     message:
       `✅ ${result.rows[0].name} הוסר מקבוצת ${group.name}.`,
   };
@@ -1626,8 +1712,10 @@ async function moveTrainee({
   if (!cleanName) {
     return {
       success: false,
+
       code:
         "INVALID_NAME",
+
       message:
         "❌ חסר שם המתאמן.",
     };
@@ -1643,10 +1731,13 @@ async function moveTrainee({
   ) {
     return {
       success: false,
+
       code:
         fromResolution.code,
+
       message:
         fromResolution.message,
+
       matches:
         fromResolution.matches ||
         [],
@@ -1663,10 +1754,13 @@ async function moveTrainee({
   ) {
     return {
       success: false,
+
       code:
         toResolution.code,
+
       message:
         toResolution.message,
+
       matches:
         toResolution.matches ||
         [],
@@ -1685,8 +1779,10 @@ async function moveTrainee({
   ) {
     return {
       success: false,
+
       code:
         "SAME_GROUP",
+
       message:
         "⚠️ קבוצת המקור וקבוצת היעד זהות.",
     };
@@ -1706,8 +1802,10 @@ async function moveTrainee({
   if (!sourceTrainee) {
     return {
       success: false,
+
       code:
         "TRAINEE_NOT_FOUND",
+
       message:
         `❌ לא מצאתי את "${cleanName}" בקבוצת ${fromGroup.name}.`,
     };
@@ -1730,8 +1828,10 @@ async function moveTrainee({
   ) {
     return {
       success: false,
+
       code:
         "TRAINEE_ALREADY_IN_TARGET",
+
       message:
         `⚠️ ${existingTarget.name} כבר נמצא בקבוצת ${toGroup.name}.`,
     };
@@ -1760,7 +1860,9 @@ async function moveTrainee({
 
     let targetTrainee;
 
-    if (existingTarget) {
+    if (
+      existingTarget
+    ) {
       const reactivateResult =
         await client.query(
           `
@@ -1825,12 +1927,16 @@ async function moveTrainee({
 
     return {
       success: true,
+
       code:
         "TRAINEE_MOVED",
+
       fromGroup,
       toGroup,
+
       trainee:
         targetTrainee,
+
       message:
         `✅ ${sourceTrainee.name} הועבר מקבוצת ${fromGroup.name} לקבוצת ${toGroup.name}.`,
     };
@@ -1955,7 +2061,7 @@ async function submitAttendance({
   let slot = null;
 
   /*
-   * קודם בודקים אם זה דיווח גלי הדר לפי יום ושעה.
+   * קודם בודקים האם זו נוכחות גלי הדר לפי יום + שעה.
    */
   slot =
     parseGaliHadarSlot(
@@ -1983,10 +2089,13 @@ async function submitAttendance({
     ) {
       return {
         success: false,
+
         code:
           resolution.code,
+
         message:
           resolution.message,
+
         matches:
           resolution.matches ||
           [],
@@ -2007,8 +2116,10 @@ async function submitAttendance({
   ) {
     return {
       success: false,
+
       code:
         "EMPTY_GROUP",
+
       message:
         `❌ אין מתאמנים פעילים בקבוצת ${group.name}.`,
     };
@@ -2030,7 +2141,9 @@ async function submitAttendance({
         trainees
       );
 
-    if (trainee) {
+    if (
+      trainee
+    ) {
       if (
         !matchedTrainees.some(
           (item) =>
@@ -2049,13 +2162,18 @@ async function submitAttendance({
     }
   }
 
+  /*
+   * אם יש שם לא מוכר - לא שומרים שום דבר.
+   */
   if (
     unknownNames.length > 0
   ) {
     return {
       success: false,
+
       code:
         "UNKNOWN_TRAINEES",
+
       group,
       unknownNames,
 
@@ -2085,7 +2203,9 @@ async function submitAttendance({
     await getOrCreateAttendanceSession({
       groupId:
         group.id,
+
       sessionDate,
+
       submittedBy,
     });
 
@@ -2097,20 +2217,87 @@ async function submitAttendance({
       )
     );
 
+  /*
+   * =======================================================
+   * טיפול במתאמנים גמישים
+   * =======================================================
+   *
+   * מתאמן גמיש שלא הופיע ברשימת המגיעים:
+   * לא נשמר כנעדר.
+   *
+   * מתאמן גמיש שכן הופיע:
+   * נשמר כנוכח.
+   * =======================================================
+   */
+
+  const flexibleTrainees =
+    slot
+      ? trainees.filter(
+          (trainee) =>
+            isFlexibleTrainee(
+              trainee
+            )
+        )
+      : [];
+
+  const flexibleTraineeIds =
+    new Set(
+      flexibleTrainees.map(
+        (trainee) =>
+          trainee.id
+      )
+    );
+
+  /*
+   * אלה המתאמנים שבאמת צריכים לקבל record במפגש:
+   *
+   * - כל מתאמן רגיל.
+   * - מתאמן גמיש רק אם הגיע.
+   */
+  const attendanceTrainees =
+    trainees.filter(
+      (trainee) =>
+        !flexibleTraineeIds.has(
+          trainee.id
+        ) ||
+        presentTraineeIds.has(
+          trainee.id
+        )
+    );
+
   await saveAttendanceRecords({
     sessionId:
       session.id,
-    trainees,
+
+    trainees:
+      attendanceTrainees,
+
     presentTraineeIds,
   });
 
+  /*
+   * נעדרים:
+   * רק מי שהיה אמור להגיע בוודאות ולא הגיע.
+   */
   const absentTrainees =
     trainees.filter(
       (trainee) =>
         !presentTraineeIds.has(
           trainee.id
+        ) &&
+        !flexibleTraineeIds.has(
+          trainee.id
         )
     );
+
+  /*
+   * מספר המתאמנים שנחשבים לחובת נוכחות במפגש.
+   *
+   * אם מתאמן גמיש הגיע - הוא כן נכלל.
+   * אם לא הגיע - הוא לא מגדיל את המכנה.
+   */
+  const attendanceTotal =
+    attendanceTrainees.length;
 
   return {
     success: true,
@@ -2127,6 +2314,9 @@ async function submitAttendance({
       ),
 
     total:
+      attendanceTotal,
+
+    rosterTotal:
       trainees.length,
 
     presentCount:
@@ -2135,11 +2325,17 @@ async function submitAttendance({
     absentCount:
       absentTrainees.length,
 
+    flexibleCount:
+      flexibleTrainees.length,
+
     present:
       matchedTrainees,
 
     absent:
       absentTrainees,
+
+    flexible:
+      flexibleTrainees,
   };
 }
 
@@ -2152,7 +2348,9 @@ async function submitAttendance({
 function buildAttendanceSummary(
   result
 ) {
-  if (!result?.success) {
+  if (
+    !result?.success
+  ) {
     return (
       result?.message ||
       "❌ לא ניתן היה לשמור את הנוכחות."
@@ -2184,33 +2382,83 @@ function buildAttendanceSummary(
       ? `📋 נוכחות – ${result.slot.dayName} ${result.slot.startTime}`
       : `📋 נוכחות – ${result.group.name}`;
 
-  return [
+  const lines = [
     title,
+
     `📍 ${result.group.branch || "ללא סניף"}`,
+
     "",
+
     `👤 דווח על ידי: ${result.submittedBy}`,
+
     "",
+
     `✅ הגיעו: ${result.presentCount} מתוך ${result.total}`,
+
     `❌ נעדרו: ${result.absentCount}`,
+
     "",
+
     "הגיעו:",
+
     ...presentLines,
+
     "",
+
     "לא הגיעו:",
+
     ...absentLines,
-  ].join("\n");
+  ];
+
+  /*
+   * אם יש מתאמנים גמישים,
+   * נוסיף הבהרה כדי שלא יהיה ספק.
+   */
+  if (
+    result.slot &&
+    result.flexible?.length > 0
+  ) {
+    const flexibleNotPresent =
+      result.flexible.filter(
+        (trainee) =>
+          !result.present.some(
+            (presentTrainee) =>
+              presentTrainee.id ===
+              trainee.id
+          )
+      );
+
+    if (
+      flexibleNotPresent.length > 0
+    ) {
+      lines.push(
+        "",
+        "🔄 מתאמנים גמישים שלא סומנו כנעדרים:",
+        ...flexibleNotPresent.map(
+          (trainee) =>
+            `• ${trainee.name}`
+        )
+      );
+    }
+  }
+
+  return lines.join(
+    "\n"
+  );
 }
 
 /*
  * =========================================================
- * רשימת קבוצה
+ * הודעת רשימת קבוצה
  * =========================================================
  */
 
 function buildGroupRosterMessage(
   result
 ) {
-  if (!result?.success) {
+  if (
+    !result?.success
+  ) {
     return (
       result?.message ||
       "❌ לא ניתן היה לקבל את רשימת הקבוצה."
@@ -2243,13 +2491,26 @@ function buildGroupRosterMessage(
 
   return [
     title,
+
     `📍 ${result.group.branch || "ללא סניף"}`,
+
     "",
+
     `סה״כ מתאמנים: ${result.total}`,
+
     "",
+
     ...traineeLines,
-  ].join("\n");
+  ].join(
+    "\n"
+  );
 }
+
+/*
+ * =========================================================
+ * exports
+ * =========================================================
+ */
 
 module.exports = {
   normalizePhone,

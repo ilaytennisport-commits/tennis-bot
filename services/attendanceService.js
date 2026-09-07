@@ -21,6 +21,91 @@ const STAFF_NAMES = {
 
 /*
  * =========================================================
+ * סניפים
+ * =========================================================
+ */
+
+const BRANCH_GALI_HADAR =
+  "גלי הדר – ראשון לציון";
+
+const BRANCH_BEIT_HASHMONAI =
+  "בית חשמונאי";
+
+/*
+ * =========================================================
+ * ימי השבוע
+ * =========================================================
+ */
+
+const DAY_MAP = {
+  ראשון: 1,
+  שני: 2,
+  שלישי: 3,
+  רביעי: 4,
+  חמישי: 5,
+  שישי: 6,
+  שבת: 7,
+};
+
+const DAY_NAMES = {
+  1: "ראשון",
+  2: "שני",
+  3: "שלישי",
+  4: "רביעי",
+  5: "חמישי",
+  6: "שישי",
+  7: "שבת",
+};
+
+/*
+ * =========================================================
+ * קבוצות קבועות
+ * =========================================================
+ */
+
+const GROUPS = {
+  GALI_HADAR_BEGINNERS_16:
+    "א+ד 16:00 – מתחילים כיתות ג-ו",
+
+  GALI_HADAR_ATUDA:
+    "א+ד 17:00 + ג 18:00 – עתודה",
+
+  GALI_HADAR_BEGINNERS_17:
+    "א+ד 17:00 – מתחילים כיתות א-ג",
+
+  GALI_HADAR_18:
+    "א+ד 18:00 – ו+",
+
+  GALI_HADAR_SENIOR_TEAM:
+    "ב+ג+ה 16:30-18:00 – נבחרת בוגרת",
+
+  GALI_HADAR_YOUNG_TEAM:
+    "ב+ג+ה 16:30-18:00 – נבחרת צעירה",
+
+  GALI_HADAR_BEGINNERS_BE_18:
+    "ב+ה 18:00 – מתחילים כיתות ג-ו",
+
+  HASHMONAI_AD_1530:
+    "א+ד 15:30-16:30 – ג-ו מתחילים ומתקדמים",
+
+  HASHMONAI_AD_1645:
+    "א+ד 16:45-17:45 – ז-יב",
+
+  HASHMONAI_AD_ATUDA:
+    "א+ד 17:45-18:45 – עתודה תחרותי ללא הסעות",
+
+  HASHMONAI_COMPETITIVE:
+    "א+ד 18:45-20:15 + ב+ה 19:30-20:30 – תחרותי ללא הסעות",
+
+  HASHMONAI_BE_1645:
+    "ב+ה 16:45-17:30 – א-ג מתחילים כולל שנה שניה",
+
+  HASHMONAI_BE_ATUDA:
+    "ב+ה 17:45-18:45 – עתודה תחרותי ללא הסעות",
+};
+
+/*
+ * =========================================================
  * טלפונים והרשאות
  * =========================================================
  */
@@ -52,12 +137,6 @@ function parsePhoneList(
     )
     .filter(Boolean);
 }
-
-/*
- * =========================================================
- * מנהלים
- * =========================================================
- */
 
 function getManagerPhones() {
   const managerPhones =
@@ -101,12 +180,6 @@ function isManagerPhone(phone) {
   );
 }
 
-/*
- * =========================================================
- * מאמנים
- * =========================================================
- */
-
 function getCoachPhones() {
   return parsePhoneList(
     process.env.COACH_PHONES ||
@@ -126,12 +199,6 @@ function isCoachPhone(phone) {
     normalizedPhone
   );
 }
-
-/*
- * =========================================================
- * שמות אנשי צוות
- * =========================================================
- */
 
 function getStaffName(phone) {
   const normalizedPhone =
@@ -198,7 +265,7 @@ function getIsraelDateString() {
 
 /*
  * =========================================================
- * ניקוי טקסט ושמות
+ * ניקוי טקסט
  * =========================================================
  */
 
@@ -218,42 +285,389 @@ function normalizeName(
     .toLowerCase();
 }
 
+function normalizeGroupText(
+  value = ""
+) {
+  return cleanValue(value)
+    .toLowerCase()
+    .replace(/[׳']/g, "")
+    .replace(/[״"]/g, "")
+    .replace(/ראשון\s*לציון/g, "ראשון")
+    .replace(/ראשלצ/g, "ראשון")
+    .replace(/\s*\+\s*/g, "+")
+    .replace(/\s*[–—-]\s*/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /*
  * =========================================================
- * קבוצות
+ * סניף
  * =========================================================
  */
 
-async function getActiveGroupByName(
-  groupName
+function detectBranchFromText(
+  value = ""
 ) {
-  const cleanGroupName =
-    cleanValue(groupName);
+  const text =
+    normalizeGroupText(
+      value
+    );
 
-  if (!cleanGroupName) {
+  if (
+    text.includes(
+      "בית חשמונאי"
+    ) ||
+    text.includes(
+      "חשמונאי"
+    )
+  ) {
+    return BRANCH_BEIT_HASHMONAI;
+  }
+
+  if (
+    text.includes(
+      "גלי הדר"
+    ) ||
+    text.includes(
+      "ראשון לציון"
+    )
+  ) {
+    return BRANCH_GALI_HADAR;
+  }
+
+  return null;
+}
+
+function removeBranchWords(
+  value = ""
+) {
+  return normalizeGroupText(
+    value
+  )
+    .replace(
+      /(?:ב)?בית חשמונאי/g,
+      " "
+    )
+    .replace(
+      /(?:ב)?חשמונאי/g,
+      " "
+    )
+    .replace(
+      /(?:ב)?גלי הדר/g,
+      " "
+    )
+    .replace(
+      /(?:ב)?סניף\s+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim();
+}
+
+/*
+ * =========================================================
+ * זיהוי יום + שעה בגלי הדר
+ * =========================================================
+ */
+
+function normalizeHour(
+  hour,
+  minute = "00"
+) {
+  const h =
+    String(hour).padStart(
+      2,
+      "0"
+    );
+
+  const m =
+    String(
+      minute || "00"
+    ).padStart(
+      2,
+      "0"
+    );
+
+  return `${h}:${m}`;
+}
+
+function parseGaliHadarSlot(
+  value = ""
+) {
+  const text =
+    cleanValue(
+      value
+    );
+
+  if (!text) {
     return null;
   }
 
-  const result =
-    await pool.query(
-      `
-        SELECT
-          id,
-          name,
-          branch,
-          active
-        FROM training_groups
-        WHERE
-          LOWER(name) =
-            LOWER($1)
-          AND active = TRUE
-        LIMIT 1
-      `,
-      [cleanGroupName]
+  /*
+   * חייב להיות כתוב גלי הדר כדי שלא נבלבל
+   * עם קבוצות של בית חשמונאי.
+   */
+  if (
+    !/גלי\s*הדר/i.test(
+      text
+    )
+  ) {
+    return null;
+  }
+
+  let dayOfWeek = null;
+
+  for (
+    const [
+      dayName,
+      dayNumber,
+    ] of Object.entries(
+      DAY_MAP
+    )
+  ) {
+    if (
+      text.includes(
+        dayName
+      )
+    ) {
+      dayOfWeek =
+        dayNumber;
+      break;
+    }
+  }
+
+  if (!dayOfWeek) {
+    return null;
+  }
+
+  const timeMatch =
+    text.match(
+      /\b(\d{1,2})(?::(\d{2}))?\b/
     );
 
-  return result.rows[0] || null;
+  if (!timeMatch) {
+    return null;
+  }
+
+  const hour =
+    Number(
+      timeMatch[1]
+    );
+
+  const minute =
+    timeMatch[2] ||
+    "00";
+
+  if (
+    hour < 0 ||
+    hour > 23
+  ) {
+    return null;
+  }
+
+  const startTime =
+    normalizeHour(
+      hour,
+      minute
+    );
+
+  return {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    dayOfWeek,
+
+    dayName:
+      DAY_NAMES[
+        dayOfWeek
+      ],
+
+    startTime,
+
+    displayName:
+      `${DAY_NAMES[dayOfWeek]} ${startTime}`,
+  };
 }
+
+/*
+ * =========================================================
+ * כינויים לקבוצות הקבועות
+ * =========================================================
+ */
+
+const GROUP_ALIASES = [
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_ATUDA,
+
+    aliases: [
+      "עתודה גלי הדר",
+      "גלי הדר עתודה",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_SENIOR_TEAM,
+
+    aliases: [
+      "נבחרת בוגרת",
+      "נבחרת בוגרת גלי הדר",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_YOUNG_TEAM,
+
+    aliases: [
+      "נבחרת צעירה",
+      "נבחרת צעירה גלי הדר",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_BEGINNERS_16,
+
+    aliases: [
+      "א+ד 16:00",
+      "א ד 16:00",
+      "א+ד 16",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_18,
+
+    aliases: [
+      "א+ד 18:00",
+      "א ד 18:00",
+      "א+ד 18",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_GALI_HADAR,
+
+    target:
+      GROUPS.GALI_HADAR_BEGINNERS_BE_18,
+
+    aliases: [
+      "ב+ה 18:00",
+      "ב ה 18:00",
+      "ב+ה 18",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_AD_1530,
+
+    aliases: [
+      "א+ד 15:30",
+      "א ד 15:30",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_AD_1645,
+
+    aliases: [
+      "א+ד 16:45",
+      "א ד 16:45",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_AD_ATUDA,
+
+    aliases: [
+      "א+ד 17:45",
+      "א ד 17:45",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_COMPETITIVE,
+
+    aliases: [
+      "א+ד 18:45",
+      "א ד 18:45",
+      "ב+ה 19:30",
+      "ב ה 19:30",
+      "תחרותי בית חשמונאי",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_BE_1645,
+
+    aliases: [
+      "ב+ה 16:45",
+      "ב ה 16:45",
+    ],
+  },
+
+  {
+    branch:
+      BRANCH_BEIT_HASHMONAI,
+
+    target:
+      GROUPS.HASHMONAI_BE_ATUDA,
+
+    aliases: [
+      "ב+ה 17:45",
+      "ב ה 17:45",
+    ],
+  },
+];
+
+/*
+ * =========================================================
+ * קבוצות רגילות
+ * =========================================================
+ */
 
 async function getActiveGroups() {
   const result =
@@ -266,16 +680,301 @@ async function getActiveGroups() {
           active
         FROM training_groups
         WHERE active = TRUE
-        ORDER BY name
+        ORDER BY
+          branch,
+          name
       `
     );
 
   return result.rows;
 }
 
+function getAliasScore(
+  input,
+  group
+) {
+  const normalizedInput =
+    normalizeGroupText(
+      input
+    );
+
+  const inputWithoutBranch =
+    removeBranchWords(
+      input
+    );
+
+  let bestScore = 0;
+
+  for (
+    const aliasEntry of
+      GROUP_ALIASES
+  ) {
+    if (
+      normalizeGroupText(
+        aliasEntry.target
+      ) !==
+      normalizeGroupText(
+        group.name
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      aliasEntry.branch &&
+      group.branch !==
+        aliasEntry.branch
+    ) {
+      continue;
+    }
+
+    for (
+      const alias of
+        aliasEntry.aliases
+    ) {
+      const normalizedAlias =
+        normalizeGroupText(
+          alias
+        );
+
+      if (
+        normalizedAlias ===
+          normalizedInput ||
+        normalizedAlias ===
+          inputWithoutBranch
+      ) {
+        bestScore =
+          Math.max(
+            bestScore,
+            95
+          );
+      }
+    }
+  }
+
+  return bestScore;
+}
+
+function getGroupMatchScore(
+  input,
+  group
+) {
+  const requestedBranch =
+    detectBranchFromText(
+      input
+    );
+
+  if (
+    requestedBranch &&
+    group.branch !==
+      requestedBranch
+  ) {
+    return 0;
+  }
+
+  const normalizedInput =
+    normalizeGroupText(
+      input
+    );
+
+  const inputWithoutBranch =
+    removeBranchWords(
+      input
+    );
+
+  const normalizedGroup =
+    normalizeGroupText(
+      group.name
+    );
+
+  if (
+    !normalizedInput ||
+    !normalizedGroup
+  ) {
+    return 0;
+  }
+
+  if (
+    normalizedInput ===
+      normalizedGroup ||
+    inputWithoutBranch ===
+      normalizedGroup
+  ) {
+    return 100;
+  }
+
+  const aliasScore =
+    getAliasScore(
+      input,
+      group
+    );
+
+  if (
+    aliasScore > 0
+  ) {
+    return aliasScore;
+  }
+
+  if (
+    requestedBranch &&
+    inputWithoutBranch &&
+    normalizedGroup.includes(
+      inputWithoutBranch
+    )
+  ) {
+    return 80;
+  }
+
+  if (
+    inputWithoutBranch &&
+    normalizedGroup.includes(
+      inputWithoutBranch
+    )
+  ) {
+    return 70;
+  }
+
+  return 0;
+}
+
+function formatGroupChoice(
+  group
+) {
+  if (!group.branch) {
+    return `• ${group.name}`;
+  }
+
+  return (
+    `• ${group.name}` +
+    ` — ${group.branch}`
+  );
+}
+
+async function resolveActiveGroup(
+  groupName
+) {
+  const cleanGroupName =
+    cleanValue(
+      groupName
+    );
+
+  if (!cleanGroupName) {
+    return {
+      success: false,
+      code:
+        "EMPTY_GROUP_NAME",
+      message:
+        "❌ חסר שם הקבוצה.",
+      matches: [],
+    };
+  }
+
+  const groups =
+    await getActiveGroups();
+
+  const matches =
+    groups
+      .map((group) => ({
+        group,
+
+        score:
+          getGroupMatchScore(
+            cleanGroupName,
+            group
+          ),
+      }))
+      .filter(
+        (item) =>
+          item.score > 0
+      )
+      .sort(
+        (a, b) =>
+          b.score - a.score
+      );
+
+  if (
+    matches.length === 0
+  ) {
+    return {
+      success: false,
+
+      code:
+        "GROUP_NOT_FOUND",
+
+      message:
+        `❌ לא מצאתי קבוצה שמתאימה ל-"${cleanGroupName}".`,
+
+      matches: [],
+    };
+  }
+
+  const bestScore =
+    matches[0].score;
+
+  const bestMatches =
+    matches.filter(
+      (item) =>
+        item.score ===
+        bestScore
+    );
+
+  if (
+    bestMatches.length > 1
+  ) {
+    return {
+      success: false,
+
+      code:
+        "AMBIGUOUS_GROUP",
+
+      matches:
+        bestMatches.map(
+          (item) =>
+            item.group
+        ),
+
+      message: [
+        `⚠️ מצאתי כמה קבוצות שמתאימות ל-"${cleanGroupName}".`,
+        "",
+        "לאיזו קבוצה התכוונת?",
+        ...bestMatches.map(
+          (item) =>
+            formatGroupChoice(
+              item.group
+            )
+        ),
+      ].join("\n"),
+    };
+  }
+
+  return {
+    success: true,
+
+    group:
+      bestMatches[0].group,
+
+    matches: [
+      bestMatches[0].group,
+    ],
+  };
+}
+
+async function getActiveGroupByName(
+  groupName
+) {
+  const resolution =
+    await resolveActiveGroup(
+      groupName
+    );
+
+  return resolution.success
+    ? resolution.group
+    : null;
+}
+
 /*
  * =========================================================
- * מתאמנים
+ * מתאמנים רגילים
  * =========================================================
  */
 
@@ -296,7 +995,9 @@ async function getActiveTraineesByGroupId(
           AND active = TRUE
         ORDER BY name
       `,
-      [groupId]
+      [
+        groupId,
+      ]
     );
 
   return result.rows;
@@ -317,7 +1018,9 @@ async function getAllTraineesByGroupId(
         WHERE group_id = $1
         ORDER BY name
       `,
-      [groupId]
+      [
+        groupId,
+      ]
     );
 
   return result.rows;
@@ -341,9 +1044,223 @@ function findMatchingTrainee(
       (trainee) =>
         normalizeName(
           trainee.name
-        ) === normalizedInput
+        ) ===
+        normalizedInput
     ) || null
   );
+}
+
+/*
+ * =========================================================
+ * גלי הדר – קבלת roster לפי יום ושעה
+ * =========================================================
+ */
+
+async function getGaliHadarSlotRoster(
+  slot
+) {
+  const result =
+    await pool.query(
+      `
+        SELECT DISTINCT
+          trainee_name AS name,
+          group_label,
+          notes
+        FROM trainee_training_slots
+        WHERE
+          branch = $1
+          AND day_of_week = $2
+          AND start_time = $3::TIME
+          AND active = TRUE
+        ORDER BY trainee_name
+      `,
+      [
+        BRANCH_GALI_HADAR,
+        slot.dayOfWeek,
+        slot.startTime,
+      ]
+    );
+
+  return result.rows;
+}
+
+/*
+ * =========================================================
+ * יצירת קבוצת נוכחות פנימית למפגש גלי הדר
+ * =========================================================
+ */
+
+function buildGaliHadarAttendanceGroupName(
+  slot
+) {
+  return (
+    `גלי הדר | ` +
+    `${slot.dayName} ` +
+    `${slot.startTime}`
+  );
+}
+
+async function ensureGaliHadarAttendanceGroup(
+  slot
+) {
+  const groupName =
+    buildGaliHadarAttendanceGroupName(
+      slot
+    );
+
+  const groupResult =
+    await pool.query(
+      `
+        INSERT INTO training_groups (
+          name,
+          branch,
+          active
+        )
+        VALUES (
+          $1,
+          $2,
+          TRUE
+        )
+        ON CONFLICT (name)
+        DO UPDATE SET
+          branch = EXCLUDED.branch,
+          active = TRUE,
+          updated_at = NOW()
+        RETURNING
+          id,
+          name,
+          branch,
+          active
+      `,
+      [
+        groupName,
+        BRANCH_GALI_HADAR,
+      ]
+    );
+
+  const group =
+    groupResult.rows[0];
+
+  const slotRoster =
+    await getGaliHadarSlotRoster(
+      slot
+    );
+
+  /*
+   * מסנכרנים את הילדים הפעילים של אותו מפגש.
+   */
+  for (
+    const slotTrainee of
+      slotRoster
+  ) {
+    const noteParts =
+      [];
+
+    if (
+      slotTrainee.group_label
+    ) {
+      noteParts.push(
+        slotTrainee.group_label
+      );
+    }
+
+    if (
+      slotTrainee.notes
+    ) {
+      noteParts.push(
+        slotTrainee.notes
+      );
+    }
+
+    const notes =
+      noteParts.length > 0
+        ? noteParts.join(
+            ", "
+          )
+        : null;
+
+    await pool.query(
+      `
+        INSERT INTO trainees (
+          group_id,
+          name,
+          notes,
+          active
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          TRUE
+        )
+        ON CONFLICT (
+          group_id,
+          name
+        )
+        DO UPDATE SET
+          notes = EXCLUDED.notes,
+          active = TRUE,
+          updated_at = NOW()
+      `,
+      [
+        group.id,
+        slotTrainee.name,
+        notes,
+      ]
+    );
+  }
+
+  /*
+   * ילד שהיה בעבר במפגש הזה אבל כבר לא משובץ אליו
+   * לא יישאר בטעות כפעיל.
+   */
+  const activeNames =
+    slotRoster.map(
+      (trainee) =>
+        trainee.name
+    );
+
+  if (
+    activeNames.length > 0
+  ) {
+    await pool.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE
+          group_id = $1
+          AND active = TRUE
+          AND NOT (
+            name = ANY(
+              $2::TEXT[]
+            )
+          )
+      `,
+      [
+        group.id,
+        activeNames,
+      ]
+    );
+  } else {
+    await pool.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE
+          group_id = $1
+          AND active = TRUE
+      `,
+      [
+        group.id,
+      ]
+    );
+  }
+
+  return group;
 }
 
 /*
@@ -355,20 +1272,59 @@ function findMatchingTrainee(
 async function getGroupRoster(
   groupName
 ) {
-  const group =
-    await getActiveGroupByName(
+  const slot =
+    parseGaliHadarSlot(
       groupName
     );
 
-  if (!group) {
+  if (slot) {
+    const group =
+      await ensureGaliHadarAttendanceGroup(
+        slot
+      );
+
+    const trainees =
+      await getActiveTraineesByGroupId(
+        group.id
+      );
+
     return {
-      success: false,
-      code:
-        "GROUP_NOT_FOUND",
-      message:
-        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+      success: true,
+      group,
+      trainees,
+      total:
+        trainees.length,
+      slot,
+      isTrainingSlot:
+        true,
     };
   }
+
+  const resolution =
+    await resolveActiveGroup(
+      groupName
+    );
+
+  if (
+    !resolution.success
+  ) {
+    return {
+      success: false,
+
+      code:
+        resolution.code,
+
+      message:
+        resolution.message,
+
+      matches:
+        resolution.matches ||
+        [],
+    };
+  }
+
+  const group =
+    resolution.group;
 
   const trainees =
     await getActiveTraineesByGroupId(
@@ -386,7 +1342,7 @@ async function getGroupRoster(
 
 /*
  * =========================================================
- * הוספת מתאמן
+ * הוספת מתאמן לקבוצה קבועה
  * =========================================================
  */
 
@@ -415,20 +1371,28 @@ async function addTrainee({
     };
   }
 
-  const group =
-    await getActiveGroupByName(
+  const resolution =
+    await resolveActiveGroup(
       groupName
     );
 
-  if (!group) {
+  if (
+    !resolution.success
+  ) {
     return {
       success: false,
       code:
-        "GROUP_NOT_FOUND",
+        resolution.code,
       message:
-        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+        resolution.message,
+      matches:
+        resolution.matches ||
+        [],
     };
   }
+
+  const group =
+    resolution.group;
 
   const allTrainees =
     await getAllTraineesByGroupId(
@@ -441,9 +1405,6 @@ async function addTrainee({
       allTrainees
     );
 
-  /*
-   * כבר פעיל בקבוצה
-   */
   if (
     existing &&
     existing.active
@@ -460,10 +1421,6 @@ async function addTrainee({
     };
   }
 
-  /*
-   * היה בעבר בקבוצה והוסר:
-   * מחזירים אותו לפעילות.
-   */
   if (
     existing &&
     !existing.active
@@ -552,10 +1509,6 @@ async function addTrainee({
  * =========================================================
  * הסרת מתאמן
  * =========================================================
- *
- * הסרה רכה בלבד.
- * לא מוחקים את המתאמן מה-DB,
- * כדי לשמור היסטוריית נוכחות.
  */
 
 async function removeTrainee({
@@ -577,20 +1530,28 @@ async function removeTrainee({
     };
   }
 
-  const group =
-    await getActiveGroupByName(
+  const resolution =
+    await resolveActiveGroup(
       groupName
     );
 
-  if (!group) {
+  if (
+    !resolution.success
+  ) {
     return {
       success: false,
       code:
-        "GROUP_NOT_FOUND",
+        resolution.code,
       message:
-        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
+        resolution.message,
+      matches:
+        resolution.matches ||
+        [],
     };
   }
+
+  const group =
+    resolution.group;
 
   const trainees =
     await getActiveTraineesByGroupId(
@@ -648,7 +1609,7 @@ async function removeTrainee({
 
 /*
  * =========================================================
- * העברת מתאמן בין קבוצות
+ * העברת מתאמן
  * =========================================================
  */
 
@@ -672,35 +1633,51 @@ async function moveTrainee({
     };
   }
 
-  const fromGroup =
-    await getActiveGroupByName(
+  const fromResolution =
+    await resolveActiveGroup(
       fromGroupName
     );
 
-  if (!fromGroup) {
+  if (
+    !fromResolution.success
+  ) {
     return {
       success: false,
       code:
-        "SOURCE_GROUP_NOT_FOUND",
+        fromResolution.code,
       message:
-        `❌ לא מצאתי קבוצה בשם "${fromGroupName}".`,
+        fromResolution.message,
+      matches:
+        fromResolution.matches ||
+        [],
     };
   }
 
-  const toGroup =
-    await getActiveGroupByName(
+  const toResolution =
+    await resolveActiveGroup(
       toGroupName
     );
 
-  if (!toGroup) {
+  if (
+    !toResolution.success
+  ) {
     return {
       success: false,
       code:
-        "TARGET_GROUP_NOT_FOUND",
+        toResolution.code,
       message:
-        `❌ לא מצאתי קבוצה בשם "${toGroupName}".`,
+        toResolution.message,
+      matches:
+        toResolution.matches ||
+        [],
     };
   }
+
+  const fromGroup =
+    fromResolution.group;
+
+  const toGroup =
+    toResolution.group;
 
   if (
     fromGroup.id ===
@@ -768,9 +1745,6 @@ async function moveTrainee({
       "BEGIN"
     );
 
-    /*
-     * משביתים את הרשומה בקבוצת המקור.
-     */
     await client.query(
       `
         UPDATE trainees
@@ -786,10 +1760,6 @@ async function moveTrainee({
 
     let targetTrainee;
 
-    /*
-     * אם הייתה רשומה ישנה בקבוצת היעד,
-     * מפעילים אותה מחדש.
-     */
     if (existingTarget) {
       const reactivateResult =
         await client.query(
@@ -877,7 +1847,7 @@ async function moveTrainee({
 
 /*
  * =========================================================
- * יצירת / עדכון מפגש נוכחות
+ * מפגש נוכחות
  * =========================================================
  */
 
@@ -929,7 +1899,8 @@ async function saveAttendanceRecords({
   presentTraineeIds,
 }) {
   for (
-    const trainee of trainees
+    const trainee of
+      trainees
   ) {
     const status =
       presentTraineeIds.has(
@@ -979,25 +1950,57 @@ async function submitAttendance({
   presentNames,
   submittedByPhone,
 }) {
-  const group =
-    await getActiveGroupByName(
+  let group;
+  let trainees;
+  let slot = null;
+
+  /*
+   * קודם בודקים אם זה דיווח גלי הדר לפי יום ושעה.
+   */
+  slot =
+    parseGaliHadarSlot(
       groupName
     );
 
-  if (!group) {
-    return {
-      success: false,
-      code:
-        "GROUP_NOT_FOUND",
-      message:
-        `❌ לא מצאתי קבוצה בשם "${groupName}".`,
-    };
-  }
+  if (slot) {
+    group =
+      await ensureGaliHadarAttendanceGroup(
+        slot
+      );
 
-  const trainees =
-    await getActiveTraineesByGroupId(
-      group.id
-    );
+    trainees =
+      await getActiveTraineesByGroupId(
+        group.id
+      );
+  } else {
+    const resolution =
+      await resolveActiveGroup(
+        groupName
+      );
+
+    if (
+      !resolution.success
+    ) {
+      return {
+        success: false,
+        code:
+          resolution.code,
+        message:
+          resolution.message,
+        matches:
+          resolution.matches ||
+          [],
+      };
+    }
+
+    group =
+      resolution.group;
+
+    trainees =
+      await getActiveTraineesByGroupId(
+        group.id
+      );
+  }
 
   if (
     trainees.length === 0
@@ -1018,7 +2021,8 @@ async function submitAttendance({
     [];
 
   for (
-    const inputName of presentNames
+    const inputName of
+      presentNames
   ) {
     const trainee =
       findMatchingTrainee(
@@ -1045,10 +2049,6 @@ async function submitAttendance({
     }
   }
 
-  /*
-   * שם לא מוכר אינו מתווסף
-   * אוטומטית בשום מצב.
-   */
   if (
     unknownNames.length > 0
   ) {
@@ -1058,8 +2058,9 @@ async function submitAttendance({
         "UNKNOWN_TRAINEES",
       group,
       unknownNames,
+
       message: [
-        "⚠️ נמצאו שמות שלא קיימים ברשימת הקבוצה:",
+        "⚠️ נמצאו שמות שלא קיימים ברשימת האימון:",
         "",
         ...unknownNames.map(
           (name) =>
@@ -1067,7 +2068,7 @@ async function submitAttendance({
         ),
         "",
         "הנוכחות לא נשמרה.",
-        "רק מנהל יכול להוסיף מתאמנים חדשים למערכת.",
+        "רק מנהל יכול לשנות את רשימות המתאמנים.",
       ].join("\n"),
     };
   }
@@ -1081,14 +2082,12 @@ async function submitAttendance({
     );
 
   const session =
-    await getOrCreateAttendanceSession(
-      {
-        groupId:
-          group.id,
-        sessionDate,
-        submittedBy,
-      }
-    );
+    await getOrCreateAttendanceSession({
+      groupId:
+        group.id,
+      sessionDate,
+      submittedBy,
+    });
 
   const presentTraineeIds =
     new Set(
@@ -1117,8 +2116,8 @@ async function submitAttendance({
     success: true,
 
     session,
-
     group,
+    slot,
 
     submittedBy,
 
@@ -1146,7 +2145,7 @@ async function submitAttendance({
 
 /*
  * =========================================================
- * בניית הודעת סיכום
+ * סיכום נוכחות
  * =========================================================
  */
 
@@ -1180,12 +2179,19 @@ function buildAttendanceSummary(
           "אין 🎉",
         ];
 
+  const title =
+    result.slot
+      ? `📋 נוכחות – ${result.slot.dayName} ${result.slot.startTime}`
+      : `📋 נוכחות – ${result.group.name}`;
+
   return [
-    `📋 נוכחות – ${result.group.name}`,
+    title,
+    `📍 ${result.group.branch || "ללא סניף"}`,
     "",
     `👤 דווח על ידי: ${result.submittedBy}`,
     "",
     `✅ הגיעו: ${result.presentCount} מתוך ${result.total}`,
+    `❌ נעדרו: ${result.absentCount}`,
     "",
     "הגיעו:",
     ...presentLines,
@@ -1197,7 +2203,7 @@ function buildAttendanceSummary(
 
 /*
  * =========================================================
- * בניית רשימת קבוצה
+ * רשימת קבוצה
  * =========================================================
  */
 
@@ -1230,8 +2236,14 @@ function buildGroupRosterMessage(
           "אין מתאמנים פעילים.",
         ];
 
+  const title =
+    result.slot
+      ? `👥 גלי הדר – ${result.slot.dayName} ${result.slot.startTime}`
+      : `👥 קבוצת ${result.group.name}`;
+
   return [
-    `👥 קבוצת ${result.group.name}`,
+    title,
+    `📍 ${result.group.branch || "ללא סניף"}`,
     "",
     `סה״כ מתאמנים: ${result.total}`,
     "",
@@ -1251,6 +2263,12 @@ module.exports = {
 
   getIsraelDateString,
 
+  normalizeGroupText,
+  detectBranchFromText,
+
+  parseGaliHadarSlot,
+
+  resolveActiveGroup,
   getActiveGroupByName,
   getActiveGroups,
 

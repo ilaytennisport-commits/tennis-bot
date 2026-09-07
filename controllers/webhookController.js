@@ -89,9 +89,20 @@ const SPECIAL_BRANCH =
 
 /*
  * =========================================================
- * מערכת נוכחות
+ * ניקוי טקסט לפקודות צוות
  * =========================================================
  */
+
+function cleanStaffText(
+  value = ""
+) {
+  return String(value)
+    .replace(/\*/g, "")
+    .replace(/[״"]/g, '"')
+    .replace(/[׳']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function cleanAttendanceName(
   value = ""
@@ -105,6 +116,27 @@ function cleanAttendanceName(
     .replace(/\s+/g, " ")
     .trim();
 }
+
+function cleanManagerPart(
+  value = ""
+) {
+  return cleanStaffText(value)
+    .replace(
+      /^(?:קבוצה|קבוצת)\s+/,
+      ""
+    )
+    .replace(
+      /^(?:ימים|יום)\s+/,
+      ""
+    )
+    .trim();
+}
+
+/*
+ * =========================================================
+ * מערכת נוכחות
+ * =========================================================
+ */
 
 function parseAttendanceCommand(
   message = ""
@@ -126,32 +158,46 @@ function parseAttendanceCommand(
       )
       .filter(Boolean);
 
-  if (lines.length === 0) {
+  if (
+    lines.length === 0
+  ) {
     return {
       isAttendanceCommand: false,
     };
   }
 
   const firstLine =
-    lines[0]
-      .replace(/\*/g, "")
-      .trim();
+    cleanStaffText(
+      lines[0]
+    );
 
   let groupName = "";
 
+  /*
+   * נוכחות א+ד 16:00
+   * נוכחות נבחרת צעירה
+   * נוכחות צעירה
+   */
   const attendanceMatch =
     firstLine.match(
-      /^נוכחות\s*[:\-–—]?\s*(.*)$/i
+      /^נוכחות\s*[:\-–—]?\s*(.+)$/i
     );
 
   if (attendanceMatch) {
     groupName =
-      cleanAttendanceName(
+      cleanManagerPart(
         attendanceMatch[1]
       );
   } else {
+    /*
+     * תמיכה בפורמט הישן:
+     *
+     * צעירה
+     * סתיו
+     * רז
+     */
     const possibleGroupName =
-      cleanAttendanceName(
+      cleanManagerPart(
         firstLine
       );
 
@@ -169,7 +215,8 @@ function parseAttendanceCommand(
         possibleGroupName;
     } else {
       return {
-        isAttendanceCommand: false,
+        isAttendanceCommand:
+          false,
       };
     }
   }
@@ -194,34 +241,235 @@ function parseAttendanceCommand(
 
 /*
  * =========================================================
- * פקודות ניהול
+ * פקודות ניהול טבעיות
  * =========================================================
  */
 
-function cleanManagerPart(
-  value = ""
-) {
-  return String(value)
-    .replace(/\*/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseManagerCommand(
+function parseNaturalManagerCommand(
   message = ""
 ) {
   const text =
-    String(message)
-      .replace(/\r/g, "")
-      .trim();
+    cleanStaffText(
+      message
+    );
 
   if (!text) {
     return null;
   }
 
   /*
-   * רשימת קבוצה צעירה
+   * =======================================================
+   * רשימת קבוצה
+   * =======================================================
+   *
+   * תראה לי את הרשימה של קבוצה א+ד 16:00
+   * תראה לי רשימה של קבוצה א+ד 16:00
+   * תראה את הרשימה של נבחרת צעירה
+   * מי בקבוצה א+ד 16:00
+   * מי נמצא בקבוצה א+ד 16:00
    */
+
+  const naturalRosterPatterns = [
+    /^תראה\s+לי\s+את\s+הרשימה\s+של\s+(?:קבוצה\s+)?(.+)$/i,
+    /^תראה\s+לי\s+רשימה\s+של\s+(?:קבוצה\s+)?(.+)$/i,
+    /^תראה\s+את\s+הרשימה\s+של\s+(?:קבוצה\s+)?(.+)$/i,
+    /^תציג\s+לי\s+את\s+הרשימה\s+של\s+(?:קבוצה\s+)?(.+)$/i,
+    /^תציג\s+את\s+הרשימה\s+של\s+(?:קבוצה\s+)?(.+)$/i,
+    /^מי\s+בקבוצה\s+(.+)$/i,
+    /^מי\s+נמצא\s+בקבוצה\s+(.+)$/i,
+    /^מי\s+נמצאים\s+בקבוצה\s+(.+)$/i,
+  ];
+
+  for (
+    const pattern of
+      naturalRosterPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match) {
+      return {
+        type: "LIST_GROUP",
+        groupName:
+          cleanManagerPart(
+            match[1]
+          ),
+      };
+    }
+  }
+
+  /*
+   * =======================================================
+   * העברה
+   * =======================================================
+   *
+   * תעביר את אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
+   * תעביר אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
+   * העבר את אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
+   *
+   * חשוב לבדוק העברה לפני הוספה/הסרה.
+   */
+
+  const movePatterns = [
+    /^(?:תעביר|העבר)\s+(?:את\s+)?(.+?)\s+מקבוצה\s+(.+?)\s+לקבוצה\s+(.+)$/i,
+
+    /^(?:תעביר|העבר)\s+(?:את\s+)?(.+?)\s+מ(?:קבוצת\s+)?(.+?)\s+ל(?:קבוצת\s+)?(.+)$/i,
+  ];
+
+  for (
+    const pattern of
+      movePatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match) {
+      return {
+        type:
+          "MOVE_TRAINEE",
+
+        traineeName:
+          cleanManagerPart(
+            match[1]
+          ),
+
+        fromGroupName:
+          cleanManagerPart(
+            match[2]
+          ),
+
+        toGroupName:
+          cleanManagerPart(
+            match[3]
+          ),
+      };
+    }
+  }
+
+  /*
+   * =======================================================
+   * הוספה
+   * =======================================================
+   *
+   * תוסיף את אור לקבוצה א+ד 16:00
+   * תוסיף אור לקבוצה א+ד 16:00
+   * הוסף את אור לקבוצה א+ד 16:00
+   * תוסיף את אור לנבחרת צעירה
+   */
+
+  const addPatterns = [
+    /^(?:תוסיף|הוסף|תוסיפי|הוסיפי)\s+(?:את\s+)?(.+?)\s+לקבוצה\s+(.+)$/i,
+
+    /^(?:תוסיף|הוסף|תוסיפי|הוסיפי)\s+(?:את\s+)?(.+?)\s+ל(?:קבוצת\s+)?(.+)$/i,
+  ];
+
+  for (
+    const pattern of
+      addPatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match) {
+      return {
+        type:
+          "ADD_TRAINEE",
+
+        traineeName:
+          cleanManagerPart(
+            match[1]
+          ),
+
+        groupName:
+          cleanManagerPart(
+            match[2]
+          ),
+
+        notes: null,
+      };
+    }
+  }
+
+  /*
+   * =======================================================
+   * הסרה
+   * =======================================================
+   *
+   * תוריד את אור מקבוצה א+ד 16:00
+   * תסיר את אור מקבוצה א+ד 16:00
+   * הסר את אור מנבחרת צעירה
+   */
+
+  const removePatterns = [
+    /^(?:תוריד|תסיר|הסר|הורד|תורידי|תסירי)\s+(?:את\s+)?(.+?)\s+מקבוצה\s+(.+)$/i,
+
+    /^(?:תוריד|תסיר|הסר|הורד|תורידי|תסירי)\s+(?:את\s+)?(.+?)\s+מ(?:קבוצת\s+)?(.+)$/i,
+  ];
+
+  for (
+    const pattern of
+      removePatterns
+  ) {
+    const match =
+      text.match(pattern);
+
+    if (match) {
+      return {
+        type:
+          "REMOVE_TRAINEE",
+
+        traineeName:
+          cleanManagerPart(
+            match[1]
+          ),
+
+        groupName:
+          cleanManagerPart(
+            match[2]
+          ),
+      };
+    }
+  }
+
+  return null;
+}
+
+/*
+ * =========================================================
+ * פקודות ניהול – טבעיות + תאימות לפורמט הישן
+ * =========================================================
+ */
+
+function parseManagerCommand(
+  message = ""
+) {
+  const text =
+    cleanStaffText(
+      message
+    );
+
+  if (!text) {
+    return null;
+  }
+
+  /*
+   * קודם מנסים שפה טבעית.
+   */
+  const naturalCommand =
+    parseNaturalManagerCommand(
+      text
+    );
+
+  if (naturalCommand) {
+    return naturalCommand;
+  }
+
+  /*
+   * =======================================================
+   * פורמט ישן – רשימת קבוצה
+   * =======================================================
+   */
+
   const rosterMatch =
     text.match(
       /^רשימת\s+קבוצה\s+(.+)$/i
@@ -230,6 +478,7 @@ function parseManagerCommand(
   if (rosterMatch) {
     return {
       type: "LIST_GROUP",
+
       groupName:
         cleanManagerPart(
           rosterMatch[1]
@@ -238,9 +487,14 @@ function parseManagerCommand(
   }
 
   /*
+   * =======================================================
+   * פורמט ישן – הוספה
+   * =======================================================
+   *
    * הוסף מתאמן צעירה | ישראל ישראלי
    * הוסף מתאמן צעירה | ישראל ישראלי | חדש
    */
+
   const addMatch =
     text.match(
       /^הוסף\s+מתאמן\s+([^|]+)\|([^|]+)(?:\|(.+))?$/i
@@ -248,7 +502,8 @@ function parseManagerCommand(
 
   if (addMatch) {
     return {
-      type: "ADD_TRAINEE",
+      type:
+        "ADD_TRAINEE",
 
       groupName:
         cleanManagerPart(
@@ -270,8 +525,11 @@ function parseManagerCommand(
   }
 
   /*
-   * הסר מתאמן צעירה | ישראל ישראלי
+   * =======================================================
+   * פורמט ישן – הסרה
+   * =======================================================
    */
+
   const removeMatch =
     text.match(
       /^הסר\s+מתאמן\s+([^|]+)\|(.+)$/i
@@ -279,7 +537,8 @@ function parseManagerCommand(
 
   if (removeMatch) {
     return {
-      type: "REMOVE_TRAINEE",
+      type:
+        "REMOVE_TRAINEE",
 
       groupName:
         cleanManagerPart(
@@ -294,8 +553,11 @@ function parseManagerCommand(
   }
 
   /*
-   * העבר מתאמן צעירה | בוגרת | ישראל ישראלי
+   * =======================================================
+   * פורמט ישן – העברה
+   * =======================================================
    */
+
   const moveMatch =
     text.match(
       /^העבר\s+מתאמן\s+([^|]+)\|([^|]+)\|(.+)$/i
@@ -303,7 +565,8 @@ function parseManagerCommand(
 
   if (moveMatch) {
     return {
-      type: "MOVE_TRAINEE",
+      type:
+        "MOVE_TRAINEE",
 
       fromGroupName:
         cleanManagerPart(
@@ -322,13 +585,18 @@ function parseManagerCommand(
     };
   }
 
+  /*
+   * אם ברור שהמנהל ניסה פקודת ניהול,
+   * אבל לא הצלחנו להבין אותה.
+   */
   if (
-    /^(רשימת\s+קבוצה|הוסף\s+מתאמן|הסר\s+מתאמן|העבר\s+מתאמן)\b/i.test(
+    /^(?:תוסיף|הוסף|תוסיפי|הוסיפי|תוריד|תסיר|הסר|הורד|תעביר|העבר|רשימת\s+קבוצה|תראה\s+לי\s+(?:את\s+)?הרשימה|מי\s+בקבוצה)\b/i.test(
       text
     )
   ) {
     return {
-      type: "INVALID_MANAGER_COMMAND",
+      type:
+        "INVALID_MANAGER_COMMAND",
     };
   }
 
@@ -337,28 +605,27 @@ function parseManagerCommand(
 
 function buildManagerCommandsHelp() {
   return [
-    "🔐 פקודות מנהל:",
+    "🔐 ניהול קבוצות",
     "",
-    "📋 הצגת רשימה:",
-    "רשימת קבוצה צעירה",
+    "אפשר לדבר איתי בצורה רגילה.",
     "",
-    "➕ הוספת מתאמן:",
-    "הוסף מתאמן צעירה | ישראל ישראלי",
+    "➕ הוספה:",
+    "תוסיף את ישראל ישראלי לקבוצה א+ד 16:00",
     "",
-    "אפשר גם עם הערה:",
-    "הוסף מתאמן צעירה | ישראל ישראלי | חדש",
+    "➖ הסרה:",
+    "תוריד את ישראל ישראלי מקבוצה א+ד 16:00",
     "",
-    "➖ הסרת מתאמן:",
-    "הסר מתאמן צעירה | ישראל ישראלי",
+    "🔄 העברה:",
+    "תעביר את ישראל ישראלי מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00",
     "",
-    "🔄 העברה בין קבוצות:",
-    "העבר מתאמן צעירה | בוגרת | ישראל ישראלי",
+    "👥 רשימת קבוצה:",
+    "תראה לי את הרשימה של קבוצה א+ד 16:00",
     "",
     "📋 דיווח נוכחות:",
-    "נוכחות צעירה",
-    "סתיו",
-    "רז",
-    "יונתן לוי",
+    "נוכחות א+ד 16:00",
+    "ישראל ישראלי",
+    "דני כהן",
+    "נועה לוי",
   ].join("\n");
 }
 
@@ -462,10 +729,6 @@ async function sendManagerAdminNotification({
         normalizedReporter
     );
 
-  /*
-   * אם יש רק מנהל אחד,
-   * אין למי לשלוח עדכון נוסף.
-   */
   if (
     recipients.length === 0
   ) {
@@ -527,6 +790,12 @@ async function sendManagerAdminNotification({
   return allSent;
 }
 
+/*
+ * =========================================================
+ * ביצוע פקודות מנהל
+ * =========================================================
+ */
+
 async function handleManagerCommand({
   userId,
   command,
@@ -535,7 +804,9 @@ async function handleManagerCommand({
   try {
     let result;
 
-    switch (command.type) {
+    switch (
+      command.type
+    ) {
       case "LIST_GROUP": {
         result =
           await getGroupRoster(
@@ -573,7 +844,9 @@ async function handleManagerCommand({
           result.message
         );
 
-        if (result.success) {
+        if (
+          result.success
+        ) {
           const notificationSent =
             await sendManagerAdminNotification({
               action:
@@ -582,7 +855,9 @@ async function handleManagerCommand({
               managerPhone,
             });
 
-          if (!notificationSent) {
+          if (
+            !notificationSent
+          ) {
             await sendWhatsAppMessage(
               userId,
               [
@@ -611,7 +886,9 @@ async function handleManagerCommand({
           result.message
         );
 
-        if (result.success) {
+        if (
+          result.success
+        ) {
           const notificationSent =
             await sendManagerAdminNotification({
               action:
@@ -620,7 +897,9 @@ async function handleManagerCommand({
               managerPhone,
             });
 
-          if (!notificationSent) {
+          if (
+            !notificationSent
+          ) {
             await sendWhatsAppMessage(
               userId,
               [
@@ -652,7 +931,9 @@ async function handleManagerCommand({
           result.message
         );
 
-        if (result.success) {
+        if (
+          result.success
+        ) {
           const notificationSent =
             await sendManagerAdminNotification({
               action:
@@ -661,7 +942,9 @@ async function handleManagerCommand({
               managerPhone,
             });
 
-          if (!notificationSent) {
+          if (
+            !notificationSent
+          ) {
             await sendWhatsAppMessage(
               userId,
               [
@@ -679,7 +962,7 @@ async function handleManagerCommand({
         await sendWhatsAppMessage(
           userId,
           [
-            "⚠️ פקודת הניהול לא נכתבה בפורמט הנכון.",
+            "⚠️ לא הצלחתי להבין את פקודת הניהול.",
             "",
             buildManagerCommandsHelp(),
           ].join("\n")
@@ -724,19 +1007,72 @@ async function buildGroupsHelpMessage() {
       await getActiveGroups();
 
     if (
-      !Array.isArray(groups) ||
+      !Array.isArray(
+        groups
+      ) ||
       groups.length === 0
     ) {
       return "כרגע אין קבוצות פעילות במערכת.";
     }
 
-    return [
-      "הקבוצות הפעילות:",
-      ...groups.map(
-        (group) =>
+    /*
+     * מסדרים לפי סניף כדי שיהיה קריא,
+     * במיוחד עכשיו שיש גלי הדר + בית חשמונאי.
+     */
+    const grouped =
+      new Map();
+
+    for (
+      const group of groups
+    ) {
+      const branch =
+        group.branch ||
+        "ללא סניף";
+
+      if (
+        !grouped.has(
+          branch
+        )
+      ) {
+        grouped.set(
+          branch,
+          []
+        );
+      }
+
+      grouped
+        .get(branch)
+        .push(group);
+    }
+
+    const lines = [
+      "🎾 הקבוצות הפעילות:",
+    ];
+
+    for (
+      const [
+        branch,
+        branchGroups,
+      ] of grouped.entries()
+    ) {
+      lines.push(
+        "",
+        `📍 ${branch}`
+      );
+
+      for (
+        const group of
+          branchGroups
+      ) {
+        lines.push(
           `• ${group.name}`
-      ),
-    ].join("\n");
+        );
+      }
+    }
+
+    return lines.join(
+      "\n"
+    );
   } catch (error) {
     console.error(
       "❌ שגיאה בשליפת קבוצות:",
@@ -758,8 +1094,10 @@ function formatAttendanceDate(
     typeof value ===
     "string"
   ) {
-    return value
-      .slice(0, 10);
+    return value.slice(
+      0,
+      10
+    );
   }
 
   try {
@@ -779,7 +1117,9 @@ function formatAttendanceDate(
       new Date(value)
     );
   } catch {
-    return String(value);
+    return String(
+      value
+    );
   }
 }
 
@@ -864,7 +1204,8 @@ async function sendAttendanceToManagers(
     true;
 
   for (
-    const managerPhone of recipients
+    const managerPhone of
+      recipients
   ) {
     try {
       await sendWhatsAppMessage(
@@ -922,7 +1263,9 @@ async function handleStaffMessage({
       userMessage
     );
 
-  if (managerCommand) {
+  if (
+    managerCommand
+  ) {
     if (!manager) {
       await sendWhatsAppMessage(
         userId,
@@ -968,19 +1311,12 @@ async function handleStaffMessage({
         : [
             "🎾 זוהית כמאמן מורשה.",
             "",
-            "כדי לדווח נוכחות אפשר לשלוח:",
+            "כדי לדווח נוכחות:",
             "",
-            "נוכחות צעירה",
-            "סתיו",
-            "רז",
-            "יונתן לוי",
-            "",
-            "או פשוט:",
-            "",
-            "צעירה",
-            "סתיו",
-            "רז",
-            "יונתן לוי",
+            "נוכחות א+ד 16:00",
+            "שם מתאמן",
+            "שם מתאמן",
+            "שם מתאמן",
             "",
             groupsHelp,
             "",
@@ -996,7 +1332,8 @@ async function handleStaffMessage({
   }
 
   if (
-    !attendanceCommand.groupName
+    !attendanceCommand
+      .groupName
   ) {
     const groupsHelp =
       await buildGroupsHelpMessage();
@@ -1008,9 +1345,9 @@ async function handleStaffMessage({
         "",
         "יש לשלוח למשל:",
         "",
-        "נוכחות צעירה",
-        "סתיו",
-        "רז",
+        "נוכחות א+ד 16:00",
+        "שם מתאמן",
+        "שם מתאמן",
         "",
         groupsHelp,
       ].join("\n")
@@ -1021,8 +1358,7 @@ async function handleStaffMessage({
 
   /*
    * לא שומרים דיווח ריק,
-   * כדי לא לסמן את כל הקבוצה
-   * כנעדרת בטעות.
+   * כדי לא לסמן בטעות את כולם כנעדרים.
    */
   if (
     attendanceCommand
@@ -1063,7 +1399,9 @@ async function handleStaffMessage({
           staffPhone,
       });
 
-    if (!result.success) {
+    if (
+      !result.success
+    ) {
       let reply =
         result.message ||
         "❌ לא ניתן היה לשמור את הנוכחות.";
@@ -1106,7 +1444,9 @@ async function handleStaffMessage({
         staffPhone
       );
 
-    if (!managersSent) {
+    if (
+      !managersSent
+    ) {
       await sendWhatsAppMessage(
         userId,
         [
@@ -1226,7 +1566,9 @@ function isWaitingForSource(
             "string"
       );
 
-  if (!lastAssistantMessage) {
+  if (
+    !lastAssistantMessage
+  ) {
     return false;
   }
 
@@ -1257,7 +1599,9 @@ function looksLikeQuestion(
     return false;
   }
 
-  if (text.includes("?")) {
+  if (
+    text.includes("?")
+  ) {
     return true;
   }
 
@@ -1288,7 +1632,9 @@ function extractSpecialAge(
   message = ""
 ) {
   const text =
-    cleanText(message);
+    cleanText(
+      message
+    );
 
   const match =
     text.match(
@@ -1305,7 +1651,9 @@ function extractSpecialAge(
     );
 
   if (
-    !Number.isInteger(age) ||
+    !Number.isInteger(
+      age
+    ) ||
     age < 4 ||
     age > 100
   ) {
@@ -1393,7 +1741,8 @@ function buildSpecialFieldUpdate(
       }
 
       return {
-        experience: text,
+        experience:
+          text,
       };
     }
 
@@ -1654,7 +2003,9 @@ async function handleSpecialSourceConversation({
       currentUser
     );
 
-  if (nextMissingField) {
+  if (
+    nextMissingField
+  ) {
     const nextQuestion =
       getQuestionForField(
         nextMissingField
@@ -1846,7 +2197,9 @@ function enqueueUserMessage(
   task
 ) {
   const previousTask =
-    userQueues.get(userId) ||
+    userQueues.get(
+      userId
+    ) ||
     Promise.resolve();
 
   const currentTask =
@@ -1859,17 +2212,20 @@ function enqueueUserMessage(
     currentTask
   );
 
-  currentTask.finally(() => {
-    if (
-      userQueues.get(
-        userId
-      ) === currentTask
-    ) {
-      userQueues.delete(
-        userId
-      );
+  currentTask.finally(
+    () => {
+      if (
+        userQueues.get(
+          userId
+        ) ===
+        currentTask
+      ) {
+        userQueues.delete(
+          userId
+        );
+      }
     }
-  });
+  );
 
   return currentTask;
 }
@@ -1934,7 +2290,8 @@ async function processIncomingMessage(
 ) {
   if (
     !message ||
-    message.from_me === true
+    message.from_me ===
+      true
   ) {
     return;
   }
@@ -2061,7 +2418,7 @@ async function processIncomingMessage(
   }
 
   /*
-   * אנשי צוות נעצרים כאן,
+   * אנשי צוות נעצרים כאן
    * ולא נכנסים לבוט הלקוחות.
    */
   if (
@@ -2266,7 +2623,9 @@ async function processIncomingMessage(
         }
       );
 
-    if (handledSpecial) {
+    if (
+      handledSpecial
+    ) {
       return;
     }
 
@@ -2429,7 +2788,8 @@ async function handleWebhook(
     }
 
     for (
-      const message of messages
+      const message of
+        messages
     ) {
       const messageId =
         getMessageId(

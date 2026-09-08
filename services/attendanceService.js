@@ -259,7 +259,7 @@ function getCoachName(phone) {
 
 /*
  * =========================================================
- * תאריך ישראל
+ * תאריך ויום בישראל
  * =========================================================
  */
 
@@ -279,6 +279,33 @@ function getIsraelDateString() {
   return formatter.format(
     new Date()
   );
+}
+
+function getIsraelDayOfWeek() {
+  const dayName =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Jerusalem",
+        weekday:
+          "long",
+      }
+    ).format(
+      new Date()
+    );
+
+  const map = {
+    Sunday: 1,
+    Monday: 2,
+    Tuesday: 3,
+    Wednesday: 4,
+    Thursday: 5,
+    Friday: 6,
+    Saturday: 7,
+  };
+
+  return map[dayName] || null;
 }
 
 /*
@@ -310,10 +337,22 @@ function normalizeGroupText(
     .toLowerCase()
     .replace(/[׳']/g, "")
     .replace(/[״"]/g, "")
-    .replace(/ראשון\s*לציון/g, "ראשון")
-    .replace(/ראשלצ/g, "ראשון")
-    .replace(/\s*\+\s*/g, "+")
-    .replace(/\s*[–—-]\s*/g, "-")
+    .replace(
+      /ראשון\s*לציון/g,
+      "ראשון"
+    )
+    .replace(
+      /ראשלצ/g,
+      "ראשון"
+    )
+    .replace(
+      /\s*\+\s*/g,
+      "+"
+    )
+    .replace(
+      /\s*[–—-]\s*/g,
+      "-"
+    )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -379,10 +418,7 @@ function removeBranchWords(
       /(?:ב)?סניף\s+/g,
       " "
     )
-    .replace(
-      /\s+/g,
-      " "
-    )
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -513,15 +549,40 @@ function parseGaliHadarSlot(
 
 /*
  * =========================================================
- * זיהוי מתאמן גמיש
+ * זיהוי נבחרת לפי שם קצר
  * =========================================================
- *
- * לדוגמה:
- * שירה קנדלקר - ראשון או רביעי 16:00
- *
- * המתאמן יופיע ברשימת האימון.
- * אם דווח כנוכח - נשמור נוכחות.
- * אם לא דווח - לא נרשום לו היעדרות.
+ */
+
+function getTeamLabelFromGroupName(
+  groupName = ""
+) {
+  const text =
+    normalizeGroupText(
+      groupName
+    );
+
+  if (
+    text === "בוגרת" ||
+    text ===
+      "נבחרת בוגרת"
+  ) {
+    return "בוגרת";
+  }
+
+  if (
+    text === "צעירה" ||
+    text ===
+      "נבחרת צעירה"
+  ) {
+    return "צעירה";
+  }
+
+  return null;
+}
+
+/*
+ * =========================================================
+ * זיהוי מתאמן גמיש
  * =========================================================
  */
 
@@ -554,9 +615,6 @@ function isFlexibleTrainee(
  */
 
 const GROUP_ALIASES = [
-  /*
-   * גלי הדר
-   */
   {
     branch:
       BRANCH_GALI_HADAR,
@@ -638,9 +696,6 @@ const GROUP_ALIASES = [
     ],
   },
 
-  /*
-   * בית חשמונאי
-   */
   {
     branch:
       BRANCH_BEIT_HASHMONAI,
@@ -1086,6 +1141,25 @@ async function getAllTraineesByGroupId(
   return result.rows;
 }
 
+/*
+ * =========================================================
+ * התאמת שם מתאמן
+ * =========================================================
+ *
+ * קודם מחפשים התאמה מלאה.
+ *
+ * אם אין התאמה מלאה, מאפשרים שם פרטי / חלק יחיד
+ * רק כאשר יש התאמה אחת ויחידה ברשימת האימון.
+ *
+ * לדוגמה:
+ * עילאי -> רבזון עילאי
+ * אורי -> אורי רבינוביץ
+ * תומר -> תומר יוספזון
+ *
+ * אם יש יותר מהתאמה אחת - לא מנחשים.
+ * =========================================================
+ */
+
 function findMatchingTrainee(
   inputName,
   trainees
@@ -1099,15 +1173,42 @@ function findMatchingTrainee(
     return null;
   }
 
-  return (
+  const exactMatch =
     trainees.find(
       (trainee) =>
         normalizeName(
           trainee.name
         ) ===
         normalizedInput
-    ) || null
-  );
+    );
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const partialMatches =
+    trainees.filter(
+      (trainee) => {
+        const traineeParts =
+          normalizeName(
+            trainee.name
+          )
+            .split(" ")
+            .filter(Boolean);
+
+        return traineeParts.includes(
+          normalizedInput
+        );
+      }
+    );
+
+  if (
+    partialMatches.length === 1
+  ) {
+    return partialMatches[0];
+  }
+
+  return null;
 }
 
 /*
@@ -1138,6 +1239,42 @@ async function getGaliHadarSlotRoster(
         BRANCH_GALI_HADAR,
         slot.dayOfWeek,
         slot.startTime,
+      ]
+    );
+
+  return result.rows;
+}
+
+/*
+ * =========================================================
+ * גלי הדר – נבחרת לפי היום
+ * =========================================================
+ */
+
+async function getGaliHadarTeamRosterForDay({
+  teamLabel,
+  dayOfWeek,
+}) {
+  const result =
+    await pool.query(
+      `
+        SELECT DISTINCT
+          trainee_name AS name,
+          group_label,
+          notes
+        FROM trainee_training_slots
+        WHERE
+          branch = $1
+          AND day_of_week = $2
+          AND start_time = '16:30'::TIME
+          AND group_label = $3
+          AND active = TRUE
+        ORDER BY trainee_name
+      `,
+      [
+        BRANCH_GALI_HADAR,
+        dayOfWeek,
+        teamLabel,
       ]
     );
 
@@ -1314,6 +1451,152 @@ async function ensureGaliHadarAttendanceGroup(
   }
 
   return group;
+}
+
+/*
+ * =========================================================
+ * קבוצת נוכחות פנימית לנבחרת לפי היום
+ * =========================================================
+ */
+
+async function ensureGaliHadarTeamAttendanceGroup({
+  teamLabel,
+  dayOfWeek,
+}) {
+  const dayName =
+    DAY_NAMES[
+      dayOfWeek
+    ];
+
+  const groupName =
+    `גלי הדר | ${dayName} 16:30 | ${teamLabel}`;
+
+  const groupResult =
+    await pool.query(
+      `
+        INSERT INTO training_groups (
+          name,
+          branch,
+          active
+        )
+        VALUES (
+          $1,
+          $2,
+          TRUE
+        )
+        ON CONFLICT (name)
+        DO UPDATE SET
+          branch = EXCLUDED.branch,
+          active = TRUE,
+          updated_at = NOW()
+        RETURNING
+          id,
+          name,
+          branch,
+          active
+      `,
+      [
+        groupName,
+        BRANCH_GALI_HADAR,
+      ]
+    );
+
+  const group =
+    groupResult.rows[0];
+
+  const roster =
+    await getGaliHadarTeamRosterForDay({
+      teamLabel,
+      dayOfWeek,
+    });
+
+  for (
+    const rosterTrainee of
+      roster
+  ) {
+    await pool.query(
+      `
+        INSERT INTO trainees (
+          group_id,
+          name,
+          notes,
+          active
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          TRUE
+        )
+        ON CONFLICT (
+          group_id,
+          name
+        )
+        DO UPDATE SET
+          notes = EXCLUDED.notes,
+          active = TRUE,
+          updated_at = NOW()
+      `,
+      [
+        group.id,
+        rosterTrainee.name,
+        rosterTrainee.notes,
+      ]
+    );
+  }
+
+  const activeNames =
+    roster.map(
+      (trainee) =>
+        trainee.name
+    );
+
+  if (
+    activeNames.length > 0
+  ) {
+    await pool.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE
+          group_id = $1
+          AND active = TRUE
+          AND NOT (
+            name = ANY(
+              $2::TEXT[]
+            )
+          )
+      `,
+      [
+        group.id,
+        activeNames,
+      ]
+    );
+  } else {
+    await pool.query(
+      `
+        UPDATE trainees
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE
+          group_id = $1
+          AND active = TRUE
+      `,
+      [
+        group.id,
+      ]
+    );
+  }
+
+  return {
+    group,
+    dayOfWeek,
+    dayName,
+    teamLabel,
+  };
 }
 
 /*
@@ -1999,49 +2282,95 @@ async function getOrCreateAttendanceSession({
   return result.rows[0];
 }
 
+/*
+ * =========================================================
+ * שמירת נוכחות
+ * =========================================================
+ *
+ * לפני שמירת דיווח מחדש לאותו מפגש,
+ * מוחקים את הרשומות הקודמות של אותו session.
+ *
+ * כך:
+ * - שינוי roster לא משאיר נעדרים ישנים.
+ * - מתאמן גמיש שלא דווח שוב לא נשאר בטעות.
+ * - דיווח מתוקן מחליף את הדיווח הקודם.
+ * =========================================================
+ */
+
 async function saveAttendanceRecords({
   sessionId,
   trainees,
   presentTraineeIds,
 }) {
-  for (
-    const trainee of
-      trainees
-  ) {
-    const status =
-      presentTraineeIds.has(
-        trainee.id
-      )
-        ? "present"
-        : "absent";
+  const client =
+    await pool.connect();
 
-    await pool.query(
+  try {
+    await client.query(
+      "BEGIN"
+    );
+
+    await client.query(
       `
-        INSERT INTO attendance_records (
-          session_id,
-          trainee_id,
-          status
-        )
-        VALUES (
-          $1,
-          $2,
-          $3
-        )
-        ON CONFLICT (
-          session_id,
-          trainee_id
-        )
-        DO UPDATE SET
-          status =
-            EXCLUDED.status,
-          updated_at = NOW()
+        DELETE FROM attendance_records
+        WHERE session_id = $1
       `,
       [
         sessionId,
-        trainee.id,
-        status,
       ]
     );
+
+    for (
+      const trainee of
+        trainees
+    ) {
+      const status =
+        presentTraineeIds.has(
+          trainee.id
+        )
+          ? "present"
+          : "absent";
+
+      await client.query(
+        `
+          INSERT INTO attendance_records (
+            session_id,
+            trainee_id,
+            status
+          )
+          VALUES (
+            $1,
+            $2,
+            $3
+          )
+          ON CONFLICT (
+            session_id,
+            trainee_id
+          )
+          DO UPDATE SET
+            status =
+              EXCLUDED.status,
+            updated_at = NOW()
+        `,
+        [
+          sessionId,
+          trainee.id,
+          status,
+        ]
+      );
+    }
+
+    await client.query(
+      "COMMIT"
+    );
+  } catch (error) {
+    await client.query(
+      "ROLLBACK"
+    );
+
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -2059,16 +2388,58 @@ async function submitAttendance({
   let group;
   let trainees;
   let slot = null;
+  let teamContext = null;
 
   /*
-   * קודם בודקים האם זו נוכחות גלי הדר לפי יום + שעה.
+   * קודם בודקים אם נשלח יום + שעה מפורשים.
    */
   slot =
     parseGaliHadarSlot(
       groupName
     );
 
-  if (slot) {
+  /*
+   * בוגרת / צעירה ללא יום ושעה:
+   * משתמשים אוטומטית ביום הנוכחי בישראל.
+   */
+  const teamLabel =
+    getTeamLabelFromGroupName(
+      groupName
+    );
+
+  if (
+    !slot &&
+    teamLabel
+  ) {
+    const dayOfWeek =
+      getIsraelDayOfWeek();
+
+    if (!dayOfWeek) {
+      return {
+        success: false,
+
+        code:
+          "DAY_NOT_FOUND",
+
+        message:
+          "❌ לא הצלחתי לזהות את היום הנוכחי בישראל.",
+      };
+    }
+
+    teamContext =
+      await ensureGaliHadarTeamAttendanceGroup({
+        teamLabel,
+        dayOfWeek,
+      });
+
+    group =
+      teamContext.group;
+
+    trainees =
+      await getActiveTraineesByGroupId(
+        group.id
+      );
+  } else if (slot) {
     group =
       await ensureGaliHadarAttendanceGroup(
         slot
@@ -2114,6 +2485,11 @@ async function submitAttendance({
   if (
     trainees.length === 0
   ) {
+    const teamMessage =
+      teamContext
+        ? `❌ אין מתאמנים משובצים בנבחרת ${teamContext.teamLabel} ליום ${teamContext.dayName}.`
+        : `❌ אין מתאמנים פעילים בקבוצת ${group.name}.`;
+
     return {
       success: false,
 
@@ -2121,7 +2497,7 @@ async function submitAttendance({
         "EMPTY_GROUP",
 
       message:
-        `❌ אין מתאמנים פעילים בקבוצת ${group.name}.`,
+        teamMessage,
     };
   }
 
@@ -2141,9 +2517,7 @@ async function submitAttendance({
         trainees
       );
 
-    if (
-      trainee
-    ) {
+    if (trainee) {
       if (
         !matchedTrainees.some(
           (item) =>
@@ -2221,13 +2595,6 @@ async function submitAttendance({
    * =======================================================
    * טיפול במתאמנים גמישים
    * =======================================================
-   *
-   * מתאמן גמיש שלא הופיע ברשימת המגיעים:
-   * לא נשמר כנעדר.
-   *
-   * מתאמן גמיש שכן הופיע:
-   * נשמר כנוכח.
-   * =======================================================
    */
 
   const flexibleTrainees =
@@ -2249,10 +2616,8 @@ async function submitAttendance({
     );
 
   /*
-   * אלה המתאמנים שבאמת צריכים לקבל record במפגש:
-   *
-   * - כל מתאמן רגיל.
-   * - מתאמן גמיש רק אם הגיע.
+   * מתאמן רגיל תמיד נכלל.
+   * מתאמן גמיש נכלל רק אם הגיע.
    */
   const attendanceTrainees =
     trainees.filter(
@@ -2275,10 +2640,6 @@ async function submitAttendance({
     presentTraineeIds,
   });
 
-  /*
-   * נעדרים:
-   * רק מי שהיה אמור להגיע בוודאות ולא הגיע.
-   */
   const absentTrainees =
     trainees.filter(
       (trainee) =>
@@ -2290,12 +2651,6 @@ async function submitAttendance({
         )
     );
 
-  /*
-   * מספר המתאמנים שנחשבים לחובת נוכחות במפגש.
-   *
-   * אם מתאמן גמיש הגיע - הוא כן נכלל.
-   * אם לא הגיע - הוא לא מגדיל את המכנה.
-   */
   const attendanceTotal =
     attendanceTrainees.length;
 
@@ -2305,6 +2660,7 @@ async function submitAttendance({
     session,
     group,
     slot,
+    teamContext,
 
     submittedBy,
 
@@ -2378,9 +2734,11 @@ function buildAttendanceSummary(
         ];
 
   const title =
-    result.slot
-      ? `📋 נוכחות – ${result.slot.dayName} ${result.slot.startTime}`
-      : `📋 נוכחות – ${result.group.name}`;
+    result.teamContext
+      ? `📋 נוכחות – ${result.teamContext.teamLabel}`
+      : result.slot
+        ? `📋 נוכחות – ${result.slot.dayName} ${result.slot.startTime}`
+        : `📋 נוכחות – ${result.group.name}`;
 
   const lines = [
     title,
@@ -2410,10 +2768,6 @@ function buildAttendanceSummary(
     ...absentLines,
   ];
 
-  /*
-   * אם יש מתאמנים גמישים,
-   * נוסיף הבהרה כדי שלא יהיה ספק.
-   */
   if (
     result.slot &&
     result.flexible?.length > 0

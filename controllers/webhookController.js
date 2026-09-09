@@ -174,9 +174,13 @@ function parseAttendanceCommand(
   let groupName = "";
 
   /*
+   * פורמט מפורש:
+   *
    * נוכחות א+ד 16:00
    * נוכחות נבחרת צעירה
    * נוכחות צעירה
+   * נוכחות צעירה שלישי
+   * נוכחות בוגרת חמישי
    */
   const attendanceMatch =
     firstLine.match(
@@ -190,11 +194,17 @@ function parseAttendanceCommand(
       );
   } else {
     /*
-     * תמיכה בפורמט הישן:
+     * פורמט מקוצר:
      *
      * צעירה
-     * סתיו
-     * רז
+     * צעירה שלישי
+     * נבחרת צעירה שלישי
+     * בוגרת
+     * בוגרת חמישי
+     * נבחרת בוגרת חמישי
+     *
+     * בלי יום מפורש:
+     * attendanceService ישתמש ביום הנוכחי בישראל.
      */
     const possibleGroupName =
       cleanManagerPart(
@@ -203,13 +213,17 @@ function parseAttendanceCommand(
 
     const normalizedGroupName =
       possibleGroupName
-        .toLowerCase();
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const teamCommandPattern =
+      /^(?:נבחרת\s+)?(?:צעירה|בוגרת)(?:\s+(?:ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת))?$/i;
 
     if (
-      normalizedGroupName ===
-        "צעירה" ||
-      normalizedGroupName ===
-        "בוגרת"
+      teamCommandPattern.test(
+        normalizedGroupName
+      )
     ) {
       groupName =
         possibleGroupName;
@@ -261,12 +275,6 @@ function parseNaturalManagerCommand(
    * =======================================================
    * רשימת קבוצה
    * =======================================================
-   *
-   * תראה לי את הרשימה של קבוצה א+ד 16:00
-   * תראה לי רשימה של קבוצה א+ד 16:00
-   * תראה את הרשימה של נבחרת צעירה
-   * מי בקבוצה א+ד 16:00
-   * מי נמצא בקבוצה א+ד 16:00
    */
 
   const naturalRosterPatterns = [
@@ -302,17 +310,10 @@ function parseNaturalManagerCommand(
    * =======================================================
    * העברה
    * =======================================================
-   *
-   * תעביר את אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
-   * תעביר אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
-   * העבר את אור מקבוצה א+ד 16:00 לקבוצה ב+ה 18:00
-   *
-   * חשוב לבדוק העברה לפני הוספה/הסרה.
    */
 
   const movePatterns = [
     /^(?:תעביר|העבר)\s+(?:את\s+)?(.+?)\s+מקבוצה\s+(.+?)\s+לקבוצה\s+(.+)$/i,
-
     /^(?:תעביר|העבר)\s+(?:את\s+)?(.+?)\s+מ(?:קבוצת\s+)?(.+?)\s+ל(?:קבוצת\s+)?(.+)$/i,
   ];
 
@@ -350,16 +351,10 @@ function parseNaturalManagerCommand(
    * =======================================================
    * הוספה
    * =======================================================
-   *
-   * תוסיף את אור לקבוצה א+ד 16:00
-   * תוסיף אור לקבוצה א+ד 16:00
-   * הוסף את אור לקבוצה א+ד 16:00
-   * תוסיף את אור לנבחרת צעירה
    */
 
   const addPatterns = [
     /^(?:תוסיף|הוסף|תוסיפי|הוסיפי)\s+(?:את\s+)?(.+?)\s+לקבוצה\s+(.+)$/i,
-
     /^(?:תוסיף|הוסף|תוסיפי|הוסיפי)\s+(?:את\s+)?(.+?)\s+ל(?:קבוצת\s+)?(.+)$/i,
   ];
 
@@ -394,15 +389,10 @@ function parseNaturalManagerCommand(
    * =======================================================
    * הסרה
    * =======================================================
-   *
-   * תוריד את אור מקבוצה א+ד 16:00
-   * תסיר את אור מקבוצה א+ד 16:00
-   * הסר את אור מנבחרת צעירה
    */
 
   const removePatterns = [
     /^(?:תוריד|תסיר|הסר|הורד|תורידי|תסירי)\s+(?:את\s+)?(.+?)\s+מקבוצה\s+(.+)$/i,
-
     /^(?:תוריד|תסיר|הסר|הורד|תורידי|תסירי)\s+(?:את\s+)?(.+?)\s+מ(?:קבוצת\s+)?(.+)$/i,
   ];
 
@@ -452,9 +442,6 @@ function parseManagerCommand(
     return null;
   }
 
-  /*
-   * קודם מנסים שפה טבעית.
-   */
   const naturalCommand =
     parseNaturalManagerCommand(
       text
@@ -463,12 +450,6 @@ function parseManagerCommand(
   if (naturalCommand) {
     return naturalCommand;
   }
-
-  /*
-   * =======================================================
-   * פורמט ישן – רשימת קבוצה
-   * =======================================================
-   */
 
   const rosterMatch =
     text.match(
@@ -485,15 +466,6 @@ function parseManagerCommand(
         ),
     };
   }
-
-  /*
-   * =======================================================
-   * פורמט ישן – הוספה
-   * =======================================================
-   *
-   * הוסף מתאמן צעירה | ישראל ישראלי
-   * הוסף מתאמן צעירה | ישראל ישראלי | חדש
-   */
 
   const addMatch =
     text.match(
@@ -524,12 +496,6 @@ function parseManagerCommand(
     };
   }
 
-  /*
-   * =======================================================
-   * פורמט ישן – הסרה
-   * =======================================================
-   */
-
   const removeMatch =
     text.match(
       /^הסר\s+מתאמן\s+([^|]+)\|(.+)$/i
@@ -551,12 +517,6 @@ function parseManagerCommand(
         ),
     };
   }
-
-  /*
-   * =======================================================
-   * פורמט ישן – העברה
-   * =======================================================
-   */
 
   const moveMatch =
     text.match(
@@ -585,10 +545,6 @@ function parseManagerCommand(
     };
   }
 
-  /*
-   * אם ברור שהמנהל ניסה פקודת ניהול,
-   * אבל לא הצלחנו להבין אותה.
-   */
   if (
     /^(?:תוסיף|הוסף|תוסיפי|הוסיפי|תוריד|תסיר|הסר|הורד|תעביר|העבר|רשימת\s+קבוצה|תראה\s+לי\s+(?:את\s+)?הרשימה|מי\s+בקבוצה)\b/i.test(
       text
@@ -622,7 +578,7 @@ function buildManagerCommandsHelp() {
     "תראה לי את הרשימה של קבוצה א+ד 16:00",
     "",
     "📋 דיווח נוכחות:",
-    "נוכחות א+ד 16:00",
+    "נוכחות צעירה שלישי",
     "ישראל ישראלי",
     "דני כהן",
     "נועה לוי",
@@ -1015,10 +971,6 @@ async function buildGroupsHelpMessage() {
       return "כרגע אין קבוצות פעילות במערכת.";
     }
 
-    /*
-     * מסדרים לפי סניף כדי שיהיה קריא,
-     * במיוחד עכשיו שיש גלי הדר + בית חשמונאי.
-     */
     const grouped =
       new Map();
 
@@ -1142,8 +1094,15 @@ function buildManagerAttendanceMessage(
           "✅ אין נעדרים",
         ];
 
+  const attendanceTitle =
+    result.teamContext
+      ? `${result.teamContext.teamLabel} (${result.teamContext.dayName})`
+      : result.slot
+        ? `${result.slot.dayName} ${result.slot.startTime}`
+        : result.group.name;
+
   return [
-    `📋 דיווח נוכחות – ${result.group.name}`,
+    `📋 דיווח נוכחות – ${attendanceTitle}`,
     "",
     `📅 תאריך: ${dateText}`,
     `👤 דווח על ידי: ${result.submittedBy}`,
@@ -1255,9 +1214,6 @@ async function handleStaffMessage({
   staffPhone,
   manager,
 }) {
-  /*
-   * פקודות ניהול נבדקות לפני נוכחות.
-   */
   const managerCommand =
     parseManagerCommand(
       userMessage
@@ -1356,10 +1312,6 @@ async function handleStaffMessage({
     return true;
   }
 
-  /*
-   * לא שומרים דיווח ריק,
-   * כדי לא לסמן בטעות את כולם כנעדרים.
-   */
   if (
     attendanceCommand
       .presentNames

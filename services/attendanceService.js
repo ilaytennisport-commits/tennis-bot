@@ -424,6 +424,40 @@ function removeBranchWords(
 
 /*
  * =========================================================
+ * זיהוי יום מתוך טקסט
+ * =========================================================
+ */
+
+function getDayOfWeekFromText(
+  value = ""
+) {
+  const text =
+    normalizeGroupText(
+      value
+    );
+
+  for (
+    const [
+      dayName,
+      dayNumber,
+    ] of Object.entries(
+      DAY_MAP
+    )
+  ) {
+    if (
+      text.includes(
+        dayName
+      )
+    ) {
+      return dayNumber;
+    }
+  }
+
+  return null;
+}
+
+/*
+ * =========================================================
  * זיהוי יום + שעה בגלי הדר
  * =========================================================
  */
@@ -461,10 +495,6 @@ function parseGaliHadarSlot(
     return null;
   }
 
-  /*
-   * חייב להיות כתוב גלי הדר כדי שלא נתבלבל
-   * עם קבוצות של בית חשמונאי.
-   */
   if (
     !/גלי\s*הדר/i.test(
       text
@@ -473,26 +503,10 @@ function parseGaliHadarSlot(
     return null;
   }
 
-  let dayOfWeek = null;
-
-  for (
-    const [
-      dayName,
-      dayNumber,
-    ] of Object.entries(
-      DAY_MAP
-    )
-  ) {
-    if (
-      text.includes(
-        dayName
-      )
-    ) {
-      dayOfWeek =
-        dayNumber;
-      break;
-    }
-  }
+  const dayOfWeek =
+    getDayOfWeekFromText(
+      text
+    );
 
   if (!dayOfWeek) {
     return null;
@@ -549,7 +563,16 @@ function parseGaliHadarSlot(
 
 /*
  * =========================================================
- * זיהוי נבחרת לפי שם קצר
+ * זיהוי נבחרת
+ * =========================================================
+ *
+ * מאפשר:
+ * בוגרת
+ * צעירה
+ * נבחרת בוגרת
+ * נבחרת צעירה
+ * בוגרת שלישי
+ * צעירה חמישי
  * =========================================================
  */
 
@@ -561,18 +584,26 @@ function getTeamLabelFromGroupName(
       groupName
     );
 
+  const hasSenior =
+    /(?:^|\s)(?:נבחרת\s+)?בוגרת(?:\s|$)/.test(
+      text
+    );
+
+  const hasYoung =
+    /(?:^|\s)(?:נבחרת\s+)?צעירה(?:\s|$)/.test(
+      text
+    );
+
   if (
-    text === "בוגרת" ||
-    text ===
-      "נבחרת בוגרת"
+    hasSenior &&
+    !hasYoung
   ) {
     return "בוגרת";
   }
 
   if (
-    text === "צעירה" ||
-    text ===
-      "נבחרת צעירה"
+    hasYoung &&
+    !hasSenior
   ) {
     return "צעירה";
   }
@@ -1144,19 +1175,6 @@ async function getAllTraineesByGroupId(
 /*
  * =========================================================
  * התאמת שם מתאמן
- * =========================================================
- *
- * קודם מחפשים התאמה מלאה.
- *
- * אם אין התאמה מלאה, מאפשרים שם פרטי / חלק יחיד
- * רק כאשר יש התאמה אחת ויחידה ברשימת האימון.
- *
- * לדוגמה:
- * עילאי -> רבזון עילאי
- * אורי -> אורי רבינוביץ
- * תומר -> תומר יוספזון
- *
- * אם יש יותר מהתאמה אחת - לא מנחשים.
  * =========================================================
  */
 
@@ -2286,15 +2304,6 @@ async function getOrCreateAttendanceSession({
  * =========================================================
  * שמירת נוכחות
  * =========================================================
- *
- * לפני שמירת דיווח מחדש לאותו מפגש,
- * מוחקים את הרשומות הקודמות של אותו session.
- *
- * כך:
- * - שינוי roster לא משאיר נעדרים ישנים.
- * - מתאמן גמיש שלא דווח שוב לא נשאר בטעות.
- * - דיווח מתוקן מחליף את הדיווח הקודם.
- * =========================================================
  */
 
 async function saveAttendanceRecords({
@@ -2391,7 +2400,7 @@ async function submitAttendance({
   let teamContext = null;
 
   /*
-   * קודם בודקים אם נשלח יום + שעה מפורשים.
+   * יום + שעה מפורשים של גלי הדר.
    */
   slot =
     parseGaliHadarSlot(
@@ -2399,8 +2408,19 @@ async function submitAttendance({
     );
 
   /*
-   * בוגרת / צעירה ללא יום ושעה:
-   * משתמשים אוטומטית ביום הנוכחי בישראל.
+   * נבחרת בוגרת / צעירה.
+   *
+   * אם נכתב יום מפורש:
+   * "צעירה שלישי"
+   * "בוגרת חמישי"
+   *
+   * משתמשים ביום שנכתב.
+   *
+   * אם נכתב רק:
+   * "צעירה"
+   * "בוגרת"
+   *
+   * משתמשים ביום הנוכחי בישראל.
    */
   const teamLabel =
     getTeamLabelFromGroupName(
@@ -2411,7 +2431,13 @@ async function submitAttendance({
     !slot &&
     teamLabel
   ) {
+    const requestedDayOfWeek =
+      getDayOfWeekFromText(
+        groupName
+      );
+
     const dayOfWeek =
+      requestedDayOfWeek ||
       getIsraelDayOfWeek();
 
     if (!dayOfWeek) {
@@ -2422,7 +2448,7 @@ async function submitAttendance({
           "DAY_NOT_FOUND",
 
         message:
-          "❌ לא הצלחתי לזהות את היום הנוכחי בישראל.",
+          "❌ לא הצלחתי לזהות את יום האימון.",
       };
     }
 
@@ -2537,7 +2563,7 @@ async function submitAttendance({
   }
 
   /*
-   * אם יש שם לא מוכר - לא שומרים שום דבר.
+   * שם לא מוכר = לא שומרים כלום.
    */
   if (
     unknownNames.length > 0
@@ -2615,10 +2641,6 @@ async function submitAttendance({
       )
     );
 
-  /*
-   * מתאמן רגיל תמיד נכלל.
-   * מתאמן גמיש נכלל רק אם הגיע.
-   */
   const attendanceTrainees =
     trainees.filter(
       (trainee) =>
@@ -2735,7 +2757,7 @@ function buildAttendanceSummary(
 
   const title =
     result.teamContext
-      ? `📋 נוכחות – ${result.teamContext.teamLabel}`
+      ? `📋 נוכחות – ${result.teamContext.teamLabel} (${result.teamContext.dayName})`
       : result.slot
         ? `📋 נוכחות – ${result.slot.dayName} ${result.slot.startTime}`
         : `📋 נוכחות – ${result.group.name}`;

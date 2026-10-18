@@ -339,6 +339,27 @@ test("ההודעות של הבוט עצמו לא משתיקות אותו", async
   assert.equal(state.users.get(chatId).bot_paused_until ?? null, null);
 });
 
+test("הודעה של הבוט שחוזרת אחרי הפעלה מחדש לא משתיקה אותו", async () => {
+  const chatId = await regularCustomer();
+  const botMessage = state.sent[state.sent.length - 1];
+
+  /*
+   * השרת הופעל מחדש: הזיכרון ריק, המזהה לא מוכר והשדה source חסר —
+   * רק מסד הנתונים יודע שהבוט שלח את הטקסט.
+   */
+  require("../services/whapiService").resetEchoMemoryForTests();
+
+  await processIncomingMessage({
+    id: "unknown-after-restart",
+    from_me: true,
+    type: "text",
+    chat_id: chatId,
+    text: { body: `${botMessage.body}` },
+  });
+
+  assert.equal(state.users.get(chatId).bot_paused_until ?? null, null);
+});
+
 test("מנהל יכול להחזיר את הבוט ללקוח", async () => {
   const chatId = await regularCustomer();
   const phone = `0${chatId.slice(3, 12)}`;

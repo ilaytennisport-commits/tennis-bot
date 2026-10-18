@@ -254,6 +254,12 @@ function setupHarness(env = {}) {
     clearConversation: async (userId) => {
       state.messages.delete(userId);
     },
+    wasRecentlySentByBot: async (userId, content) =>
+      history(userId).some(
+        (message) =>
+          message.role === "assistant" &&
+          message.content === String(content).trim()
+      ),
   });
 
   /* ---------- WhatsApp (axios) ---------- */

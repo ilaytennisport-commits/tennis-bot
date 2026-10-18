@@ -18,6 +18,7 @@ const {
   getFullConversation,
   addMessage,
   clearConversation,
+  wasRecentlySentByBot,
 } = require("../services/conversationService");
 
 const {
@@ -1562,6 +1563,19 @@ async function handleOutgoingMessage(message) {
     return;
   }
 
+  /*
+   * בדיקה נוספת במסד הנתונים — עובדת גם אחרי הפעלה מחדש,
+   * כשהזיכרון של השרת כבר לא כולל את ההודעות ששלח קודם.
+   */
+  const body = getMessageText(message);
+
+  if (
+    body &&
+    (await wasRecentlySentByBot(chatId, body))
+  ) {
+    return;
+  }
+
   const chatPhone = whatsappIdToPhone(chatId);
 
   if (
@@ -1574,7 +1588,12 @@ async function handleOutgoingMessage(message) {
   await pauseBot(chatId);
 
   console.log(
-    `🙋 נציג ענה ידנית ל-${maskId(chatId)} — הבוט מושתק ל-${getPauseHours()} שעות.`
+    `🙋 נציג ענה ידנית ל-${maskId(chatId)} — הבוט מושתק ל-${getPauseHours()} שעות.`,
+    {
+      source: message.source || null,
+      type: message.type || null,
+      length: body.length,
+    }
   );
 }
 

@@ -220,4 +220,11 @@ module.exports = {
   isRecentBotMessage,
   rememberBotMessage,
   isBotEcho,
+  /*
+   * לבדיקות: מדמה הפעלה מחדש של השרת (הזיכרון מתאפס).
+   */
+  resetEchoMemoryForTests: () => {
+    recentBotMessageIds.clear();
+    recentBotBodies.clear();
+  },
 };

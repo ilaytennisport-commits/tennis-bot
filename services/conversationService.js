@@ -74,6 +74,36 @@ async function addMessage(userId, role, content) {
   );
 }
 
+/*
+ * האם הבוט שלח את הטקסט הזה לאחרונה לאותה שיחה.
+ * נשמר במסד הנתונים, ולכן עובד גם אחרי הפעלה מחדש של השרת
+ * (למשל כשהודעה של הבוט חוזרת ב-Webhook אחרי העלאת גרסה).
+ */
+async function wasRecentlySentByBot(
+  userId,
+  content,
+  minutes = 30
+) {
+  if (!userId || !content) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM conversation_messages
+      WHERE user_id = $1
+        AND role = 'assistant'
+        AND content = $2
+        AND created_at > NOW() - ($3::TEXT || ' minutes')::INTERVAL
+      LIMIT 1
+    `,
+    [userId, String(content).trim(), String(minutes)]
+  );
+
+  return result.rows.length > 0;
+}
+
 async function clearConversation(userId) {
   if (!userId) {
     return;
@@ -95,4 +125,5 @@ module.exports = {
   getFullConversation,
   addMessage,
   clearConversation,
+  wasRecentlySentByBot,
 };

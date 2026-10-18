@@ -3228,7 +3228,9 @@ function buildGroupRosterMessage(
   const title =
     result.slot
       ? `👥 גלי הדר – ${result.slot.dayName} ${result.slot.startTime}`
-      : `👥 קבוצת ${result.group.name}`;
+      : String(result.group.name).startsWith("נבחרת")
+        ? `👥 ${result.group.name}`
+        : `👥 קבוצת ${result.group.name}`;
 
   return [
     title,

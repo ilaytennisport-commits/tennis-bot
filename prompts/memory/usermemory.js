@@ -2,49 +2,64 @@ const {
   pool,
 } = require("../../services/databaseService");
 
+/*
+ * כל עמודות הפרופיל, בסדר קבוע.
+ * הוספת עמודה חדשה = הוספה כאן + ב-databaseService.
+ */
+const USER_COLUMNS = [
+  "name",
+  "age",
+  "city",
+  "height",
+  "audience",
+  "equipment_topic",
+  "experience",
+  "branch",
+  "phone",
+  "goal",
+
+  // שער הכניסה
+  "source",
+  "source_confirmed",
+
+  // לקוח שהגיע ממסלול מיוחד ועבר להתעניין במסלול הרגיל
+  "regular_flow_active",
+
+  "summary_sent",
+
+  // נציג אנושי ענה ידנית — הבוט שותק עד הזמן הזה
+  "bot_paused_until",
+
+  // הודעה ראשונה שנשלחה לפני שאלת "איך שמעתם עלינו"
+  "pending_message",
+];
+
+const BOOLEAN_COLUMNS = new Set([
+  "source_confirmed",
+  "regular_flow_active",
+  "summary_sent",
+]);
+
+const SELECT_COLUMNS =
+  USER_COLUMNS.join(",\n        ");
+
 function emptyUser() {
-  return {
-    name: null,
-    age: null,
-    city: null,
-    height: null,
-    audience: null,
-    equipment_topic: null,
-    experience: null,
-    branch: null,
-    phone: null,
-    goal: null,
+  const user = {};
 
-    // שער הכניסה
-    source: null,
-    source_confirmed: false,
+  for (const column of USER_COLUMNS) {
+    user[column] = BOOLEAN_COLUMNS.has(column)
+      ? false
+      : null;
+  }
 
-    // לקוח שהגיע ממסלול מיוחד
-    // ועבר להתעניין במסלול הרגיל
-    regular_flow_active: false,
-
-    summary_sent: false,
-  };
+  return user;
 }
 
 async function getUser(userId) {
   const result = await pool.query(
     `
       SELECT
-        name,
-        age,
-        city,
-        height,
-        audience,
-        equipment_topic,
-        experience,
-        branch,
-        phone,
-        goal,
-        source,
-        source_confirmed,
-        regular_flow_active,
-        summary_sent
+        ${SELECT_COLUMNS}
       FROM users
       WHERE user_id = $1
     `,
@@ -66,99 +81,42 @@ async function saveUser(
     ...data,
   };
 
+  const values = USER_COLUMNS.map(
+    (column) =>
+      BOOLEAN_COLUMNS.has(column)
+        ? updatedUser[column] === true
+        : updatedUser[column] ?? null
+  );
+
+  const placeholders = USER_COLUMNS.map(
+    (_, index) => `$${index + 2}`
+  ).join(", ");
+
+  const updates = USER_COLUMNS.map(
+    (column) =>
+      `${column} = EXCLUDED.${column}`
+  ).join(",\n        ");
+
   const result = await pool.query(
     `
       INSERT INTO users (
         user_id,
-        name,
-        age,
-        city,
-        height,
-        audience,
-        equipment_topic,
-        experience,
-        branch,
-        phone,
-        goal,
-        source,
-        source_confirmed,
-        regular_flow_active,
-        summary_sent,
+        ${SELECT_COLUMNS},
         updated_at
       )
       VALUES (
         $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $8,
-        $9,
-        $10,
-        $11,
-        $12,
-        $13,
-        $14,
-        $15,
+        ${placeholders},
         NOW()
       )
       ON CONFLICT (user_id)
       DO UPDATE SET
-        name = EXCLUDED.name,
-        age = EXCLUDED.age,
-        city = EXCLUDED.city,
-        height = EXCLUDED.height,
-        audience = EXCLUDED.audience,
-        equipment_topic =
-          EXCLUDED.equipment_topic,
-        experience =
-          EXCLUDED.experience,
-        branch = EXCLUDED.branch,
-        phone = EXCLUDED.phone,
-        goal = EXCLUDED.goal,
-        source = EXCLUDED.source,
-        source_confirmed =
-          EXCLUDED.source_confirmed,
-        regular_flow_active =
-          EXCLUDED.regular_flow_active,
-        summary_sent =
-          EXCLUDED.summary_sent,
+        ${updates},
         updated_at = NOW()
       RETURNING
-        name,
-        age,
-        city,
-        height,
-        audience,
-        equipment_topic,
-        experience,
-        branch,
-        phone,
-        goal,
-        source,
-        source_confirmed,
-        regular_flow_active,
-        summary_sent
+        ${SELECT_COLUMNS}
     `,
-    [
-      userId,
-      updatedUser.name,
-      updatedUser.age,
-      updatedUser.city,
-      updatedUser.height,
-      updatedUser.audience,
-      updatedUser.equipment_topic,
-      updatedUser.experience,
-      updatedUser.branch,
-      updatedUser.phone,
-      updatedUser.goal,
-      updatedUser.source,
-      updatedUser.source_confirmed === true,
-      updatedUser.regular_flow_active === true,
-      updatedUser.summary_sent === true,
-    ]
+    [userId, ...values]
   );
 
   return result.rows[0];
@@ -175,20 +133,7 @@ async function markSummarySent(
         updated_at = NOW()
       WHERE user_id = $1
       RETURNING
-        name,
-        age,
-        city,
-        height,
-        audience,
-        equipment_topic,
-        experience,
-        branch,
-        phone,
-        goal,
-        source,
-        source_confirmed,
-        regular_flow_active,
-        summary_sent
+        ${SELECT_COLUMNS}
     `,
     [userId]
   );
@@ -207,6 +152,8 @@ async function clearUser(userId) {
 }
 
 module.exports = {
+  USER_COLUMNS,
+  emptyUser,
   getUser,
   saveUser,
   markSummarySent,

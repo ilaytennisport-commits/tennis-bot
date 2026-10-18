@@ -1,18 +1,18 @@
-const normalize = (text = "") =>
-  String(text)
-    .toLowerCase()
-    .replace(/[״"'’`]/g, "")
-    .replace(/[?!.,:;()[\]{}]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+const {
+  normalizeText,
+  matchesAnyTerm,
+} = require("./text");
 
-const includesAny = (
-  text,
-  phrases = []
-) =>
-  phrases.some((phrase) =>
-    text.includes(phrase)
-  );
+const normalize = normalizeText;
+
+/*
+ * מונחים של מילה אחת נבדקים כמילה שלמה
+ * (עם אותיות שימוש), ולא כחלק ממילה.
+ *
+ * כך "תגיד" לא מזוהה כ"גיד",
+ * ו"ותיק" לא מזוהה כ"תיק".
+ */
+const EQUIPMENT_PREFIXES = "הבל";
 
 function classifyIntent(
   message = ""
@@ -31,7 +31,7 @@ function classifyIntent(
    * יצירת קשר.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "מספר טלפון",
       "טלפון",
       "מספר של המנהל",
@@ -49,7 +49,7 @@ function classifyIntent(
    * סניפים / מיקום.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "איפה אתם",
       "כתובת",
       "מיקום",
@@ -68,7 +68,7 @@ function classifyIntent(
    * גיל מינימום.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "מאיזה גיל",
       "איזה גיל",
       "גיל מינימום",
@@ -83,12 +83,16 @@ function classifyIntent(
 
   /*
    * אימון ניסיון.
+   *
+   * "יש לו ניסיון" אינו בקשה לאימון ניסיון,
+   * ולכן המילה "ניסיון" לבדה לא מספיקה.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "שיעור ניסיון",
       "אימון ניסיון",
-      "ניסיון",
+      "שיעור נסיון",
+      "אימון נסיון",
       "לנסות",
       "אפשר לנסות",
       "רוצה לנסות",
@@ -102,12 +106,9 @@ function classifyIntent(
 
   /*
    * מחיר.
-   *
-   * חשוב לכלול גם שאלות המשך
-   * כמו "כמה זה עולה?"
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "כמה עולה",
       "כמה זה עולה",
       "כמה זה יעלה",
@@ -119,6 +120,7 @@ function classifyIntent(
       "מחירון",
       "עלות",
       "יקר",
+      "יקרה",
     ])
   ) {
     return {
@@ -131,11 +133,12 @@ function classifyIntent(
    * אימון אישי.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "אימון אישי",
       "מאמן אישי",
       "שיעור פרטי",
       "פרטי",
+      "פרטית",
     ])
   ) {
     return {
@@ -149,10 +152,10 @@ function classifyIntent(
    * מבוגרים.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "מבוגרים",
-      "למבוגר",
-      "למבוגרת",
+      "מבוגר",
+      "מבוגרת",
       "אני מבוגר",
       "אני מבוגרת",
       "מבוגר מתחיל",
@@ -169,12 +172,10 @@ function classifyIntent(
    * הרשמה / ליד.
    */
   if (
-    includesAny(text, [
+    matchesAnyTerm(text, [
       "להירשם",
       "להרשם",
       "הרשמה",
-      "אני רוצה להירשם",
-      "אני רוצה להרשם",
       "רוצה להצטרף",
       "רוצה להתחיל",
       "תרשמו אותי",
@@ -194,47 +195,53 @@ function classifyIntent(
    * ציוד טניס.
    */
   if (
-    includesAny(text, [
-      // מחבטים
-      "מחבט",
-      "מחבטים",
-      "רכישת מחבט",
-      "לקנות מחבט",
-      "קניית מחבט",
+    matchesAnyTerm(
+      text,
+      [
+        // מחבטים
+        "מחבט",
+        "מחבטים",
+        "רקטה",
+        "רקטות",
 
-      // גריפים
-      "גריפ",
-      "גריפים",
-      "אוברגריפ",
-      "אחיזה",
+        // גריפים
+        "גריפ",
+        "גריפים",
+        "אוברגריפ",
+        "אחיזה",
 
-      // גידים
-      "גיד",
-      "גידים",
-      "מיתר",
-      "מיתרים",
-      "שזירה",
+        // גידים
+        "גיד",
+        "גידים",
+        "מיתר",
+        "מיתרים",
+        "שזירה",
 
-      // נעליים
-      "נעל",
-      "נעלי טניס",
-      "נעליים",
+        // נעליים
+        "נעל",
+        "נעלי",
+        "נעליים",
 
-      // כדורים
-      "כדור",
-      "כדורים",
+        // כדורים
+        "כדור",
+        "כדורי",
+        "כדורים",
 
-      // ציוד נוסף
-      "ציוד",
-      "ציוד טניס",
-      "תיק",
-      "תיק מחבטים",
-      "בולם",
-      "בולם זעזועים",
-      "סופג זעזועים",
-      "סרט זיעה",
-      "כובע",
-    ])
+        // ציוד נוסף
+        "ציוד",
+        "תיק",
+        "תיקים",
+        "בולם",
+        "בולם זעזועים",
+        "סופג זעזועים",
+        "סרט זיעה",
+        "כובע",
+      ],
+      {
+        prefixes:
+          EQUIPMENT_PREFIXES,
+      }
+    )
   ) {
     return {
       intent:

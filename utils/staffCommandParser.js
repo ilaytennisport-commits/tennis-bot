@@ -1,0 +1,530 @@
+/*
+ * =========================================================
+ * פענוח הודעות של אנשי צוות (מנהלים ומאמנים)
+ * =========================================================
+ *
+ * קובץ זה רק מפענח טקסט — בלי גישה למסד הנתונים.
+ * פקודות עם שם + קבוצה מחזירות כמה "מועמדים" לחלוקה,
+ * כי שם משפחה יכול להתחיל ב-ל או ב-מ ("דני לוי", "דני מזרחי").
+ * ה-controller בוחר את המועמד הראשון שהקבוצות שלו קיימות.
+ */
+
+function cleanStaffText(
+  value = ""
+) {
+  return String(value)
+    .replace(/\*/g, "")
+    .replace(/[״"]/g, '"')
+    .replace(/[׳']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanAttendanceName(
+  value = ""
+) {
+  return String(value)
+    .replace(
+      /^[\s*•\-–—✅☑️✔️]+/u,
+      ""
+    )
+    .replace(/^\d+[.)]\s*/, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanManagerPart(
+  value = ""
+) {
+  return cleanStaffText(value)
+    .replace(
+      /^(?:קבוצה|קבוצת)\s+/,
+      ""
+    )
+    .replace(
+      /^(?:ימים|יום)\s+/,
+      ""
+    )
+    .trim();
+}
+
+/*
+ * =========================================================
+ * דיווח נוכחות
+ * =========================================================
+ */
+
+const YESTERDAY_PATTERN =
+  /(?:^|\s)(?:של\s+)?אתמול(?=\s|$)/;
+
+function parseAttendanceCommand(
+  message = ""
+) {
+  const rawText =
+    String(message).trim();
+
+  if (!rawText) {
+    return {
+      isAttendanceCommand: false,
+    };
+  }
+
+  const lines =
+    rawText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  if (lines.length === 0) {
+    return {
+      isAttendanceCommand: false,
+    };
+  }
+
+  let firstLine =
+    cleanStaffText(lines[0]);
+
+  /*
+   * "נוכחות צעירה אתמול" → דיווח על אתמול.
+   */
+  let dateOffsetDays = 0;
+
+  if (YESTERDAY_PATTERN.test(firstLine)) {
+    dateOffsetDays = -1;
+    firstLine = firstLine
+      .replace(YESTERDAY_PATTERN, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  let groupName = "";
+
+  /*
+   * פורמט מפורש:
+   * נוכחות א+ד 16:00
+   * נוכחות צעירה שלישי
+   */
+  const attendanceMatch =
+    firstLine.match(
+      /^נוכחות\s*[:\-–—]?\s*(.*)$/i
+    );
+
+  if (attendanceMatch) {
+    groupName = cleanManagerPart(
+      attendanceMatch[1]
+    );
+  } else {
+    /*
+     * פורמט מקוצר: צעירה / בוגרת שלישי / נבחרת צעירה חמישי
+     */
+    const possibleGroupName =
+      cleanManagerPart(firstLine);
+
+    const teamCommandPattern =
+      /^(?:נבחרת\s+)?(?:צעירה|בוגרת)(?:\s+(?:ב|ביום\s+)?(?:ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת))?$/i;
+
+    if (
+      teamCommandPattern.test(
+        possibleGroupName
+      )
+    ) {
+      groupName = possibleGroupName;
+    } else {
+      return {
+        isAttendanceCommand: false,
+      };
+    }
+  }
+
+  const presentNames =
+    lines
+      .slice(1)
+      .flatMap((line) =>
+        line.split(/[,;]/)
+      )
+      .map(cleanAttendanceName)
+      .filter(Boolean);
+
+  return {
+    isAttendanceCommand: true,
+    groupName,
+    presentNames,
+    dateOffsetDays,
+  };
+}
+
+/*
+ * =========================================================
+ * חלוקה של "שם + קבוצה" לכל האפשרויות
+ * =========================================================
+ */
+
+/*
+ * מחזיר את כל המיקומים שבהם מופיע מפריד (למשל " ל" או " מ").
+ * explicit: מפריד מפורש ("לקבוצה", "מקבוצה") — מקבל עדיפות.
+ */
+function findSeparators(text, letter) {
+  const pattern = new RegExp(
+    `\\s(${letter}(?:קבוצה|קבוצת)\\s+|${letter})`,
+    "g"
+  );
+
+  const separators = [];
+  let match;
+
+  while ((match = pattern.exec(text))) {
+    separators.push({
+      index: match.index,
+      end: match.index + match[0].length,
+      explicit: match[1].length > 1,
+    });
+
+    pattern.lastIndex = match.index + 1;
+  }
+
+  return separators;
+}
+
+function orderSeparators(separators) {
+  /*
+   * קודם מפרידים מפורשים, ובכל סוג — מהסוף להתחלה
+   * (שם המשפחה בא לפני שם הקבוצה).
+   */
+  return [...separators].sort((a, b) => {
+    if (a.explicit !== b.explicit) {
+      return a.explicit ? -1 : 1;
+    }
+
+    return b.index - a.index;
+  });
+}
+
+function splitNameAndGroup(rest, letter) {
+  const candidates = [];
+
+  for (const separator of orderSeparators(
+    findSeparators(rest, letter)
+  )) {
+    const traineeName = cleanManagerPart(
+      rest.slice(0, separator.index)
+    );
+
+    const groupName = cleanManagerPart(
+      rest.slice(separator.end)
+    );
+
+    if (traineeName && groupName) {
+      candidates.push({
+        traineeName,
+        groupName,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function splitMove(rest) {
+  const candidates = [];
+
+  const toSeparators = orderSeparators(
+    findSeparators(rest, "ל")
+  );
+
+  for (const toSeparator of toSeparators) {
+    const beforeTo = rest.slice(
+      0,
+      toSeparator.index
+    );
+
+    const toGroupName = cleanManagerPart(
+      rest.slice(toSeparator.end)
+    );
+
+    const fromSeparators = orderSeparators(
+      findSeparators(beforeTo, "מ")
+    );
+
+    for (const fromSeparator of fromSeparators) {
+      const traineeName = cleanManagerPart(
+        beforeTo.slice(0, fromSeparator.index)
+      );
+
+      const fromGroupName = cleanManagerPart(
+        beforeTo.slice(fromSeparator.end)
+      );
+
+      if (
+        traineeName &&
+        fromGroupName &&
+        toGroupName
+      ) {
+        candidates.push({
+          traineeName,
+          fromGroupName,
+          toGroupName,
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/*
+ * =========================================================
+ * פקודות ניהול טבעיות
+ * =========================================================
+ */
+
+const ADD_VERBS =
+  "תוסיף|הוסף|תוסיפי|הוסיפי|תכניס|תכניסי";
+const REMOVE_VERBS =
+  "תוריד|תסיר|הסר|הורד|תורידי|תסירי|תוציא|תוציאי";
+const MOVE_VERBS =
+  "תעביר|העבר|תעבירי";
+
+function stripVerb(text, verbs) {
+  const match = text.match(
+    new RegExp(
+      `^(?:${verbs})\\s+(?:את\\s+)?(.+)$`
+    )
+  );
+
+  return match ? match[1].trim() : null;
+}
+
+function withCandidates(type, candidates, extra = {}) {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return {
+    type,
+    ...candidates[0],
+    ...extra,
+    candidates,
+  };
+}
+
+function parseNaturalManagerCommand(
+  message = ""
+) {
+  const text = cleanStaffText(message);
+
+  if (!text) {
+    return null;
+  }
+
+  /*
+   * רשימת קבוצה
+   */
+  const rosterPatterns = [
+    /^(?:תראה|תראי|תציג|תציגי|הצג|הראה)\s+(?:לי\s+)?(?:את\s+)?(?:ה)?רשימה\s+של\s+(?:קבוצה\s+|קבוצת\s+)?(.+)$/i,
+    /^מי\s+(?:נמצא\s+|נמצאים\s+)?ב(?:קבוצה\s+|קבוצת\s+|נבחרת\s+)(.+)$/i,
+  ];
+
+  for (const pattern of rosterPatterns) {
+    const match = text.match(pattern);
+
+    if (match) {
+      return {
+        type: "LIST_GROUP",
+        groupName: cleanManagerPart(match[1]),
+      };
+    }
+  }
+
+  /*
+   * העברה
+   */
+  const moveRest = stripVerb(text, MOVE_VERBS);
+
+  if (moveRest) {
+    const command = withCandidates(
+      "MOVE_TRAINEE",
+      splitMove(moveRest)
+    );
+
+    if (command) {
+      return command;
+    }
+  }
+
+  /*
+   * הוספה
+   */
+  const addRest = stripVerb(text, ADD_VERBS);
+
+  if (addRest) {
+    const command = withCandidates(
+      "ADD_TRAINEE",
+      splitNameAndGroup(addRest, "ל"),
+      { notes: null }
+    );
+
+    if (command) {
+      return command;
+    }
+  }
+
+  /*
+   * הסרה
+   */
+  const removeRest = stripVerb(text, REMOVE_VERBS);
+
+  if (removeRest) {
+    const command = withCandidates(
+      "REMOVE_TRAINEE",
+      splitNameAndGroup(removeRest, "מ")
+    );
+
+    if (command) {
+      return command;
+    }
+  }
+
+  return null;
+}
+
+/*
+ * =========================================================
+ * עצירה / הפעלה של הבוט מול לקוח מסוים
+ * =========================================================
+ *
+ * עצור בוט 0501234567
+ * הפעל בוט 0501234567
+ */
+function parseBotControlCommand(
+  message = ""
+) {
+  const text = cleanStaffText(message);
+
+  const match = text.match(
+    /^(עצור|השתק|הפעל|החזר)\s+(?:את\s+)?(?:ה)?בוט\s+(?:ל|עבור\s+|מול\s+)?([+\d][\d\s-]{7,})$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    type: /^(עצור|השתק)$/.test(match[1])
+      ? "PAUSE_BOT"
+      : "RESUME_BOT",
+    phone: match[2].replace(/[\s-]/g, ""),
+  };
+}
+
+/*
+ * =========================================================
+ * פקודות ניהול – טבעיות + תאימות לפורמט הישן
+ * =========================================================
+ */
+
+function parseManagerCommand(
+  message = ""
+) {
+  const text = cleanStaffText(message);
+
+  if (!text) {
+    return null;
+  }
+
+  const botControl =
+    parseBotControlCommand(text);
+
+  if (botControl) {
+    return botControl;
+  }
+
+  const naturalCommand =
+    parseNaturalManagerCommand(text);
+
+  if (naturalCommand) {
+    return naturalCommand;
+  }
+
+  const rosterMatch = text.match(
+    /^רשימת\s+קבוצה\s+(.+)$/i
+  );
+
+  if (rosterMatch) {
+    return {
+      type: "LIST_GROUP",
+      groupName: cleanManagerPart(
+        rosterMatch[1]
+      ),
+    };
+  }
+
+  const addMatch = text.match(
+    /^הוסף\s+מתאמן\s+([^|]+)\|([^|]+)(?:\|(.+))?$/i
+  );
+
+  if (addMatch) {
+    return {
+      type: "ADD_TRAINEE",
+      groupName: cleanManagerPart(addMatch[1]),
+      traineeName: cleanManagerPart(addMatch[2]),
+      notes: addMatch[3]
+        ? cleanManagerPart(addMatch[3])
+        : null,
+    };
+  }
+
+  const removeMatch = text.match(
+    /^הסר\s+מתאמן\s+([^|]+)\|(.+)$/i
+  );
+
+  if (removeMatch) {
+    return {
+      type: "REMOVE_TRAINEE",
+      groupName: cleanManagerPart(removeMatch[1]),
+      traineeName: cleanManagerPart(removeMatch[2]),
+    };
+  }
+
+  const moveMatch = text.match(
+    /^העבר\s+מתאמן\s+([^|]+)\|([^|]+)\|(.+)$/i
+  );
+
+  if (moveMatch) {
+    return {
+      type: "MOVE_TRAINEE",
+      fromGroupName: cleanManagerPart(moveMatch[1]),
+      toGroupName: cleanManagerPart(moveMatch[2]),
+      traineeName: cleanManagerPart(moveMatch[3]),
+    };
+  }
+
+  /*
+   * התחיל כמו פקודת ניהול אבל לא הובן.
+   * (\b לא עובד עם עברית ב-JavaScript, ולכן (?:\s|$))
+   */
+  if (
+    new RegExp(
+      `^(?:${ADD_VERBS}|${REMOVE_VERBS}|${MOVE_VERBS}|רשימת\\s+קבוצה|תראה\\s+לי|מי\\s+בקבוצה|עצור\\s+בוט|הפעל\\s+בוט)(?:\\s|$)`,
+      "i"
+    ).test(text)
+  ) {
+    return {
+      type: "INVALID_MANAGER_COMMAND",
+    };
+  }
+
+  return null;
+}
+
+module.exports = {
+  cleanStaffText,
+  cleanAttendanceName,
+  cleanManagerPart,
+  parseAttendanceCommand,
+  parseNaturalManagerCommand,
+  parseBotControlCommand,
+  parseManagerCommand,
+  splitNameAndGroup,
+  splitMove,
+};

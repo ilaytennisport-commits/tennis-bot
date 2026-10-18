@@ -2,6 +2,19 @@ const equipmentKnowledge = require(
   "../knowledge/equipmentKnowledge"
 );
 
+const {
+  matchesAnyTerm,
+} = require("../utils/text");
+
+/*
+ * מילים שלמות בלבד, עם ה/ב/ל בתחילתן.
+ * כך "ותיק" לא מזוהה כ"תיק".
+ */
+const hasEquipmentTerm = (text, terms) =>
+  matchesAnyTerm(text, terms, {
+    prefixes: "הבל",
+  });
+
 function detectEquipmentCategory(message = "") {
   const text = String(message)
     .toLowerCase()
@@ -10,9 +23,7 @@ function detectEquipmentCategory(message = "") {
   // בודקים קודם ביטויים ספציפיים,
   // כדי ש"תיק למחבט" לא יזוהה כמחבט.
   if (
-    /תיק למחבט|תיקי מחבטים|תיק/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["תיק למחבט", "תיקי מחבטים", "תיק", "תיקים"])
   ) {
     return {
       category: "accessories",
@@ -21,9 +32,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /בולם זעזועים|סופג זעזועים|בולם/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["בולם זעזועים", "סופג זעזועים", "בולם", "בולמים"])
   ) {
     return {
       category: "accessories",
@@ -32,9 +41,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /אוברגריפ|גריפ|גריפים|ידית|אחיזה/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["אוברגריפ", "גריפ", "גריפים", "ידית", "אחיזה"])
   ) {
     return {
       category: "grips",
@@ -43,9 +50,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /גיד|גידים|מיתר|מיתרים|שזירה|מתיחה/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["גיד", "גידים", "מיתר", "מיתרים", "שזירה", "מתיחה"])
   ) {
     return {
       category: "strings",
@@ -53,7 +58,7 @@ function detectEquipmentCategory(message = "") {
     };
   }
 
-  if (/כדור|כדורים/.test(text)) {
+  if (hasEquipmentTerm(text, ["כדור", "כדורי", "כדורים"])) {
     return {
       category: "balls",
       item: "balls",
@@ -61,9 +66,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /נעלי טניס|נעליים|נעל/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["נעלי טניס", "נעליים", "נעלי", "נעל"])
   ) {
     return {
       category: "shoes",
@@ -72,9 +75,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /מחבט|מחבטים|רקטה|רקטות/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["מחבט", "מחבטים", "רקטה", "רקטות"])
   ) {
     return {
       category: "rackets",
@@ -83,9 +84,7 @@ function detectEquipmentCategory(message = "") {
   }
 
   if (
-    /כובע|בקבוק|אביזר|ציוד נלווה|ציוד טניס/.test(
-      text
-    )
+    hasEquipmentTerm(text, ["כובע", "בקבוק", "אביזר", "אביזרים", "ציוד נלווה", "ציוד טניס", "ציוד"])
   ) {
     return {
       category: "accessories",

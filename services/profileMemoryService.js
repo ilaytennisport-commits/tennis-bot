@@ -1,3 +1,12 @@
+const {
+  matchesAnyTerm,
+} = require("../utils/text");
+
+const hasEquipmentTerm = (text, terms) =>
+  matchesAnyTerm(text, terms, {
+    prefixes: "הבל",
+  });
+
 function extractAge(message = "") {
   const text = String(message).trim();
 
@@ -130,57 +139,43 @@ function detectEquipmentTopic(
     .trim();
 
   if (
-    /תיק למחבט|תיקי מחבטים|תיק/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["תיק למחבט", "תיקי מחבטים", "תיק", "תיקים"])
   ) {
     return "bag";
   }
 
   if (
-    /בולם זעזועים|סופג זעזועים|בולם/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["בולם זעזועים", "סופג זעזועים", "בולם", "בולמים"])
   ) {
     return "vibration_damper";
   }
 
   if (
-    /אוברגריפ|גריפ|גריפים|ידית|אחיזה/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["אוברגריפ", "גריפ", "גריפים", "ידית", "אחיזה"])
   ) {
     return "grip";
   }
 
   if (
-    /גיד|גידים|מיתר|מיתרים|שזירה/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["גיד", "גידים", "מיתר", "מיתרים", "שזירה"])
   ) {
     return "strings";
   }
 
   if (
-    /כדור|כדורים/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["כדור", "כדורי", "כדורים"])
   ) {
     return "balls";
   }
 
   if (
-    /נעלי טניס|נעליים|נעל/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["נעלי טניס", "נעליים", "נעלי", "נעל"])
   ) {
     return "shoes";
   }
 
   if (
-    /מחבט|מחבטים|רקטה|רקטות/u.test(
-      text
-    )
+    hasEquipmentTerm(text, ["מחבט", "מחבטים", "רקטה", "רקטות"])
   ) {
     return "racket";
   }

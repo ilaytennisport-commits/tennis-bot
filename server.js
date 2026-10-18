@@ -1,73 +1,157 @@
 require("dotenv").config();
+
 const {
+  validateConfig,
+} = require("./services/configService");
+
+/*
+ * בודקים הגדרות לפני שטוענים את שאר הקוד.
+ */
+const config = validateConfig();
+
+for (const warning of config.warnings) {
+  console.warn(`⚠️ ${warning}`);
+}
+
+if (config.errors.length > 0) {
+  for (const error of config.errors) {
+    console.error(`❌ ${error}`);
+  }
+
+  process.exit(1);
+}
+
+const express = require("express");
+
+const {
+  pool,
   initializeDatabase,
 } = require("./services/databaseService");
-const express = require("express");
-const axios = require("axios");
-const OpenAI = require("openai");
+
 const webhookRouter = require("./routes/webhook");
+
+const {
+  retryPendingLeads,
+} = require("./services/leadService");
+
+const {
+  cleanupProcessedMessages,
+} = require("./services/reliabilityService");
+
+const {
+  waitForQueues,
+} = require("./controllers/webhookController");
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use("/webhook", webhookRouter);
+const LEAD_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+app.disable("x-powered-by");
+app.use(express.json({ limit: "1mb" }));
+app.use("/webhook", webhookRouter);
 
 app.get("/", (req, res) => {
   res.send("🎾 Tennis Bot עובד!");
 });
 
-app.get("/test-ai", async (req, res) => {
+/*
+ * בדיקת תקינות לשרת ולמסד הנתונים (למשל עבור Railway).
+ */
+app.get("/health", async (req, res) => {
   try {
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: "כתוב בעברית משפט קצר: החיבור ל-OpenAI עובד.",
-    });
+    await pool.query("SELECT 1");
 
-    res.send(response.output_text);
+    res.json({
+      status: "ok",
+      database: "ok",
+    });
   } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).send("שגיאה בחיבור ל-OpenAI");
+    res.status(503).json({
+      status: "error",
+      database: "unavailable",
+    });
   }
 });
 
-app.get("/test-whatsapp", async (req, res) => {
-  try {
-   const whapiResponse = await axios.post(
-      "https://gate.whapi.cloud/messages/text",
-      {
-        to: "972505209997",
-        body: "🎾 בדיקת חיבור: הבוט שלנו מחובר ל-Whapi!",
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHAPI_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+const timers = [];
+
+function startBackgroundJobs() {
+  timers.push(
+    setInterval(async () => {
+      try {
+        const result = await retryPendingLeads();
+
+        if (result.checked > 0) {
+          console.log(
+            "🔁 שליחה חוזרת של לידים:",
+            result
+          );
+        }
+      } catch (error) {
+        console.error(
+          "❌ שליחה חוזרת של לידים נכשלה:",
+          error.message
+        );
       }
-    );
+    }, LEAD_RETRY_INTERVAL_MS)
+  );
 
-    res.json(whapiResponse.data);
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({
-      error: "שליחת ההודעה נכשלה",
-      details: error.response?.data || error.message,
-    });
+  timers.push(
+    setInterval(async () => {
+      try {
+        await cleanupProcessedMessages();
+      } catch (error) {
+        console.error(
+          "❌ ניקוי מזהי הודעות נכשל:",
+          error.message
+        );
+      }
+    }, CLEANUP_INTERVAL_MS)
+  );
+}
+
+let server;
+
+async function shutdown(signal) {
+  console.log(`🛑 ${signal} — סוגרים את השרת בצורה מסודרת...`);
+
+  timers.forEach(clearInterval);
+
+  const forceExit = setTimeout(
+    () => process.exit(1),
+    10000
+  );
+
+  forceExit.unref();
+
+  try {
+    if (server) {
+      await new Promise((resolve) =>
+        server.close(resolve)
+      );
+    }
+
+    await waitForQueues();
+    await pool.end();
+  } finally {
+    process.exit(0);
   }
-});
+}
 
 async function startServer() {
   try {
     await initializeDatabase();
 
-    app.listen(port, "0.0.0.0", () => {
+    server = app.listen(port, "0.0.0.0", () => {
       console.log(`🚀 Server started on port ${port}`);
     });
+
+    startBackgroundJobs();
+
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   } catch (error) {
     console.error(
       "❌ Failed to initialize the database:",

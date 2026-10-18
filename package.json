@@ -4,7 +4,8 @@
   "description": "WhatsApp AI bot for Tennis Galey Hadar",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
@@ -16,5 +17,8 @@
     "express": "^5.2.1",
     "openai": "^6.48.0",
     "pg": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

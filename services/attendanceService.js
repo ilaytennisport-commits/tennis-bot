@@ -8,7 +8,7 @@ const {
  * =========================================================
  */
 
-const STAFF_NAMES = {
+const DEFAULT_STAFF_NAMES = {
   "0544832278": "אריק הלמן",
   "0546444516": "ליאל",
   "0533368713": "נובל",
@@ -18,6 +18,37 @@ const STAFF_NAMES = {
   "0549454430": "נועה",
   "0505209997": "אור",
 };
+
+/*
+ * אפשר להגדיר / לעקוף שמות צוות במשתנה הסביבה STAFF_NAMES:
+ * 0501234567:שם,0521234567:שם
+ * מומלץ להעביר את כל הרשימה למשתנה הסביבה ולמחוק אותה מהקוד.
+ */
+function getStaffNames() {
+  const names = {
+    ...DEFAULT_STAFF_NAMES,
+  };
+
+  for (const entry of String(
+    process.env.STAFF_NAMES || ""
+  ).split(",")) {
+    const [phone, ...nameParts] =
+      entry.split(":");
+
+    const name = nameParts
+      .join(":")
+      .trim();
+
+    const normalizedPhone =
+      normalizePhone(phone);
+
+    if (normalizedPhone && name) {
+      names[normalizedPhone] = name;
+    }
+  }
+
+  return names;
+}
 
 /*
  * =========================================================
@@ -222,29 +253,18 @@ function getStaffName(phone) {
   const normalizedPhone =
     normalizePhone(phone);
 
-  if (
-    STAFF_NAMES[
-      normalizedPhone
-    ]
-  ) {
-    return STAFF_NAMES[
-      normalizedPhone
-    ];
+  const staffNames =
+    getStaffNames();
+
+  if (staffNames[normalizedPhone]) {
+    return staffNames[normalizedPhone];
   }
 
-  if (
-    isManagerPhone(
-      normalizedPhone
-    )
-  ) {
+  if (isManagerPhone(normalizedPhone)) {
     return "מנהל";
   }
 
-  if (
-    isCoachPhone(
-      normalizedPhone
-    )
-  ) {
+  if (isCoachPhone(normalizedPhone)) {
     return "מאמן";
   }
 
@@ -263,8 +283,10 @@ function getCoachName(phone) {
  * =========================================================
  */
 
-function getIsraelDateString() {
-  const formatter =
+function getIsraelDateParts(
+  now = new Date()
+) {
+  const dateString =
     new Intl.DateTimeFormat(
       "en-CA",
       {
@@ -274,38 +296,127 @@ function getIsraelDateString() {
         month: "2-digit",
         day: "2-digit",
       }
-    );
+    ).format(now);
 
-  return formatter.format(
-    new Date()
+  return {
+    dateString,
+    dayOfWeek:
+      dayOfWeekFromDateString(
+        dateString
+      ),
+  };
+}
+
+/*
+ * 1 = ראשון ... 7 = שבת
+ */
+function dayOfWeekFromDateString(
+  dateString
+) {
+  const [year, month, day] =
+    dateString
+      .split("-")
+      .map(Number);
+
+  return (
+    new Date(
+      Date.UTC(year, month - 1, day, 12)
+    ).getUTCDay() + 1
   );
 }
 
-function getIsraelDayOfWeek() {
-  const dayName =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone:
-          "Asia/Jerusalem",
-        weekday:
-          "long",
-      }
-    ).format(
-      new Date()
-    );
+function shiftDateString(
+  dateString,
+  days
+) {
+  const [year, month, day] =
+    dateString
+      .split("-")
+      .map(Number);
 
-  const map = {
-    Sunday: 1,
-    Monday: 2,
-    Tuesday: 3,
-    Wednesday: 4,
-    Thursday: 5,
-    Friday: 6,
-    Saturday: 7,
+  const date = new Date(
+    Date.UTC(year, month - 1, day, 12)
+  );
+
+  date.setUTCDate(
+    date.getUTCDate() + days
+  );
+
+  return date
+    .toISOString()
+    .slice(0, 10);
+}
+
+function getIsraelDateString(
+  offsetDays = 0,
+  now = new Date()
+) {
+  return shiftDateString(
+    getIsraelDateParts(now).dateString,
+    offsetDays
+  );
+}
+
+function getIsraelDayOfWeek(
+  now = new Date()
+) {
+  return getIsraelDateParts(now)
+    .dayOfWeek;
+}
+
+/*
+ * תאריך המפגש שעליו מדווחים נוכחות:
+ * - "אתמול" (dateOffsetDays = -1) → אתמול.
+ * - יום מפורש שאינו היום → המופע האחרון של אותו יום
+ *   (עד 6 ימים אחורה). כך דיווח ביום חמישי על "צעירה שלישי"
+ *   נשמר לתאריך של יום שלישי ולא לתאריך של היום.
+ * - אחרת → היום.
+ */
+function resolveSessionDate({
+  dayOfWeek = null,
+  dateOffsetDays = 0,
+  now = new Date(),
+} = {}) {
+  const today =
+    getIsraelDateParts(now).dateString;
+
+  if (dateOffsetDays) {
+    const sessionDate =
+      shiftDateString(
+        today,
+        dateOffsetDays
+      );
+
+    return {
+      sessionDate,
+      dayOfWeek:
+        dayOfWeekFromDateString(
+          sessionDate
+        ),
+    };
+  }
+
+  if (dayOfWeek) {
+    const todayDayOfWeek =
+      dayOfWeekFromDateString(today);
+
+    const daysBack =
+      (todayDayOfWeek - dayOfWeek + 7) % 7;
+
+    return {
+      sessionDate: shiftDateString(
+        today,
+        -daysBack
+      ),
+      dayOfWeek,
+    };
+  }
+
+  return {
+    sessionDate: today,
+    dayOfWeek:
+      dayOfWeekFromDateString(today),
   };
-
-  return map[dayName] || null;
 }
 
 /*
@@ -431,10 +542,13 @@ function removeBranchWords(
 function getDayOfWeekFromText(
   value = ""
 ) {
-  const text =
-    normalizeGroupText(
-      value
-    );
+  /*
+   * "ראשון לציון" הוא שם עיר ולא יום ראשון.
+   */
+  const text = cleanValue(value)
+    .toLowerCase()
+    .replace(/[׳'״"]/g, "")
+    .replace(/ראשון\s*לציון|ראשלצ/g, " ");
 
   for (
     const [
@@ -444,11 +558,15 @@ function getDayOfWeekFromText(
       DAY_MAP
     )
   ) {
-    if (
-      text.includes(
-        dayName
-      )
-    ) {
+    /*
+     * מילה שלמה בלבד ("שניה" אינה "שני"),
+     * עם ב/ל/ה או "יום" לפניה.
+     */
+    const pattern = new RegExp(
+      `(?:^|[\\s,.(+\\-–])(?:ביום\\s+|יום\\s+)?[בלה]?${dayName}(?=$|[\\s,.)+\\-–])`
+    );
+
+    if (pattern.test(text)) {
       return dayNumber;
     }
   }
@@ -815,7 +933,21 @@ const GROUP_ALIASES = [
  * =========================================================
  */
 
-async function getActiveGroups() {
+/*
+ * קבוצות פנימיות שהמערכת יוצרת לדיווח נוכחות
+ * ("גלי הדר | שלישי 16:30 | צעירה") — לא מוצגות למנהלים.
+ */
+function isInternalAttendanceGroup(
+  name = ""
+) {
+  return /^גלי הדר \|/.test(
+    String(name)
+  );
+}
+
+async function getActiveGroups({
+  includeInternal = false,
+} = {}) {
   const result =
     await pool.query(
       `
@@ -832,7 +964,13 @@ async function getActiveGroups() {
       `
     );
 
-  return result.rows;
+  return result.rows.filter(
+    (group) =>
+      includeInternal ||
+      !isInternalAttendanceGroup(
+        group.name
+      )
+  );
 }
 
 function getAliasScore(
@@ -1125,10 +1263,11 @@ async function getActiveGroupByName(
  */
 
 async function getActiveTraineesByGroupId(
-  groupId
+  groupId,
+  db = pool
 ) {
   const result =
-    await pool.query(
+    await db.query(
       `
         SELECT
           id,
@@ -1150,10 +1289,11 @@ async function getActiveTraineesByGroupId(
 }
 
 async function getAllTraineesByGroupId(
-  groupId
+  groupId,
+  db = pool
 ) {
   const result =
-    await pool.query(
+    await db.query(
       `
         SELECT
           id,
@@ -1623,177 +1763,314 @@ async function ensureGaliHadarTeamAttendanceGroup({
  * =========================================================
  */
 
-async function getGroupRoster(
-  groupName
+/*
+ * =========================================================
+ * יעדי רשימה: קבוצה רגילה / נבחרת / מפגש גלי הדר
+ * =========================================================
+ *
+ * רשימות הנבחרות ומפגשי גלי הדר (יום + שעה) נשמרות בטבלת
+ * trainee_training_slots — זו הטבלה שממנה נבנית הנוכחות.
+ * לכן גם הוספה / הסרה / העברה של מנהל נכתבת לשם,
+ * ושינוי של מנהל לא נדרס בדיווח הנוכחות הבא.
+ *
+ * קבוצות רגילות (למשל בית חשמונאי) נשמרות בטבלת trainees.
+ */
+
+const TEAM_START_TIME = "16:30";
+const DEFAULT_TEAM_DAYS = [2, 3, 5];
+const MANUAL_SLOT_LABEL = "כללי";
+
+function parseSlotsTarget(
+  groupName = ""
 ) {
   const slot =
-    parseGaliHadarSlot(
-      groupName
-    );
+    parseGaliHadarSlot(groupName);
 
   if (slot) {
-    const group =
-      await ensureGaliHadarAttendanceGroup(
-        slot
-      );
-
-    const trainees =
-      await getActiveTraineesByGroupId(
-        group.id
-      );
-
     return {
-      success: true,
-      group,
-      trainees,
-
-      total:
-        trainees.length,
-
+      type: "slot",
       slot,
-
-      isTrainingSlot:
-        true,
+      displayName: `גלי הדר – ${slot.displayName}`,
     };
   }
 
-  const resolution =
-    await resolveActiveGroup(
-      groupName
-    );
+  const teamLabel =
+    getTeamLabelFromGroupName(groupName);
 
-  if (
-    !resolution.success
-  ) {
+  if (teamLabel) {
+    const dayOfWeek =
+      getDayOfWeekFromText(groupName);
+
     return {
-      success: false,
-
-      code:
-        resolution.code,
-
-      message:
-        resolution.message,
-
-      matches:
-        resolution.matches ||
-        [],
+      type: "team",
+      teamLabel,
+      dayOfWeek,
+      displayName: dayOfWeek
+        ? `נבחרת ${teamLabel} (${DAY_NAMES[dayOfWeek]})`
+        : `נבחרת ${teamLabel}`,
     };
   }
 
-  const group =
-    resolution.group;
+  return null;
+}
 
-  const trainees =
-    await getActiveTraineesByGroupId(
-      group.id
-    );
+async function getTeamDays(
+  teamLabel,
+  db = pool
+) {
+  const result = await db.query(
+    `
+      SELECT DISTINCT day_of_week
+      FROM trainee_training_slots
+      WHERE
+        branch = $1
+        AND group_label = $2
+        AND start_time = $3::TIME
+        AND active = TRUE
+      ORDER BY day_of_week
+    `,
+    [
+      BRANCH_GALI_HADAR,
+      teamLabel,
+      TEAM_START_TIME,
+    ]
+  );
 
-  return {
-    success: true,
-    group,
-    trainees,
+  const days = result.rows.map(
+    (row) => Number(row.day_of_week)
+  );
 
-    total:
-      trainees.length,
-  };
+  return days.length > 0
+    ? days
+    : DEFAULT_TEAM_DAYS;
+}
+
+async function getSlotsRows(
+  target,
+  { activeOnly = true } = {},
+  db = pool
+) {
+  const params = [BRANCH_GALI_HADAR];
+  const where = ["branch = $1"];
+
+  if (target.type === "team") {
+    params.push(target.teamLabel);
+    where.push(`group_label = $${params.length}`);
+
+    params.push(TEAM_START_TIME);
+    where.push(`start_time = $${params.length}::TIME`);
+
+    if (target.dayOfWeek) {
+      params.push(target.dayOfWeek);
+      where.push(`day_of_week = $${params.length}`);
+    }
+  } else {
+    params.push(target.slot.dayOfWeek);
+    where.push(`day_of_week = $${params.length}`);
+
+    params.push(target.slot.startTime);
+    where.push(`start_time = $${params.length}::TIME`);
+  }
+
+  if (activeOnly) {
+    where.push("active = TRUE");
+  }
+
+  const result = await db.query(
+    `
+      SELECT
+        id,
+        trainee_name AS name,
+        group_label,
+        day_of_week,
+        notes,
+        active
+      FROM trainee_training_slots
+      WHERE ${where.join(" AND ")}
+      ORDER BY trainee_name, day_of_week
+    `,
+    params
+  );
+
+  return result.rows;
 }
 
 /*
- * =========================================================
- * הוספת מתאמן
- * =========================================================
+ * מאחד כמה שורות שיבוץ (ימים שונים) למתאמן אחד.
  */
+function groupRowsByName(rows = []) {
+  const byName = new Map();
 
-async function addTrainee({
-  groupName,
-  traineeName,
-  notes = null,
-}) {
-  const cleanName =
-    cleanValue(
-      traineeName
-    );
+  for (const row of rows) {
+    if (!byName.has(row.name)) {
+      byName.set(row.name, {
+        name: row.name,
+        notes: row.notes,
+        rows: [],
+      });
+    }
 
-  const cleanNotes =
-    cleanValue(
-      notes || ""
-    ) || null;
+    byName.get(row.name).rows.push(row);
+  }
 
-  if (!cleanName) {
+  return [...byName.values()];
+}
+
+function formatDays(days = []) {
+  return [...new Set(days)]
+    .sort((a, b) => a - b)
+    .map((day) => DAY_NAMES[day])
+    .join(", ");
+}
+
+async function getTargetDays(target, db) {
+  if (target.type === "slot") {
+    return [target.slot.dayOfWeek];
+  }
+
+  return target.dayOfWeek
+    ? [target.dayOfWeek]
+    : getTeamDays(target.teamLabel, db);
+}
+
+async function getSlotLabel(target, db) {
+  if (target.type === "team") {
+    return target.teamLabel;
+  }
+
+  const rows = await getSlotsRows(
+    target,
+    { activeOnly: true },
+    db
+  );
+
+  const labels = [
+    ...new Set(
+      rows
+        .map((row) => row.group_label)
+        .filter(Boolean)
+    ),
+  ];
+
+  return labels.length === 1
+    ? labels[0]
+    : MANUAL_SLOT_LABEL;
+}
+
+/*
+ * ממשק אחיד לקבוצה רגילה ולרשימת שיבוצים.
+ */
+async function resolveRosterScope(
+  groupName
+) {
+  const target =
+    parseSlotsTarget(groupName);
+
+  if (target) {
     return {
-      success: false,
-
-      code:
-        "INVALID_NAME",
-
-      message:
-        "❌ חסר שם המתאמן.",
+      success: true,
+      scope: {
+        kind: "slots",
+        key: [
+          "slots",
+          target.type,
+          target.teamLabel || "",
+          target.dayOfWeek ||
+            target.slot?.dayOfWeek ||
+            "",
+          target.slot?.startTime || "",
+        ].join(":"),
+        target,
+        group: {
+          name: target.displayName,
+          branch: BRANCH_GALI_HADAR,
+        },
+      },
     };
   }
 
   const resolution =
-    await resolveActiveGroup(
-      groupName
-    );
+    await resolveActiveGroup(groupName);
 
-  if (
-    !resolution.success
-  ) {
+  if (!resolution.success) {
     return {
       success: false,
-
-      code:
-        resolution.code,
-
-      message:
-        resolution.message,
-
-      matches:
-        resolution.matches ||
-        [],
+      code: resolution.code,
+      message: resolution.message,
+      matches: resolution.matches || [],
     };
   }
 
-  const group =
-    resolution.group;
+  return {
+    success: true,
+    scope: {
+      kind: "group",
+      key: `group:${resolution.group.id}`,
+      group: resolution.group,
+    },
+  };
+}
 
-  const allTrainees =
-    await getAllTraineesByGroupId(
-      group.id
+function scopeLabel(scope) {
+  return scope.kind === "group"
+    ? `קבוצת ${scope.group.name}`
+    : scope.group.name;
+}
+
+async function findActiveInScope(
+  scope,
+  traineeName,
+  db = pool
+) {
+  if (scope.kind === "group") {
+    return findMatchingTrainee(
+      traineeName,
+      await getActiveTraineesByGroupId(
+        scope.group.id,
+        db
+      )
     );
-
-  const existing =
-    findMatchingTrainee(
-      cleanName,
-      allTrainees
-    );
-
-  if (
-    existing &&
-    existing.active
-  ) {
-    return {
-      success: false,
-
-      code:
-        "TRAINEE_ALREADY_EXISTS",
-
-      group,
-
-      trainee:
-        existing,
-
-      message:
-        `⚠️ ${existing.name} כבר נמצא בקבוצת ${group.name}.`,
-    };
   }
 
-  if (
-    existing &&
-    !existing.active
-  ) {
-    const result =
-      await pool.query(
+  return findMatchingTrainee(
+    traineeName,
+    groupRowsByName(
+      await getSlotsRows(
+        scope.target,
+        { activeOnly: true },
+        db
+      )
+    )
+  );
+}
+
+async function addToScope(
+  scope,
+  traineeName,
+  notes,
+  db = pool
+) {
+  if (scope.kind === "group") {
+    const existing = findMatchingTrainee(
+      traineeName,
+      await getAllTraineesByGroupId(
+        scope.group.id,
+        db
+      )
+    );
+
+    if (existing && existing.active) {
+      return {
+        success: false,
+        code: "TRAINEE_ALREADY_EXISTS",
+        group: scope.group,
+        trainee: existing,
+        message: `⚠️ ${existing.name} כבר נמצא/ת ב${scopeLabel(scope)}.`,
+      };
+    }
+
+    if (existing) {
+      const result = await db.query(
         `
           UPDATE trainees
           SET
@@ -1813,30 +2090,19 @@ async function addTrainee({
             notes,
             active
         `,
-        [
-          existing.id,
-          cleanNotes,
-        ]
+        [existing.id, notes]
       );
 
-    return {
-      success: true,
+      return {
+        success: true,
+        code: "TRAINEE_REACTIVATED",
+        group: scope.group,
+        trainee: result.rows[0],
+        message: `✅ ${result.rows[0].name} הוחזר/ה ל${scopeLabel(scope)}.`,
+      };
+    }
 
-      code:
-        "TRAINEE_REACTIVATED",
-
-      group,
-
-      trainee:
-        result.rows[0],
-
-      message:
-        `✅ ${result.rows[0].name} הוחזר לקבוצת ${group.name}.`,
-    };
-  }
-
-  const result =
-    await pool.query(
+    const result = await db.query(
       `
         INSERT INTO trainees (
           group_id,
@@ -1844,12 +2110,7 @@ async function addTrainee({
           notes,
           active
         )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          TRUE
-        )
+        VALUES ($1, $2, $3, TRUE)
         RETURNING
           id,
           group_id,
@@ -1857,109 +2118,147 @@ async function addTrainee({
           notes,
           active
       `,
+      [scope.group.id, traineeName, notes]
+    );
+
+    return {
+      success: true,
+      code: "TRAINEE_ADDED",
+      group: scope.group,
+      trainee: result.rows[0],
+      message: `✅ ${result.rows[0].name} נוסף/ה ל${scopeLabel(scope)}.`,
+    };
+  }
+
+  const { target } = scope;
+
+  const days =
+    await getTargetDays(target, db);
+
+  const existingActive = findMatchingTrainee(
+    traineeName,
+    groupRowsByName(
+      await getSlotsRows(
+        target,
+        { activeOnly: true },
+        db
+      )
+    )
+  );
+
+  /*
+   * אם המתאמן היה פעם ברשימה — משתמשים בשם המלא שלו.
+   */
+  const previous = findMatchingTrainee(
+    traineeName,
+    groupRowsByName(
+      await getSlotsRows(
+        target,
+        { activeOnly: false },
+        db
+      )
+    )
+  );
+
+  const canonicalName =
+    existingActive?.name ||
+    previous?.name ||
+    traineeName;
+
+  const activeDays = new Set(
+    (existingActive?.rows || []).map(
+      (row) => Number(row.day_of_week)
+    )
+  );
+
+  const missingDays = days.filter(
+    (day) => !activeDays.has(day)
+  );
+
+  if (missingDays.length === 0) {
+    return {
+      success: false,
+      code: "TRAINEE_ALREADY_EXISTS",
+      group: scope.group,
+      trainee: { name: canonicalName },
+      message: `⚠️ ${canonicalName} כבר נמצא/ת ב${scopeLabel(scope)}.`,
+    };
+  }
+
+  const label =
+    await getSlotLabel(target, db);
+
+  const startTime =
+    target.type === "slot"
+      ? target.slot.startTime
+      : TEAM_START_TIME;
+
+  for (const day of missingDays) {
+    await db.query(
+      `
+        INSERT INTO trainee_training_slots (
+          trainee_name,
+          branch,
+          group_label,
+          day_of_week,
+          start_time,
+          notes,
+          active
+        )
+        VALUES ($1, $2, $3, $4, $5::TIME, $6, TRUE)
+        ON CONFLICT (
+          trainee_name,
+          branch,
+          day_of_week,
+          start_time,
+          group_label
+        )
+        DO UPDATE SET
+          active = TRUE,
+          notes = COALESCE(
+            EXCLUDED.notes,
+            trainee_training_slots.notes
+          ),
+          updated_at = NOW()
+      `,
       [
-        group.id,
-        cleanName,
-        cleanNotes,
+        canonicalName,
+        BRANCH_GALI_HADAR,
+        label,
+        day,
+        startTime,
+        notes,
       ]
     );
+  }
+
+  const daysText =
+    target.type === "team" &&
+    !target.dayOfWeek
+      ? ` (ימים: ${formatDays(missingDays)})`
+      : "";
 
   return {
     success: true,
-
-    code:
-      "TRAINEE_ADDED",
-
-    group,
-
-    trainee:
-      result.rows[0],
-
-    message:
-      `✅ ${result.rows[0].name} נוסף לקבוצת ${group.name}.`,
+    code: existingActive
+      ? "TRAINEE_DAYS_ADDED"
+      : "TRAINEE_ADDED",
+    group: scope.group,
+    trainee: {
+      name: canonicalName,
+      notes,
+    },
+    message: `✅ ${canonicalName} נוסף/ה ל${scopeLabel(scope)}${daysText}.`,
   };
 }
 
-/*
- * =========================================================
- * הסרת מתאמן
- * =========================================================
- */
-
-async function removeTrainee({
-  groupName,
-  traineeName,
-}) {
-  const cleanName =
-    cleanValue(
-      traineeName
-    );
-
-  if (!cleanName) {
-    return {
-      success: false,
-
-      code:
-        "INVALID_NAME",
-
-      message:
-        "❌ חסר שם המתאמן.",
-    };
-  }
-
-  const resolution =
-    await resolveActiveGroup(
-      groupName
-    );
-
-  if (
-    !resolution.success
-  ) {
-    return {
-      success: false,
-
-      code:
-        resolution.code,
-
-      message:
-        resolution.message,
-
-      matches:
-        resolution.matches ||
-        [],
-    };
-  }
-
-  const group =
-    resolution.group;
-
-  const trainees =
-    await getActiveTraineesByGroupId(
-      group.id
-    );
-
-  const trainee =
-    findMatchingTrainee(
-      cleanName,
-      trainees
-    );
-
-  if (!trainee) {
-    return {
-      success: false,
-
-      code:
-        "TRAINEE_NOT_FOUND",
-
-      group,
-
-      message:
-        `❌ לא מצאתי מתאמן פעיל בשם "${cleanName}" בקבוצת ${group.name}.`,
-    };
-  }
-
-  const result =
-    await pool.query(
+async function removeFromScope(
+  scope,
+  matched,
+  db = pool
+) {
+  if (scope.kind === "group") {
+    const result = await db.query(
       `
         UPDATE trainees
         SET
@@ -1973,24 +2272,208 @@ async function removeTrainee({
           notes,
           active
       `,
-      [
-        trainee.id,
-      ]
+      [matched.id]
     );
+
+    return result.rows[0];
+  }
+
+  for (const row of matched.rows) {
+    await db.query(
+      `
+        UPDATE trainee_training_slots
+        SET
+          active = FALSE,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [row.id]
+    );
+  }
+
+  return {
+    name: matched.name,
+    notes: matched.notes,
+    days: matched.rows.map((row) =>
+      Number(row.day_of_week)
+    ),
+  };
+}
+
+/*
+ * =========================================================
+ * רשימת קבוצה
+ * =========================================================
+ */
+
+async function getGroupRoster(
+  groupName
+) {
+  const resolution =
+    await resolveRosterScope(groupName);
+
+  if (!resolution.success) {
+    return {
+      success: false,
+      code: resolution.code,
+      message: resolution.message,
+      matches: resolution.matches,
+    };
+  }
+
+  const { scope } = resolution;
+
+  if (scope.kind === "group") {
+    const trainees =
+      await getActiveTraineesByGroupId(
+        scope.group.id
+      );
+
+    return {
+      success: true,
+      group: scope.group,
+      trainees,
+      total: trainees.length,
+    };
+  }
+
+  const people = groupRowsByName(
+    await getSlotsRows(scope.target, {
+      activeOnly: true,
+    })
+  );
+
+  const showDays =
+    scope.target.type === "team" &&
+    !scope.target.dayOfWeek;
+
+  const trainees = people.map(
+    (person) => ({
+      name: person.name,
+      notes: showDays
+        ? formatDays(
+            person.rows.map((row) =>
+              Number(row.day_of_week)
+            )
+          )
+        : person.notes,
+    })
+  );
 
   return {
     success: true,
+    group: scope.group,
+    trainees,
+    total: trainees.length,
+    slot: scope.target.slot || null,
+  };
+}
 
-    code:
-      "TRAINEE_REMOVED",
+/*
+ * =========================================================
+ * הוספת מתאמן
+ * =========================================================
+ */
 
-    group,
+async function addTrainee({
+  groupName,
+  traineeName,
+  notes = null,
+}) {
+  const cleanName =
+    cleanValue(traineeName);
 
-    trainee:
-      result.rows[0],
+  const cleanNotes =
+    cleanValue(notes || "") || null;
 
-    message:
-      `✅ ${result.rows[0].name} הוסר מקבוצת ${group.name}.`,
+  if (!cleanName) {
+    return {
+      success: false,
+      code: "INVALID_NAME",
+      message: "❌ חסר שם המתאמן.",
+    };
+  }
+
+  const resolution =
+    await resolveRosterScope(groupName);
+
+  if (!resolution.success) {
+    return {
+      success: false,
+      code: resolution.code,
+      message: resolution.message,
+      matches: resolution.matches,
+    };
+  }
+
+  return addToScope(
+    resolution.scope,
+    cleanName,
+    cleanNotes
+  );
+}
+
+/*
+ * =========================================================
+ * הסרת מתאמן
+ * =========================================================
+ */
+
+async function removeTrainee({
+  groupName,
+  traineeName,
+}) {
+  const cleanName =
+    cleanValue(traineeName);
+
+  if (!cleanName) {
+    return {
+      success: false,
+      code: "INVALID_NAME",
+      message: "❌ חסר שם המתאמן.",
+    };
+  }
+
+  const resolution =
+    await resolveRosterScope(groupName);
+
+  if (!resolution.success) {
+    return {
+      success: false,
+      code: resolution.code,
+      message: resolution.message,
+      matches: resolution.matches,
+    };
+  }
+
+  const { scope } = resolution;
+
+  const matched =
+    await findActiveInScope(
+      scope,
+      cleanName
+    );
+
+  if (!matched) {
+    return {
+      success: false,
+      code: "TRAINEE_NOT_FOUND",
+      group: scope.group,
+      message: `❌ לא מצאתי מתאמן פעיל בשם "${cleanName}" ב${scopeLabel(scope)}.`,
+    };
+  }
+
+  const removed = await removeFromScope(
+    scope,
+    matched
+  );
+
+  return {
+    success: true,
+    code: "TRAINEE_REMOVED",
+    group: scope.group,
+    trainee: removed,
+    message: `✅ ${removed.name} הוסר/ה מ${scopeLabel(scope)}.`,
   };
 }
 
@@ -2006,245 +2489,107 @@ async function moveTrainee({
   traineeName,
 }) {
   const cleanName =
-    cleanValue(
-      traineeName
-    );
+    cleanValue(traineeName);
 
   if (!cleanName) {
     return {
       success: false,
-
-      code:
-        "INVALID_NAME",
-
-      message:
-        "❌ חסר שם המתאמן.",
+      code: "INVALID_NAME",
+      message: "❌ חסר שם המתאמן.",
     };
   }
 
-  const fromResolution =
-    await resolveActiveGroup(
-      fromGroupName
-    );
+  const from =
+    await resolveRosterScope(fromGroupName);
 
-  if (
-    !fromResolution.success
-  ) {
+  if (!from.success) {
     return {
       success: false,
-
-      code:
-        fromResolution.code,
-
-      message:
-        fromResolution.message,
-
-      matches:
-        fromResolution.matches ||
-        [],
+      code: from.code,
+      message: from.message,
+      matches: from.matches,
     };
   }
 
-  const toResolution =
-    await resolveActiveGroup(
-      toGroupName
-    );
+  const to =
+    await resolveRosterScope(toGroupName);
 
-  if (
-    !toResolution.success
-  ) {
+  if (!to.success) {
     return {
       success: false,
-
-      code:
-        toResolution.code,
-
-      message:
-        toResolution.message,
-
-      matches:
-        toResolution.matches ||
-        [],
+      code: to.code,
+      message: to.message,
+      matches: to.matches,
     };
   }
 
-  const fromGroup =
-    fromResolution.group;
-
-  const toGroup =
-    toResolution.group;
-
-  if (
-    fromGroup.id ===
-    toGroup.id
-  ) {
+  if (from.scope.key === to.scope.key) {
     return {
       success: false,
-
-      code:
-        "SAME_GROUP",
-
+      code: "SAME_GROUP",
       message:
         "⚠️ קבוצת המקור וקבוצת היעד זהות.",
     };
   }
 
-  const sourceTrainees =
-    await getActiveTraineesByGroupId(
-      fromGroup.id
-    );
+  const source = await findActiveInScope(
+    from.scope,
+    cleanName
+  );
 
-  const sourceTrainee =
-    findMatchingTrainee(
-      cleanName,
-      sourceTrainees
-    );
-
-  if (!sourceTrainee) {
+  if (!source) {
     return {
       success: false,
-
-      code:
-        "TRAINEE_NOT_FOUND",
-
-      message:
-        `❌ לא מצאתי את "${cleanName}" בקבוצת ${fromGroup.name}.`,
+      code: "TRAINEE_NOT_FOUND",
+      message: `❌ לא מצאתי את "${cleanName}" ב${scopeLabel(from.scope)}.`,
     };
   }
 
-  const targetTrainees =
-    await getAllTraineesByGroupId(
-      toGroup.id
-    );
-
-  const existingTarget =
-    findMatchingTrainee(
-      cleanName,
-      targetTrainees
-    );
-
-  if (
-    existingTarget &&
-    existingTarget.active
-  ) {
-    return {
-      success: false,
-
-      code:
-        "TRAINEE_ALREADY_IN_TARGET",
-
-      message:
-        `⚠️ ${existingTarget.name} כבר נמצא בקבוצת ${toGroup.name}.`,
-    };
-  }
-
-  const client =
-    await pool.connect();
+  const client = await pool.connect();
+  let finished = false;
 
   try {
-    await client.query(
-      "BEGIN"
+    await client.query("BEGIN");
+
+    await removeFromScope(
+      from.scope,
+      source,
+      client
     );
 
-    await client.query(
-      `
-        UPDATE trainees
-        SET
-          active = FALSE,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        sourceTrainee.id,
-      ]
+    const added = await addToScope(
+      to.scope,
+      source.name,
+      source.notes || null,
+      client
     );
 
-    let targetTrainee;
+    if (!added.success) {
+      await client.query("ROLLBACK");
+      finished = true;
 
-    if (
-      existingTarget
-    ) {
-      const reactivateResult =
-        await client.query(
-          `
-            UPDATE trainees
-            SET
-              active = TRUE,
-              notes = $2,
-              updated_at = NOW()
-            WHERE id = $1
-            RETURNING
-              id,
-              group_id,
-              name,
-              notes,
-              active
-          `,
-          [
-            existingTarget.id,
-            sourceTrainee.notes,
-          ]
-        );
-
-      targetTrainee =
-        reactivateResult.rows[0];
-    } else {
-      const insertResult =
-        await client.query(
-          `
-            INSERT INTO trainees (
-              group_id,
-              name,
-              notes,
-              active
-            )
-            VALUES (
-              $1,
-              $2,
-              $3,
-              TRUE
-            )
-            RETURNING
-              id,
-              group_id,
-              name,
-              notes,
-              active
-          `,
-          [
-            toGroup.id,
-            sourceTrainee.name,
-            sourceTrainee.notes,
-          ]
-        );
-
-      targetTrainee =
-        insertResult.rows[0];
+      return {
+        success: false,
+        code: "TRAINEE_ALREADY_IN_TARGET",
+        message: added.message,
+      };
     }
 
-    await client.query(
-      "COMMIT"
-    );
+    await client.query("COMMIT");
+    finished = true;
 
     return {
       success: true,
-
-      code:
-        "TRAINEE_MOVED",
-
-      fromGroup,
-      toGroup,
-
-      trainee:
-        targetTrainee,
-
-      message:
-        `✅ ${sourceTrainee.name} הועבר מקבוצת ${fromGroup.name} לקבוצת ${toGroup.name}.`,
+      code: "TRAINEE_MOVED",
+      fromGroup: from.scope.group,
+      toGroup: to.scope.group,
+      trainee: added.trainee,
+      message: `✅ ${source.name} הועבר/ה מ${scopeLabel(from.scope)} ל${scopeLabel(to.scope)}.`,
     };
   } catch (error) {
-    await client.query(
-      "ROLLBACK"
-    );
+    if (!finished) {
+      await client.query("ROLLBACK");
+    }
 
     throw error;
   } finally {
@@ -2393,11 +2738,13 @@ async function submitAttendance({
   groupName,
   presentNames,
   submittedByPhone,
+  dateOffsetDays = 0,
 }) {
   let group;
   let trainees;
   let slot = null;
   let teamContext = null;
+  let sessionInfo = null;
 
   /*
    * יום + שעה מפורשים של גלי הדר.
@@ -2436,9 +2783,15 @@ async function submitAttendance({
         groupName
       );
 
+    sessionInfo =
+      resolveSessionDate({
+        dayOfWeek:
+          requestedDayOfWeek,
+        dateOffsetDays,
+      });
+
     const dayOfWeek =
-      requestedDayOfWeek ||
-      getIsraelDayOfWeek();
+      sessionInfo.dayOfWeek;
 
     if (!dayOfWeek) {
       return {
@@ -2466,6 +2819,13 @@ async function submitAttendance({
         group.id
       );
   } else if (slot) {
+    sessionInfo =
+      resolveSessionDate({
+        dayOfWeek:
+          slot.dayOfWeek,
+        dateOffsetDays,
+      });
+
     group =
       await ensureGaliHadarAttendanceGroup(
         slot
@@ -2501,6 +2861,11 @@ async function submitAttendance({
 
     group =
       resolution.group;
+
+    sessionInfo =
+      resolveSessionDate({
+        dateOffsetDays,
+      });
 
     trainees =
       await getActiveTraineesByGroupId(
@@ -2592,7 +2957,7 @@ async function submitAttendance({
   }
 
   const sessionDate =
-    getIsraelDateString();
+    sessionInfo.sessionDate;
 
   const submittedBy =
     getStaffName(
@@ -2899,6 +3264,13 @@ module.exports = {
   getStaffName,
 
   getIsraelDateString,
+  getIsraelDayOfWeek,
+  resolveSessionDate,
+  getDayOfWeekFromText,
+  getTeamLabelFromGroupName,
+  parseSlotsTarget,
+  isInternalAttendanceGroup,
+  findMatchingTrainee,
 
   normalizeGroupText,
   detectBranchFromText,

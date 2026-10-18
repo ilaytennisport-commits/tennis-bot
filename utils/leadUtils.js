@@ -1,22 +1,13 @@
+const {
+  chatIdToPhone,
+} = require("./whatsappIds");
+
+/*
+ * מחלץ טלפון רק משיחה פרטית עם מספר גלוי.
+ * קבוצות ומזהי lid מחזירים null.
+ */
 function whatsappIdToPhone(userId) {
-  const rawId = String(userId || "");
-
-  const phoneMatch =
-    rawId.match(/(?:972|0)?5\d{8}/);
-
-  if (!phoneMatch) {
-    return null;
-  }
-
-  let phone = phoneMatch[0];
-
-  if (phone.startsWith("972")) {
-    phone = `0${phone.slice(3)}`;
-  } else if (phone.startsWith("5")) {
-    phone = `0${phone}`;
-  }
-
-  return phone;
+  return chatIdToPhone(userId);
 }
 
 function extractUserDetails(
@@ -117,7 +108,7 @@ function extractUserDetails(
       "ראשון לציון"
     ) ||
     normalizedMessage.includes(
-      "רמז"
+      "רמז 96"
     )
   ) {
     updates.branch =
@@ -167,8 +158,8 @@ function extractUserDetails(
     updates.goal =
       "הרשמה לחוג";
   } else if (
-    normalizedMessage.includes(
-      "ניסיון"
+    /(?:אימון|שיעור)\s+נ(?:י)?סיון/.test(
+      normalizedMessage
     )
   ) {
     updates.goal =
@@ -290,17 +281,27 @@ function getMissingLeadFields(
 }
 
 function formatLeadSummary(user) {
-  return [
+  const lines = [
     "תודה! קיבלתי את הפרטים 😊",
     "",
     `שם: ${user.name}`,
     `גיל: ${user.age}`,
     `סניף: ${user.branch}`,
     `טלפון: ${user.phone}`,
-    `תחום התעניינות: ${user.goal}`,
+  ];
+
+  if (user.goal) {
+    lines.push(
+      `תחום התעניינות: ${user.goal}`
+    );
+  }
+
+  lines.push(
     "",
-    "הפרטים נשמרו להמשך טיפול. צוות האקדמיה יבדוק את האפשרות המתאימה ויחזור אליכם.",
-  ].join("\n");
+    "הפרטים הועברו לצוות האקדמיה, ונחזור אליכם בהקדם."
+  );
+
+  return lines.join("\n");
 }
 
 module.exports = {

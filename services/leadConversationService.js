@@ -1,11 +1,43 @@
-function hasValue(value) {
+const {
+  hasValue,
+  looksLikeQuestion,
+} = require("../utils/text");
+
+const {
+  QUESTIONS,
+  askedQuestion,
+  buildBranchQuestion,
+} = require("../prompts/questionTexts");
+
+/*
+ * =========================================================
+ * הגדרת ליד מלא — מקור אמת אחד לכל הבוט
+ * =========================================================
+ *
+ * ליד מלא = שם + גיל + סניף + טלפון.
+ * הטלפון נלקח אוטומטית מ-WhatsApp, ונשאל רק כאשר
+ * המספר מוסתר (מזהה lid).
+ */
+const LEAD_STEPS = [
+  "name",
+  "age",
+  "branch",
+  "phone",
+];
+
+function getNextMissingStep(
+  profile = {}
+) {
   return (
-    value !== undefined &&
-    value !== null &&
-    String(value).trim() !== ""
+    LEAD_STEPS.find(
+      (step) => !hasValue(profile[step])
+    ) || null
   );
 }
 
+function isLeadComplete(profile = {}) {
+  return getNextMissingStep(profile) === null;
+}
 
 function getLastAssistantMessage(
   conversationHistory = []
@@ -21,74 +53,49 @@ function getLastAssistantMessage(
   );
 }
 
-
-function isNameQuestion(message = "") {
-  return (
-    message.includes(
-      "מה שם המתאמן או המתאמנת?"
-    ) ||
-    message.includes(
-      "מה שם הילד או הילדה?"
-    )
-  );
-}
-
-
-function isAgeQuestion(message = "") {
-  return (
-    message.includes(
-      "מה גיל המתאמן או המתאמנת?"
-    ) ||
-    message.includes(
-      "מה גיל הילד או הילדה?"
-    )
-  );
-}
-
-
-function isBranchQuestion(message = "") {
-  return (
-    message.includes(
-      "באיזה סניף אתם מעוניינים?"
-    ) ||
-    message.includes(
-      "באיזה סניף תרצו להתאמן?"
-    )
-  );
-}
-
-
 /*
- * מזהה שהלקוח שאל שאלה
- * במקום לענות לפרט שהבוט ביקש.
- *
- * לדוגמה:
- * "באיזה ימים יש אימונים?"
- * "כמה זה עולה?"
- * "יש חניה?"
+ * מחזיר איזה פרט ליד הבוט שאל עליו לאחרונה.
  */
-function looksLikeQuestion(
-  message = ""
+function getAskedLeadStep(
+  assistantMessage = ""
 ) {
-  const text = String(message)
-    .trim()
-    .toLowerCase();
-
-  if (!text) {
-    return false;
+  if (askedQuestion(assistantMessage, "leadName")) {
+    return "name";
   }
 
-  if (text.includes("?")) {
-    return true;
+  if (askedQuestion(assistantMessage, "leadAge")) {
+    return "age";
   }
 
-  return (
-    /^(מה|מתי|איפה|איפוא|איך|כמה|איזה|איזו|אילו|האם|למה|באיזה|באיזו|יש |אפשר |ניתן |עד מתי|מאיזה|לאיזה|איפה יש)/.test(
-      text
-    )
-  );
+  if (askedQuestion(assistantMessage, "leadBranch")) {
+    return "branch";
+  }
+
+  if (askedQuestion(assistantMessage, "leadPhone")) {
+    return "phone";
+  }
+
+  return null;
 }
 
+function getQuestionForStep(step) {
+  switch (step) {
+    case "name":
+      return QUESTIONS.leadName;
+
+    case "age":
+      return QUESTIONS.leadAge;
+
+    case "branch":
+      return buildBranchQuestion();
+
+    case "phone":
+      return QUESTIONS.leadPhone;
+
+    default:
+      return null;
+  }
+}
 
 /*
  * בדיקה בסיסית שהטקסט באמת
@@ -97,25 +104,19 @@ function looksLikeQuestion(
 function normalizeName(
   message = ""
 ) {
-  let name = String(message)
+  const name = String(message)
     .trim()
     .replace(
-      /^(קוראים לי|קוראים לו|קוראים לה|השם הוא|השם שלו|השם שלה|שמי)\s+/,
+      /^(קוראים לי|קוראים לו|קוראים לה|השם הוא|השם שלו|השם שלה|השם שלי|שמי|שמו|שמה)\s+/,
       ""
     )
+    .replace(/[.!,]+$/, "")
     .trim();
 
-  /*
-   * לא שומרים שאלות בתור שם.
-   */
   if (looksLikeQuestion(name)) {
     return null;
   }
 
-  /*
-   * לא שומרים משפטים ארוכים מאוד
-   * בתור שם.
-   */
   if (
     name.length < 2 ||
     name.length > 40
@@ -123,10 +124,10 @@ function normalizeName(
     return null;
   }
 
-  /*
-   * שם לא אמור להכיל הרבה מילים.
-   * מאפשר גם שם + שם משפחה.
-   */
+  if (/\d/.test(name)) {
+    return null;
+  }
+
   const words =
     name
       .split(/\s+/)
@@ -151,7 +152,6 @@ function normalizeName(
   return name;
 }
 
-
 function normalizeBranch(
   message = ""
 ) {
@@ -163,6 +163,7 @@ function normalizeBranch(
     text.includes("גלי הדר") ||
     text.includes("ראשון לציון") ||
     text === "ראשון" ||
+    text === "גלי" ||
     text.includes("רמז 96")
   ) {
     return "גלי הדר – ראשון לציון";
@@ -178,25 +179,50 @@ function normalizeBranch(
   return null;
 }
 
+function normalizeAge(message = "") {
+  const ageMatch =
+    String(message).match(/\d{1,2}/);
 
-function getNextMissingStep(
-  profile = {}
+  const age = ageMatch
+    ? Number(ageMatch[0])
+    : null;
+
+  if (
+    !Number.isInteger(age) ||
+    age < 4 ||
+    age > 99
+  ) {
+    return null;
+  }
+
+  return age;
+}
+
+function normalizePhoneAnswer(
+  message = ""
 ) {
-  if (!hasValue(profile.name)) {
-    return "name";
+  const digits = String(message).replace(
+    /[^\d+]/g,
+    ""
+  );
+
+  if (/^(?:\+972|972)5\d{8}$/.test(digits)) {
+    return `0${digits.replace(/^\+?972/, "")}`;
   }
 
-  if (!hasValue(profile.age)) {
-    return "age";
+  if (/^05\d{8}$/.test(digits)) {
+    return digits;
   }
 
-  if (!hasValue(profile.branch)) {
-    return "branch";
+  if (/^0[2-9]\d{7}$/.test(digits)) {
+    return digits;
   }
 
   return null;
 }
 
+const COMPLETED_REPLY =
+  "תודה 😊\n\nהפרטים הועברו לצוות האקדמיה, ונחזור אליכם בהקדם.";
 
 function buildNextQuestion(
   profile = {}
@@ -204,42 +230,44 @@ function buildNextQuestion(
   const nextStep =
     getNextMissingStep(profile);
 
-  if (nextStep === "name") {
+  if (!nextStep) {
     return {
-      reply:
-        "בשמחה 😊\n\nמה שם המתאמן או המתאמנת?",
-      completed: false,
+      reply: COMPLETED_REPLY,
+      completed: true,
     };
   }
 
-  if (nextStep === "age") {
-    return {
-      reply:
-        "תודה 😊\n\nמה גיל המתאמן או המתאמנת?",
-      completed: false,
-    };
-  }
-
-  if (nextStep === "branch") {
-    return {
-      reply: [
-        "תודה 😊",
-        "",
-        "באיזה סניף תרצו להתאמן?",
-        "• גלי הדר – ראשון לציון",
-        "• בית חשמונאי",
-      ].join("\n"),
-      completed: false,
-    };
-  }
+  const opener =
+    nextStep === "name"
+      ? "בשמחה 😊"
+      : "תודה 😊";
 
   return {
-    reply:
-      "תודה 😊\n\nהפרטים נאספו להמשך טיפול. צוות האקדמיה יבדוק את האפשרות המתאימה ויחזור אליכם.",
-    completed: true,
+    reply: `${opener}\n\n${getQuestionForStep(
+      nextStep
+    )}`,
+    completed: false,
   };
 }
 
+const INVALID_ANSWER_REPLIES = {
+  name: "אשמח לקבל את שם המתאמן או המתאמנת.",
+  age: `${QUESTIONS.leadAge} אפשר לכתוב את הגיל במספרים.`,
+  branch: [
+    "איזה סניף מתאים לכם?",
+    "• גלי הדר – ראשון לציון",
+    "• בית חשמונאי",
+  ].join("\n"),
+  phone:
+    "אפשר לכתוב מספר טלפון בפורמט 05XXXXXXXX 😊",
+};
+
+const NORMALIZERS = {
+  name: normalizeName,
+  age: normalizeAge,
+  branch: normalizeBranch,
+  phone: normalizePhoneAnswer,
+};
 
 function getLeadContinuation({
   userMessage = "",
@@ -249,175 +277,58 @@ function getLeadContinuation({
   const text = String(userMessage)
     .trim();
 
-  const lastAssistantMessage =
+  const step = getAskedLeadStep(
     getLastAssistantMessage(
       conversationHistory
-    );
+    )
+  );
 
+  if (!step) {
+    return null;
+  }
 
   /*
-   * תשובה לשאלת השם.
+   * שאלה באמצע איסוף הליד —
+   * ה-router יענה עליה ויחזור לשאלה.
    */
-  if (
-    isNameQuestion(
-      lastAssistantMessage
-    )
-  ) {
-    /*
-     * אם הלקוח שאל שאלה במקום לתת שם,
-     * לא מטפלים בזה כליד.
-     * ה-router ייתן ל-FAQ לטפל בה.
-     */
-    if (looksLikeQuestion(text)) {
-      return null;
-    }
+  if (looksLikeQuestion(text)) {
+    return null;
+  }
 
-    const name =
-      normalizeName(text);
+  const value = NORMALIZERS[step](text);
 
-    if (!name) {
-      return {
-        reply:
-          "אשמח לקבל את שם המתאמן או המתאמנת.",
-        updates: {},
-        completed: false,
-      };
-    }
-
-    const nextProfile = {
-      ...userProfile,
-      name,
-    };
-
-    const next =
-      buildNextQuestion(
-        nextProfile
-      );
-
+  if (value === null) {
     return {
-      updates: {
-        name,
-      },
-      reply: next.reply,
-      completed:
-        next.completed,
+      reply: INVALID_ANSWER_REPLIES[step],
+      updates: {},
+      completed: false,
     };
   }
 
+  const next = buildNextQuestion({
+    ...userProfile,
+    [step]: value,
+  });
 
-  /*
-   * תשובה לשאלת הגיל.
-   */
-  if (
-    isAgeQuestion(
-      lastAssistantMessage
-    )
-  ) {
-    /*
-     * שאלה באמצע איסוף הליד
-     * לא נחשבת לגיל.
-     */
-    if (looksLikeQuestion(text)) {
-      return null;
-    }
-
-    const ageMatch =
-      text.match(/\d{1,2}/);
-
-    const age = ageMatch
-      ? Number(ageMatch[0])
-      : null;
-
-    if (
-      !Number.isInteger(age) ||
-      age < 4 ||
-      age > 99
-    ) {
-      return {
-        reply:
-          "מה גיל המתאמן או המתאמנת? אפשר לכתוב את הגיל במספרים.",
-        updates: {},
-        completed: false,
-      };
-    }
-
-    const nextProfile = {
-      ...userProfile,
-      age,
-    };
-
-    const next =
-      buildNextQuestion(
-        nextProfile
-      );
-
-    return {
-      updates: {
-        age,
-      },
-      reply: next.reply,
-      completed:
-        next.completed,
-    };
-  }
-
-
-  /*
-   * תשובה לשאלת הסניף.
-   */
-  if (
-    isBranchQuestion(
-      lastAssistantMessage
-    )
-  ) {
-    /*
-     * אם זו שאלת ביניים,
-     * נותנים ל-router לטפל בה.
-     */
-    if (looksLikeQuestion(text)) {
-      return null;
-    }
-
-    const branch =
-      normalizeBranch(text);
-
-    if (!branch) {
-      return {
-        reply: [
-          "איזה סניף מתאים לכם?",
-          "• גלי הדר – ראשון לציון",
-          "• בית חשמונאי",
-        ].join("\n"),
-        updates: {},
-        completed: false,
-      };
-    }
-
-    const nextProfile = {
-      ...userProfile,
-      branch,
-    };
-
-    const next =
-      buildNextQuestion(
-        nextProfile
-      );
-
-    return {
-      updates: {
-        branch,
-      },
-      reply: next.reply,
-      completed:
-        next.completed,
-    };
-  }
-
-
-  return null;
+  return {
+    updates: {
+      [step]: value,
+    },
+    reply: next.reply,
+    completed: next.completed,
+  };
 }
 
-
 module.exports = {
+  LEAD_STEPS,
+  getNextMissingStep,
+  isLeadComplete,
+  getAskedLeadStep,
+  getQuestionForStep,
+  buildNextQuestion,
   getLeadContinuation,
+  normalizeName,
+  normalizeBranch,
+  normalizePhoneAnswer,
+  COMPLETED_REPLY,
 };

@@ -6,6 +6,14 @@ const {
   saveUser,
 } = require("../prompts/memory/usermemory");
 
+const { hasValue } = require("../utils/text");
+
+/*
+ * מטרת פנייה ברירת מחדל כאשר הליד הושלם
+ * בלי שנקבעה מטרה — כדי שהליד יישלח למנהל.
+ */
+const DEFAULT_LEAD_GOAL = "פנייה כללית";
+
 async function createReply({
   userId,
   userMessage,
@@ -28,22 +36,27 @@ async function createReply({
     `🧠 Reply Source: ${result.source}`
   );
 
-  const updates =
-    result.updates || {};
+  const updates = {
+    ...(result.updates || {}),
+  };
+
+  if (
+    result.completed &&
+    !hasValue(updatedUser.goal) &&
+    !hasValue(updates.goal)
+  ) {
+    updates.goal = DEFAULT_LEAD_GOAL;
+  }
 
   if (
     userId &&
     Object.keys(updates).length > 0
   ) {
-    const savedUser =
-      await saveUser(
-        userId,
-        updates
-      );
+    await saveUser(userId, updates);
 
     console.log(
-      "💾 פרטי ההרשמה נשמרו:",
-      savedUser
+      "💾 פרטי הלקוח עודכנו:",
+      Object.keys(updates)
     );
   }
 
@@ -52,4 +65,5 @@ async function createReply({
 
 module.exports = {
   createReply,
+  DEFAULT_LEAD_GOAL,
 };

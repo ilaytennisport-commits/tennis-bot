@@ -9,6 +9,9 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString:
     process.env.DATABASE_URL,
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 10,
 });
 
 pool.on(
@@ -124,6 +127,82 @@ async function initializeDatabase() {
       user_id,
       created_at DESC
     )
+  `);
+
+  /*
+   * =========================================================
+   * העברה לנציג אנושי + הודעה ראשונה שממתינה למענה
+   * =========================================================
+   */
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS bot_paused_until TIMESTAMPTZ
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS pending_message TEXT
+  `);
+
+  /*
+   * =========================================================
+   * לידים — כל ליד נשמר, ונשלח שוב אם השליחה נכשלה
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id BIGSERIAL PRIMARY KEY,
+
+      user_id TEXT NOT NULL,
+
+      kind TEXT NOT NULL DEFAULT 'regular',
+
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (
+          status IN (
+            'pending',
+            'sent',
+            'failed'
+          )
+        ),
+
+      message TEXT NOT NULL,
+
+      details JSONB NOT NULL DEFAULT '{}'::JSONB,
+
+      attempts INTEGER NOT NULL DEFAULT 0,
+
+      last_error TEXT,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_leads_status
+    ON leads(status, created_at)
+  `);
+
+  /*
+   * =========================================================
+   * הגנה מטיפול כפול באותה הודעה (גם אחרי הפעלה מחדש)
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      message_id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_processed_messages_created
+    ON processed_messages(created_at)
   `);
 
   /*
@@ -344,10 +423,7 @@ async function initializeDatabase() {
         'גלי הדר – ראשון לציון'
       )
     ON CONFLICT (name)
-    DO UPDATE SET
-      branch = EXCLUDED.branch,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -387,10 +463,7 @@ async function initializeDatabase() {
         'בית חשמונאי'
       )
     ON CONFLICT (name)
-    DO UPDATE SET
-      branch = EXCLUDED.branch,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -776,10 +849,7 @@ async function initializeDatabase() {
       start_time,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -867,10 +937,7 @@ async function initializeDatabase() {
       branch,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -906,10 +973,7 @@ async function initializeDatabase() {
       start_time,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -942,10 +1006,7 @@ async function initializeDatabase() {
       start_time,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -983,10 +1044,7 @@ async function initializeDatabase() {
       start_time,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*
@@ -1045,10 +1103,7 @@ async function initializeDatabase() {
       start_time,
       group_label
     )
-    DO UPDATE SET
-      notes = EXCLUDED.notes,
-      active = TRUE,
-      updated_at = NOW()
+    DO NOTHING
   `);
 
   /*

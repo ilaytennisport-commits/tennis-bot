@@ -25,6 +25,19 @@ const formatPriceList = (items) =>
     )
     .join("\n");
 
+/*
+ * מחיר מתוך המחירון בבסיס הידע, כדי שלא יהיו שני מחירים שונים.
+ */
+function getAdultPriceText(label) {
+  const item = academy.pricing.adults.find(
+    (entry) => entry.label === label
+  );
+
+  return item
+    ? `${item.label} למבוגר עולה ${formatPrice(item.price)} ש"ח`
+    : "המחיר יימסר על ידי צוות האקדמיה";
+}
+
 function hasValue(value) {
   return (
     value !== undefined &&
@@ -72,7 +85,7 @@ function getFaqResponse(
       if (
         context.audience === "adult"
       ) {
-        return `כן, יש אצלנו אימונים אישיים. אימון אישי של 60 דקות למבוגר עולה 250 ש"ח.`;
+        return `כן, יש אצלנו אימונים אישיים. ${getAdultPriceText("אימון אישי של 60 דקות")}.`;
       }
 
       if (
@@ -81,7 +94,7 @@ function getFaqResponse(
         return `יש אפשרות לבדוק התאמה לאימון אישי גם לילדים ולנוער, לפי גיל ומטרה.`;
       }
 
-      return `כן, יש אצלנו אימונים אישיים. אימון אישי של 60 דקות למבוגר עולה 250 ש"ח. למי מיועד האימון?`;
+      return `כן, יש אצלנו אימונים אישיים. ${getAdultPriceText("אימון אישי של 60 דקות")}. למי מיועד האימון?`;
 
     case "adults":
       return [
@@ -91,8 +104,8 @@ function getFaqResponse(
         hasValue(profile.experience)
           ? profile.experience ===
             "beginner"
-            ? "לפי מה שכבר ציינת, מדובר במתחיל."
-            : "לפי מה שכבר ציינת, כבר יש ניסיון קודם."
+            ? "לפי מה שכבר ציינתם, מדובר בהתחלה מאפס."
+            : "לפי מה שכבר ציינתם, כבר יש ניסיון קודם."
           : "איזו מסגרת מעניינת אותך?"
       ].join("\n");
 
@@ -127,7 +140,7 @@ function getFaqResponse(
         return `${academy.trialLessons.children.description} מה גיל הילד או הילדה?`;
       }
 
-      return `יש אימוני ניסיון לילדים ולמבוגרים. לילדים האימון ללא עלות, ולמבוגרים בעלות של 50 ש"ח. האימון מתקיים כחלק מקבוצה קיימת. האם מדובר בילד או במבוגר?`;
+      return `יש אימוני ניסיון לילדים ולמבוגרים. לילדים האימון ללא עלות, ולמבוגרים בעלות של ${academy.trialLessons.adults.price} ש"ח. האימון מתקיים כחלק מקבוצה קיימת. האם מדובר בילד או במבוגר?`;
     }
 
     case "pricing": {
@@ -180,8 +193,8 @@ function getFaqResponse(
             "",
             profile.experience ===
               "beginner"
-              ? "לפי מה שכבר ציינת, אתה מתחיל, ולכן אפשר להתמקד במסלולים שמתאימים למתחילים."
-              : "לפי מה שכבר ציינת, יש לך ניסיון קודם, ולכן אפשר להתאים מסגרת לפי הרמה והמטרה."
+              ? "לפי מה שכבר ציינתם, מדובר בהתחלה מאפס, ולכן אפשר להתמקד במסלולים שמתאימים למתחילים."
+              : "לפי מה שכבר ציינתם, יש ניסיון קודם, ולכן אפשר להתאים מסגרת לפי הרמה והמטרה."
           );
         } else {
           priceList.push(

@@ -210,6 +210,13 @@ function getMissingSpecialField(user = {}) {
     return "experience";
   }
 
+  /*
+   * טלפון נשאל רק כשהמספר מוסתר ב-WhatsApp.
+   */
+  if (!hasValue(user.phone)) {
+    return "phone";
+  }
+
   return null;
 }
 
@@ -229,6 +236,9 @@ function getQuestionForField(field) {
         "מה הניסיון בטניס עד היום?",
         'אם אין ניסיון קודם, אפשר פשוט לכתוב "ללא ניסיון".',
       ].join("\n");
+
+    case "phone":
+      return "לאיזה מספר טלפון נוכל לחזור אליכם?";
 
     default:
       return null;

@@ -1,8 +1,21 @@
 const { pool } = require("./databaseService");
 
-const MAX_MESSAGES = 12;
+/*
+ * כמה הודעות שומרים לכל לקוח
+ * (כדי שהמנהל יקבל את השיחה המלאה בליד).
+ */
+const MAX_STORED_MESSAGES = 40;
 
-async function getConversation(userId) {
+/*
+ * כמה הודעות אחרונות משמשות להבנת ההקשר
+ * ולשליחה ל-OpenAI.
+ */
+const CONTEXT_MESSAGES = 12;
+
+async function getConversation(
+  userId,
+  limit = CONTEXT_MESSAGES
+) {
   if (!userId) {
     return [];
   }
@@ -15,10 +28,17 @@ async function getConversation(userId) {
       ORDER BY created_at DESC, id DESC
       LIMIT $2
     `,
-    [userId, MAX_MESSAGES]
+    [userId, limit]
   );
 
   return result.rows.reverse();
+}
+
+async function getFullConversation(userId) {
+  return getConversation(
+    userId,
+    MAX_STORED_MESSAGES
+  );
 }
 
 async function addMessage(userId, role, content) {
@@ -50,7 +70,7 @@ async function addMessage(userId, role, content) {
           LIMIT $2
         )
     `,
-    [userId, MAX_MESSAGES]
+    [userId, MAX_STORED_MESSAGES]
   );
 }
 
@@ -69,7 +89,10 @@ async function clearConversation(userId) {
 }
 
 module.exports = {
+  MAX_STORED_MESSAGES,
+  CONTEXT_MESSAGES,
   getConversation,
+  getFullConversation,
   addMessage,
   clearConversation,
 };

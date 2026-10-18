@@ -1,5 +1,8 @@
 const {
   getLeadContinuation,
+  getAskedLeadStep,
+  getQuestionForStep,
+  buildNextQuestion,
 } = require("./leadConversationService");
 
 const {
@@ -27,15 +30,30 @@ const {
   generateReply,
 } = require("./openaiService");
 
+const {
+  hasValue,
+  looksLikeQuestion,
+} = require("../utils/text");
 
-function hasValue(value) {
-  return (
-    value !== undefined &&
-    value !== null &&
-    String(value).trim() !== ""
-  );
-}
+const {
+  QUESTIONS,
+  askedQuestion,
+  buildBranchQuestion,
+} = require("../prompts/questionTexts");
 
+const academy = require("../knowledge/academyKnowledge");
+
+/*
+ * מטרת פנייה ברירת מחדל לפי סוג הכניסה לליד.
+ * בלי מטרה הליד לא נשלח למנהל, ולכן כל כניסה
+ * למסלול הליד חייבת לקבוע מטרה.
+ */
+const LEAD_GOALS = {
+  callback: "בקשה לחזרה מנציג",
+  lead: "הרשמה",
+  trial: "שיעור ניסיון",
+  anotherTrainee: "הרשמה – מתאמן נוסף",
+};
 
 function getLastAssistantMessage(
   conversationHistory = []
@@ -51,69 +69,27 @@ function getLastAssistantMessage(
   );
 }
 
-
 /*
  * מחזיר את שאלת הליד שכרגע ממתינה לתשובה.
  */
 function getPendingLeadQuestion(
   conversationHistory = []
 ) {
-  const lastAssistantMessage =
+  const step = getAskedLeadStep(
     getLastAssistantMessage(
       conversationHistory
-    );
-
-  if (
-    lastAssistantMessage.includes(
-      "מה שם המתאמן או המתאמנת?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה שם הילד או הילדה?"
     )
-  ) {
-    return {
-      type: "name",
-      reply:
-        "מה שם המתאמן או המתאמנת?",
-    };
+  );
+
+  if (!step) {
+    return null;
   }
 
-  if (
-    lastAssistantMessage.includes(
-      "מה גיל המתאמן או המתאמנת?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה גיל הילד או הילדה?"
-    )
-  ) {
-    return {
-      type: "age",
-      reply:
-        "מה גיל המתאמן או המתאמנת?",
-    };
-  }
-
-  if (
-    lastAssistantMessage.includes(
-      "באיזה סניף אתם מעוניינים?"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף תרצו להתאמן?"
-    )
-  ) {
-    return {
-      type: "branch",
-      reply: [
-        "באיזה סניף תרצו להתאמן?",
-        "• גלי הדר – ראשון לציון",
-        "• בית חשמונאי",
-      ].join("\n"),
-    };
-  }
-
-  return null;
+  return {
+    type: step,
+    reply: getQuestionForStep(step),
+  };
 }
-
 
 /*
  * האם הבוט הציע אימון ניסיון לאחרונה.
@@ -121,11 +97,9 @@ function getPendingLeadQuestion(
 function hasRecentTrialOffer(
   conversationHistory = []
 ) {
-  const recentMessages =
-    conversationHistory.slice(-16);
-
-  return recentMessages.some(
-    (message) => {
+  return conversationHistory
+    .slice(-16)
+    .some((message) => {
       if (
         message?.role !== "assistant" ||
         typeof message.content !== "string"
@@ -133,16 +107,10 @@ function hasRecentTrialOffer(
         return false;
       }
 
-      const text =
-        message.content.toLowerCase();
+      const text = message.content;
 
       return (
-        text.includes(
-          "תרצו שאעזור להתקדם עם אימון ניסיון"
-        ) ||
-        text.includes(
-          "תרצה שאעזור להתקדם עם אימון ניסיון"
-        ) ||
+        askedQuestion(text, "trialOffer") ||
         (
           text.includes("אימון ניסיון") &&
           (
@@ -152,10 +120,8 @@ function hasRecentTrialOffer(
           )
         )
       );
-    }
-  );
+    });
 }
-
 
 function hasRecentLeadIntent(
   conversationHistory = []
@@ -179,15 +145,12 @@ function hasRecentLeadIntent(
       continue;
     }
 
-    const detected =
-      detectConversationIntent(
-        message.content,
-        {}
-      );
-
     if (
       shouldStartLeadFlow(
-        detected
+        detectConversationIntent(
+          message.content,
+          {}
+        )
       )
     ) {
       return true;
@@ -196,45 +159,6 @@ function hasRecentLeadIntent(
 
   return false;
 }
-
-
-function hasActiveLeadQuestion(
-  conversationHistory = []
-) {
-  return Boolean(
-    getPendingLeadQuestion(
-      conversationHistory
-    )
-  );
-}
-
-
-/*
- * מזהה אם הלקוח שאל שאלה
- * במקום לענות על פרט הליד.
- */
-function looksLikeQuestion(
-  message = ""
-) {
-  const text = String(message)
-    .trim()
-    .toLowerCase();
-
-  if (!text) {
-    return false;
-  }
-
-  if (text.includes("?")) {
-    return true;
-  }
-
-  return (
-    /^(מה|מתי|איפה|איפוא|איך|כמה|איזה|איזו|אילו|האם|למה|באיזה|באיזו|יש |אפשר |ניתן |עד מתי|מאיזה|לאיזה)/.test(
-      text
-    )
-  );
-}
-
 
 /*
  * בקשה מפורשת להתקדם עם ניסיון.
@@ -259,25 +183,20 @@ function isExplicitTrialProgression(
     return false;
   }
 
+  const wantsToProceed =
+    /רוצה|רוצים|מעוניין|מעוניינת|מעוניינים|נתקדם|להתקדם|לקבוע|בוא נתקדם|יאללה|קדימה|(?:^|\s)כן(?:\s|$|,)|אשמח|נשמח/;
+
   const asksOnlyInformation =
     /כמה עולה|מה המחיר|מחיר|עלות|מתי|באיזה שעה|איפה|כמה זמן/.test(
       text
-    ) &&
-    !/רוצה|מעוניין|מעוניינת|נתקדם|להתקדם|לקבוע|לקבוע לי|בוא נתקדם|יאללה|קדימה|כן|אשמח/.test(
-      text
-    );
+    ) && !wantsToProceed.test(text);
 
   if (asksOnlyInformation) {
     return false;
   }
 
-  return (
-    /רוצה|מעוניין|מעוניינת|נתקדם|להתקדם|לקבוע|בוא נתקדם|יאללה|קדימה|כן|אשמח/.test(
-      text
-    )
-  );
+  return wantsToProceed.test(text);
 }
-
 
 /*
  * חזרה למסלול הניסיון לאחר סטייה.
@@ -305,24 +224,30 @@ function isRecentTrialProgression({
   );
 }
 
+const CONFIRMATIONS = new Set([
+  "כן",
+  "כן בטח",
+  "כן בבקשה",
+  "כן תודה",
+  "בטח",
+  "בהחלט",
+  "יאללה",
+  "קדימה",
+  "מעולה",
+  "סבבה",
+  "אשמח",
+  "נשמח",
+  "בשמחה",
+]);
 
 function isTrialConfirmation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const text = String(userMessage)
-    .toLowerCase()
-    .trim();
-
   if (
     isExplicitTrialProgression(
       userMessage
-    )
-  ) {
-    return true;
-  }
-
-  if (
+    ) ||
     isRecentTrialProgression({
       userMessage,
       conversationHistory,
@@ -331,36 +256,22 @@ function isTrialConfirmation({
     return true;
   }
 
-  const confirmations = new Set([
-    "כן",
-    "כן בטח",
-    "בטח",
-    "בהחלט",
-    "יאללה",
-    "קדימה",
-    "מעולה",
-    "סבבה",
-  ]);
+  const text = String(userMessage)
+    .toLowerCase()
+    .replace(/[!.,😊🙂👍🙏]+/gu, "")
+    .trim();
 
-  if (!confirmations.has(text)) {
+  if (!CONFIRMATIONS.has(text)) {
     return false;
   }
 
-  const lastAssistantMessage =
+  return askedQuestion(
     getLastAssistantMessage(
       conversationHistory
-    );
-
-  return (
-    lastAssistantMessage.includes(
-      "תרצו שאעזור להתקדם עם אימון ניסיון"
-    ) ||
-    lastAssistantMessage.includes(
-      "תרצה שאעזור להתקדם עם אימון ניסיון"
-    )
+    ),
+    "trialOffer"
   );
 }
-
 
 /*
  * תשובה לשאלת גיל במסלול המלצה.
@@ -369,24 +280,18 @@ function isRecommendationAgeContinuation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const text = String(userMessage)
-    .trim();
-
   const ageMatch =
-    text.match(/^\d{1,2}$/);
+    String(userMessage)
+      .trim()
+      .match(/^\d{1,2}$/);
 
   if (!ageMatch) {
     return false;
   }
 
-  const age =
-    Number(ageMatch[0]);
+  const age = Number(ageMatch[0]);
 
-  if (
-    !Number.isInteger(age) ||
-    age < 4 ||
-    age > 99
-  ) {
+  if (age < 4 || age > 99) {
     return false;
   }
 
@@ -396,18 +301,16 @@ function isRecommendationAgeContinuation({
     );
 
   return (
-    lastAssistantMessage.includes(
-      "בן או בת כמה המתאמן או המתאמנת?"
+    askedQuestion(
+      lastAssistantMessage,
+      "recommendAge"
     ) ||
-    lastAssistantMessage.includes(
-      "מה גיל המתאמן או המתאמנת?"
-    ) ||
-    lastAssistantMessage.includes(
-      "מה גיל הילד או הילדה?"
+    askedQuestion(
+      lastAssistantMessage,
+      "leadAge"
     )
   );
 }
-
 
 /*
  * תשובה לשאלה האם מתחיל או מנוסה.
@@ -420,28 +323,20 @@ function isRecommendationContinuation({
     .toLowerCase()
     .trim();
 
+  const isExperienceAnswer =
+    /מתחיל|מתחילה|מתחילים|מאפס|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא|מעולם לא|בלי ניסיון|אין ניסיון|אין לי ניסיון|אין לו ניסיון|אין לה ניסיון|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחק|כבר שיחקה|כבר שיחקתי|כבר משחק|כבר משחקת|משחק טניס|משחקת טניס|משחק כבר|משחקת כבר|שיחק טניס|שיחקה טניס|שיחקתי טניס|יש ניסיון|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|ניסיון קודם|(?:^|\s)כן(?:\s|$)|(?:^|\s)לא(?:\s|$)|שנה|שנתיים|שנים|חודשים|חודש|רמה טובה|ברמה טובה|ברמה די טובה|מתקדם|מתקדמת|מנוסה/.test(
+      text
+    );
+
   const lastAssistantMessage =
     getLastAssistantMessage(
       conversationHistory
     );
 
-  const isExperienceAnswer =
-    /מתחיל|מתחילה|חדש|חדשה|פעם ראשונה|לא שיחק|לא שיחקה|לא שיחקתי|אף פעם לא|מעולם לא|בלי ניסיון|אין לי ניסיון|אין לו ניסיון|אין לה ניסיון|שיחק בעבר|שיחקה בעבר|שיחקתי בעבר|כבר שיחק|כבר שיחקה|כבר שיחקתי|כבר משחק|כבר משחקת|משחק טניס|משחקת טניס|משחק כבר|משחקת כבר|שיחק טניס|שיחקה טניס|שיחקתי טניס|יש לי ניסיון|יש לו ניסיון|יש לה ניסיון|ניסיון קודם|שנה|שנתיים|שנים|חודשים|חודש|רמה טובה|ברמה טובה|ברמה די טובה|מתקדם|מתקדמת|מנוסה/.test(
-      text
-    );
-
   const assistantAskedExperience =
-    lastAssistantMessage.includes(
-      "מתחיל לגמרי"
-    ) ||
-    lastAssistantMessage.includes(
-      "כבר שיחק בעבר"
-    ) ||
-    lastAssistantMessage.includes(
-      "כבר שיחקה בעבר"
-    ) ||
-    lastAssistantMessage.includes(
-      "רמת הניסיון"
+    askedQuestion(
+      lastAssistantMessage,
+      "experience"
     ) ||
     (
       lastAssistantMessage.includes(
@@ -458,6 +353,29 @@ function isRecommendationContinuation({
   );
 }
 
+function getYesNoExperience(
+  userMessage = ""
+) {
+  const text = String(userMessage)
+    .replace(/[!.,😊🙂👍]+/gu, "")
+    .trim();
+
+  if (/^(כן|כן יש|יש|יש ניסיון|כן קצת|קצת)$/.test(text)) {
+    return {
+      text: "יש ניסיון קודם",
+      experience: "experienced",
+    };
+  }
+
+  if (/^(לא|אין|אין ניסיון|לא ממש|מאפס|מתחילים מאפס)$/.test(text)) {
+    return {
+      text: "מתחיל מאפס",
+      experience: "beginner",
+    };
+  }
+
+  return null;
+}
 
 function hasChildExperienceDetails(
   userMessage = ""
@@ -486,45 +404,31 @@ function hasChildExperienceDetails(
   );
 }
 
-
 function isAdultFormatContinuation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const text = String(userMessage)
-    .toLowerCase()
-    .trim();
-
-  const lastAssistantMessage =
-    getLastAssistantMessage(
-      conversationHistory
-    );
-
   const isFormatAnswer =
     /קבוצה|קבוצתי|קבוצתית|חוג|אישי|אישית|פרטי|פרטית|מאמן אישי/.test(
-      text
-    );
-
-  const assistantAskedFormat =
-    lastAssistantMessage.includes(
-      "אתה מעדיף קבוצה או מסגרת אישית יותר"
+      String(userMessage).toLowerCase()
     );
 
   return (
     isFormatAnswer &&
-    assistantAskedFormat
+    askedQuestion(
+      getLastAssistantMessage(
+        conversationHistory
+      ),
+      "adultFormat"
+    )
   );
 }
-
 
 function isChildExperienceDetailsContinuation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const text = String(userMessage)
-    .trim();
-
-  if (!text) {
+  if (!String(userMessage).trim()) {
     return false;
   }
 
@@ -535,32 +439,25 @@ function isChildExperienceDetailsContinuation({
 
   return (
     lastAssistantMessage.includes(
-      "כמה זמן הוא שיחק בעבר ובאיזו רמה בערך"
-    ) ||
-    (
-      lastAssistantMessage.includes(
-        "כמה זמן"
-      ) &&
-      lastAssistantMessage.includes(
-        "באיזו רמה"
-      )
+      "כמה זמן"
+    ) &&
+    lastAssistantMessage.includes(
+      "באיזו רמה"
     )
   );
 }
-
 
 function buildChildExperienceDetailsResponse() {
   return [
     "מעולה 😊",
     "",
-    "זה עוזר להבין טוב יותר את הרקע שלו. ההתאמה הסופית לקבוצה תיעשה לפי הרמה בפועל.",
+    "זה עוזר להבין טוב יותר את הרקע. ההתאמה הסופית לקבוצה תיעשה לפי הרמה בפועל.",
     "",
-    "באיזה סניף יהיה לכם הכי נוח להתאמן?",
-    "• גלי הדר – ראשון לציון",
-    "• בית חשמונאי",
+    buildBranchQuestion(
+      QUESTIONS.branchPreference
+    ),
   ].join("\n");
 }
-
 
 function normalizeGoal(
   message = ""
@@ -569,17 +466,11 @@ function normalizeGoal(
     .toLowerCase()
     .trim();
 
-  if (
-    text.includes("טכניקה") ||
-    text.includes("שיפור טכניקה")
-  ) {
+  if (text.includes("טכניקה")) {
     return "שיפור טכניקה";
   }
 
-  if (
-    text.includes("כושר") ||
-    text.includes("כושר גופני")
-  ) {
+  if (text.includes("כושר")) {
     return "כושר";
   }
 
@@ -594,15 +485,11 @@ function normalizeGoal(
   return null;
 }
 
-
 function isRecommendationGoalContinuation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const goal =
-    normalizeGoal(userMessage);
-
-  if (!goal) {
+  if (!normalizeGoal(userMessage)) {
     return false;
   }
 
@@ -629,45 +516,29 @@ function isRecommendationGoalContinuation({
   );
 }
 
+const GOAL_EXPLANATIONS = {
+  "שיפור טכניקה":
+    "אם המטרה היא שיפור טכניקה, כדאי להתאים מסגרת שתאפשר עבודה מסודרת על החבטות, התנועה במגרש והדיוק.",
+  כושר:
+    "אם המטרה היא גם לשפר כושר, אפשר להתאים אימונים שמשלבים טניס עם הרבה תנועה, עבודת רגליים וקצב משחק.",
+  משחקים:
+    "אם המטרה היא יותר משחקים, כדאי להתאים מסגרת שתאפשר הרבה זמן משחק מול שחקנים ברמה מתאימה.",
+};
 
 function buildGoalResponse(
   goal
 ) {
-  if (goal === "שיפור טכניקה") {
-    return [
-      "מעולה 😊",
-      "",
-      "אם המטרה היא שיפור טכניקה, כדאי להתאים מסגרת שתאפשר עבודה מסודרת על החבטות, התנועה במגרש והדיוק.",
-      "",
-      "באיזה סניף יהיה לך הכי נוח להתאמן?",
-      "• גלי הדר – ראשון לציון",
-      "• בית חשמונאי",
-    ].join("\n");
-  }
-
-  if (goal === "כושר") {
-    return [
-      "מעולה 😊",
-      "",
-      "אם המטרה היא גם לשפר כושר, אפשר להתאים אימונים שמשלבים טניס עם הרבה תנועה, עבודת רגליים וקצב משחק.",
-      "",
-      "באיזה סניף יהיה לך הכי נוח להתאמן?",
-      "• גלי הדר – ראשון לציון",
-      "• בית חשמונאי",
-    ].join("\n");
-  }
-
   return [
     "מעולה 😊",
     "",
-    "אם המטרה היא יותר משחקים, כדאי להתאים מסגרת שתאפשר הרבה זמן משחק מול שחקנים ברמה מתאימה.",
+    GOAL_EXPLANATIONS[goal] ||
+      GOAL_EXPLANATIONS.משחקים,
     "",
-    "באיזה סניף יהיה לך הכי נוח להתאמן?",
-    "• גלי הדר – ראשון לציון",
-    "• בית חשמונאי",
+    buildBranchQuestion(
+      QUESTIONS.branchPreference
+    ),
   ].join("\n");
 }
-
 
 function normalizeBranch(
   message = ""
@@ -679,108 +550,71 @@ function normalizeBranch(
   if (
     text.includes("גלי הדר") ||
     text.includes("ראשון לציון") ||
-    text === "ראשון"
+    text === "ראשון" ||
+    text === "גלי"
   ) {
     return "גלי הדר – ראשון לציון";
   }
 
-  if (
-    text.includes("בית חשמונאי") ||
-    text.includes("חשמונאי")
-  ) {
+  if (text.includes("חשמונאי")) {
     return "בית חשמונאי";
   }
 
   return null;
 }
 
-
 function isRecommendationBranchContinuation({
   userMessage = "",
   conversationHistory = [],
 }) {
-  const branch =
-    normalizeBranch(userMessage);
-
-  if (!branch) {
+  if (!normalizeBranch(userMessage)) {
     return false;
   }
 
-  const lastAssistantMessage =
+  return askedQuestion(
     getLastAssistantMessage(
       conversationHistory
-    );
-
-  return (
-    lastAssistantMessage.includes(
-      "באיזה סניף יהיה לך הכי נוח להתאמן"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף יהיה לכם הכי נוח להתאמן"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף יהיה לכם הכי נוח"
-    ) ||
-    lastAssistantMessage.includes(
-      "באיזה סניף יהיה לך הכי נוח"
-    )
+    ),
+    "branchPreference"
   );
 }
 
-
+/*
+ * כניסה למסלול איסוף ליד.
+ * תמיד קובעת מטרת פנייה, כדי שהליד יישלח למנהל בסיום.
+ */
 function buildLeadStartResponse(
   userProfile = {},
-  extraUpdates = {}
+  goal = LEAD_GOALS.lead
 ) {
-  const profile = {
+  const updates = hasValue(
+    userProfile.goal
+  )
+    ? {}
+    : { goal };
+
+  const next = buildNextQuestion({
     ...userProfile,
-    ...extraUpdates,
-  };
+    ...updates,
+  });
 
-  if (!hasValue(profile.name)) {
+  if (next.completed) {
     return {
       source: "lead-start",
       reply:
-        "בשמחה 😊\n\nמה שם המתאמן או המתאמנת?",
-      updates: extraUpdates,
-      completed: false,
-    };
-  }
-
-  if (!hasValue(profile.age)) {
-    return {
-      source: "lead-start",
-      reply:
-        "תודה 😊\n\nמה גיל המתאמן או המתאמנת?",
-      updates: extraUpdates,
-      completed: false,
-    };
-  }
-
-  if (!hasValue(profile.branch)) {
-    return {
-      source: "lead-start",
-      reply: [
-        "תודה 😊",
-        "",
-        "באיזה סניף תרצו להתאמן?",
-        "• גלי הדר – ראשון לציון",
-        "• בית חשמונאי",
-      ].join("\n"),
-      updates: extraUpdates,
-      completed: false,
+        "תודה 😊\n\nהפרטים הדרושים כבר שמורים אצלי, והם מועברים לצוות האקדמיה. נחזור אליכם בהקדם.",
+      updates,
+      completed: true,
     };
   }
 
   return {
     source: "lead-start",
-    reply:
-      "תודה 😊\n\nהפרטים הדרושים כבר שמורים. אעביר אותם להמשך טיפול של צוות האקדמיה.",
-    updates: extraUpdates,
-    completed: true,
+    reply: next.reply,
+    updates,
+    completed: false,
   };
 }
-
 
 function buildReadyResponse(
   userProfile = {}
@@ -796,32 +630,26 @@ function buildReadyResponse(
   ) {
     const experienceText =
       userProfile.experience === "beginner"
-        ? "מתחיל"
+        ? "בלי ניסיון קודם"
         : "עם ניסיון קודם";
 
     parts.push(
-      `לפי מה שכבר סיפרת לי — גיל ${userProfile.age}, ${experienceText} — אפשר להתקדם בצורה מסודרת.`
+      `לפי מה שכבר סיפרתם — גיל ${userProfile.age}, ${experienceText} — אפשר להתקדם בצורה מסודרת.`,
+      ""
     );
-
-    parts.push("");
   }
 
   if (hasValue(userProfile.branch)) {
     parts.push(
-      `גם הסניף ${userProfile.branch} כבר שמור לי.`
+      `הסניף ${userProfile.branch} כבר שמור אצלי.`,
+      ""
     );
-
-    parts.push("");
   }
 
   parts.push(
-    "אם תרצו, אפשר להתקדם לאימון ניסיון ולבדוק התאמה לקבוצה קיימת."
-  );
-
-  parts.push("");
-
-  parts.push(
-    "תרצו שאעזור להתקדם עם אימון ניסיון?"
+    "אם תרצו, אפשר להתקדם לאימון ניסיון ולבדוק התאמה לקבוצה קיימת.",
+    "",
+    QUESTIONS.trialOffer
   );
 
   return {
@@ -832,6 +660,58 @@ function buildReadyResponse(
   };
 }
 
+/*
+ * לקוח שכבר נשלח עליו ליד, ורוצה לרשום מתאמן נוסף.
+ */
+function isAnotherTraineeRequest(
+  userMessage = ""
+) {
+  return /מתאמן נוסף|מתאמנת נוספת|ילד נוסף|ילדה נוספת|ילד נוסף|לרשום עוד|לרשום גם את|רוצה לרשום גם|אח שלו|אחות שלה|האח שלו|האחות שלה|ילד שני|ילדה שנייה/.test(
+    String(userMessage)
+  );
+}
+
+function buildAnotherTraineeStart() {
+  const updates = {
+    name: null,
+    age: null,
+    branch: null,
+    experience: null,
+    audience: null,
+    goal: LEAD_GOALS.anotherTrainee,
+    summary_sent: false,
+  };
+
+  return {
+    source: "lead-another-trainee",
+    reply: `בשמחה 😊\n\nנרשום מתאמן או מתאמנת נוספים.\n\n${QUESTIONS.leadName}`,
+    updates,
+    completed: false,
+  };
+}
+
+function buildAlreadySentResponse(
+  userProfile = {}
+) {
+  const nameText = hasValue(
+    userProfile.name
+  )
+    ? ` של ${userProfile.name}`
+    : "";
+
+  return {
+    source: "lead-already-sent",
+    reply: [
+      `הפרטים${nameText} כבר אצל צוות האקדמיה, ונחזור אליכם בהקדם 😊`,
+      "",
+      `לשאלות דחופות אפשר להתקשר ל-${academy.officialPhone}.`,
+      "",
+      QUESTIONS.anotherTrainee,
+    ].join("\n"),
+    updates: {},
+    completed: false,
+  };
+}
 
 async function buildReply({
   userMessage,
@@ -840,7 +720,29 @@ async function buildReply({
   forceLeadSummary = false,
   leadSummary = "",
 }) {
+  /*
+   * הליד הושלם בהודעה הזו.
+   * אם הלקוח גם שאל שאלה — עונים עליה ומוסיפים את הסיכום.
+   */
   if (forceLeadSummary) {
+    if (looksLikeQuestion(userMessage)) {
+      const answer = await buildReply({
+        userMessage,
+        userProfile: {
+          ...userProfile,
+          summary_sent: true,
+        },
+        conversationHistory,
+      });
+
+      return {
+        source: `${answer.source}+lead-summary`,
+        reply: `${answer.reply}\n\n${leadSummary}`,
+        updates: answer.updates || {},
+        completed: true,
+      };
+    }
+
     return {
       source: "lead-summary",
       reply: leadSummary,
@@ -855,11 +757,6 @@ async function buildReply({
       userProfile
     );
 
-  console.log(
-    "🧠 Conversation Intent:",
-    conversationIntent
-  );
-
   const startingLeadNow =
     shouldStartLeadFlow(
       conversationIntent
@@ -871,13 +768,17 @@ async function buildReply({
       conversationHistory,
     });
 
-  const activeLeadQuestion =
-    hasActiveLeadQuestion(
+  const activeLeadQuestion = Boolean(
+    getPendingLeadQuestion(
       conversationHistory
-    );
+    )
+  );
+
+  const leadAlreadySent =
+    userProfile.summary_sent === true;
 
   const existingLeadFlow =
-    userProfile.summary_sent !== true &&
+    !leadAlreadySent &&
     (
       hasRecentLeadIntent(
         conversationHistory
@@ -885,60 +786,57 @@ async function buildReply({
       activeLeadQuestion
     );
 
-  console.log(
-    "🎯 Lead Flow:",
-    {
-      startingLeadNow,
-      trialConfirmation,
-      activeLeadQuestion,
-      existingLeadFlow,
-    }
-  );
+  /*
+   * לקוח חוזר: רישום מתאמן נוסף.
+   */
+  if (
+    leadAlreadySent &&
+    isAnotherTraineeRequest(userMessage)
+  ) {
+    return buildAnotherTraineeStart();
+  }
 
+  /*
+   * לקוח שכבר נשלח עליו ליד ומבקש שוב הרשמה / חזרה.
+   */
+  if (
+    leadAlreadySent &&
+    (startingLeadNow || trialConfirmation)
+  ) {
+    return buildAlreadySentResponse(
+      userProfile
+    );
+  }
 
   /*
    * אישור להתקדם לאימון ניסיון.
    */
   if (trialConfirmation) {
-    const goalUpdates =
-      hasValue(userProfile.goal)
-        ? {}
-        : {
-            goal: "שיעור ניסיון",
-          };
-
     return buildLeadStartResponse(
       userProfile,
-      goalUpdates
+      LEAD_GOALS.trial
     );
   }
 
-
   /*
-   * הרשמה מפורשת.
+   * הרשמה מפורשת / בקשה לחזרה.
    */
   if (startingLeadNow) {
     return buildLeadStartResponse(
-      userProfile
+      userProfile,
+      conversationIntent.stage === "callback"
+        ? LEAD_GOALS.callback
+        : LEAD_GOALS.lead
     );
   }
 
-
   /*
-   * שאלה באמצע איסוף ליד.
-   *
-   * אם הלקוח שואל שאלה במקום לתת
-   * שם / גיל / סניף:
-   *
-   * 1. מנסים FAQ.
-   * 2. אם אין FAQ — OpenAI.
-   * 3. תמיד חוזרים לשאלת הליד.
+   * שאלה באמצע איסוף ליד:
+   * עונים (FAQ או OpenAI) ואז חוזרים לשאלת הליד.
    */
   if (
     activeLeadQuestion &&
-    looksLikeQuestion(
-      userMessage
-    )
+    looksLikeQuestion(userMessage)
   ) {
     const pendingLeadQuestion =
       getPendingLeadQuestion(
@@ -951,61 +849,34 @@ async function buildReply({
         userProfile
       );
 
-    let interruptionReply = "";
-    let interruptionSource = "";
-
-    if (
+    const interruptionReply =
       automatedDuringLead.handled
-    ) {
-      console.log(
-        `⚡ FAQ DURING LEAD (${automatedDuringLead.intent})`
-      );
+        ? automatedDuringLead.response
+        : await generateReply(
+            conversationHistory,
+            userProfile
+          );
 
-      interruptionReply =
-        automatedDuringLead.response;
-
-      interruptionSource =
-        "faq-during-lead";
-    } else {
-      console.log(
-        "🤖 OPENAI DURING LEAD"
-      );
-
-      interruptionReply =
-        await generateReply(
-          conversationHistory,
-          userProfile
-        );
-
-      interruptionSource =
-        "openai-during-lead";
-    }
-
-    const parts = [
-      interruptionReply,
-    ];
+    const parts = [interruptionReply];
 
     if (pendingLeadQuestion) {
-      parts.push("");
       parts.push(
-        "ולגבי ההמשך 😊"
-      );
-      parts.push("");
-      parts.push(
+        "",
+        "ולגבי ההמשך 😊",
+        "",
         pendingLeadQuestion.reply
       );
     }
 
     return {
-      source:
-        interruptionSource,
-      reply:
-        parts.join("\n"),
+      source: automatedDuringLead.handled
+        ? "faq-during-lead"
+        : "openai-during-lead",
+      reply: parts.join("\n"),
       updates: {},
       completed: false,
     };
   }
-
 
   /*
    * המשך ליד שכבר התחיל.
@@ -1020,59 +891,50 @@ async function buildReply({
 
     if (leadContinuation) {
       return {
-        source:
-          "lead-continuation",
-        reply:
-          leadContinuation.reply,
+        source: "lead-continuation",
+        reply: leadContinuation.reply,
         updates:
-          leadContinuation.updates ||
-          {},
+          leadContinuation.updates || {},
         completed:
-          leadContinuation.completed ===
-          true,
+          leadContinuation.completed === true,
       };
     }
   }
 
+  const recommendationIntent = {
+    stage: "recommendation",
+    confidence: 1,
+  };
 
   /*
-   * תשובה לשאלת גיל במסלול recommendation.
+   * תשובה לשאלת גיל במסלול המלצה.
    */
-  const recommendationAgeContinuation =
+  if (
     isRecommendationAgeContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (
-    recommendationAgeContinuation
+    })
   ) {
     const continuationResponse =
       getRecommendationResponse({
         userMessage,
         userProfile,
-        conversationIntent: {
-          stage: "recommendation",
-          confidence: 1,
-        },
+        conversationIntent:
+          recommendationIntent,
       });
 
     if (continuationResponse) {
       return {
-        source:
-          "recommendation-age",
-        reply:
-          continuationResponse,
+        source: "recommendation-age",
+        reply: continuationResponse,
         updates: {},
         completed: false,
       };
     }
   }
 
-
   /*
-   * הלקוח מוכן להתקדם,
-   * אך עדיין לא אישר אימון ניסיון.
+   * הלקוח מוכן להתקדם, אך עדיין לא אישר אימון ניסיון.
    */
   if (
     conversationIntent.stage ===
@@ -1083,17 +945,15 @@ async function buildReply({
     );
   }
 
-
   /*
    * תשובה לשאלה האם מתחיל או מנוסה.
    */
-  const recommendationContinuation =
+  if (
     isRecommendationContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (recommendationContinuation) {
+    })
+  ) {
     const isChild =
       userProfile.audience === "child" ||
       (
@@ -1112,45 +972,52 @@ async function buildReply({
           "recommendation-child-experience-complete",
         reply:
           buildChildExperienceDetailsResponse(),
-        updates: {},
+        updates: {
+          experience: "experienced",
+        },
         completed: false,
       };
     }
 
+    /*
+     * "כן" / "לא" לשאלה "יש ניסיון קודם?"
+     */
+    const yesNoExperience =
+      getYesNoExperience(userMessage);
+
     const continuationResponse =
       getRecommendationResponse({
-        userMessage,
+        userMessage: yesNoExperience
+          ? yesNoExperience.text
+          : userMessage,
         userProfile,
-        conversationIntent: {
-          stage: "recommendation",
-          confidence: 1,
-        },
+        conversationIntent:
+          recommendationIntent,
       });
 
     if (continuationResponse) {
       return {
         source: "recommendation",
-        reply:
-          continuationResponse,
-        updates: {},
+        reply: continuationResponse,
+        updates: yesNoExperience
+          ? {
+              experience:
+                yesNoExperience.experience,
+            }
+          : {},
         completed: false,
       };
     }
   }
 
-
   /*
-   * ילד עם ניסיון:
-   * תשובה לכמה זמן שיחק ובאיזו רמה.
+   * ילד עם ניסיון: כמה זמן שיחק ובאיזו רמה.
    */
-  const childExperienceDetailsContinuation =
+  if (
     isChildExperienceDetailsContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (
-    childExperienceDetailsContinuation
+    })
   ) {
     return {
       source:
@@ -1162,105 +1029,75 @@ async function buildReply({
     };
   }
 
-
   /*
-   * מבוגר:
-   * קבוצה או אישי.
+   * מבוגר: קבוצה או אישי.
    */
-  const adultFormatContinuation =
+  if (
     isAdultFormatContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (adultFormatContinuation) {
+    })
+  ) {
     const continuationResponse =
       getRecommendationResponse({
         userMessage,
         userProfile,
-        conversationIntent: {
-          stage: "recommendation",
-          confidence: 1,
-        },
+        conversationIntent:
+          recommendationIntent,
       });
 
     if (continuationResponse) {
       return {
         source: "recommendation",
-        reply:
-          continuationResponse,
+        reply: continuationResponse,
         updates: {},
         completed: false,
       };
     }
   }
 
-
   /*
-   * מטרה:
-   * טכניקה / כושר / משחקים.
+   * מטרה: טכניקה / כושר / משחקים.
    */
-  const recommendationGoalContinuation =
+  if (
     isRecommendationGoalContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (
-    recommendationGoalContinuation
+    })
   ) {
     const goal =
-      normalizeGoal(
-        userMessage
-      );
+      normalizeGoal(userMessage);
 
     return {
-      source:
-        "recommendation-goal",
-      reply:
-        buildGoalResponse(
-          goal
-        ),
-      updates: {
-        goal,
-      },
+      source: "recommendation-goal",
+      reply: buildGoalResponse(goal),
+      updates: { goal },
       completed: false,
     };
   }
 
-
   /*
    * בחירת סניף בתוך מסלול המלצה.
    */
-  const recommendationBranchContinuation =
+  if (
     isRecommendationBranchContinuation({
       userMessage,
       conversationHistory,
-    });
-
-  if (
-    recommendationBranchContinuation
+    })
   ) {
     const branch =
-      normalizeBranch(
-        userMessage
-      );
-
-    const audience =
-      userProfile.audience;
+      normalizeBranch(userMessage);
 
     const isAdult =
-      audience === "adult" ||
+      userProfile.audience === "adult" ||
       Number(userProfile.age) >= 18;
 
-    const trialText =
-      isAdult
-        ? "אימון ניסיון למבוגר מתקיים כחלק מקבוצה קיימת ובעלות של 50 ש״ח."
-        : "אימון ניסיון לילדים מתקיים כחלק מקבוצה קיימת וללא עלות.";
+    const trialText = isAdult
+      ? academy.trialLessons.adults.description
+      : academy.trialLessons.children.description;
 
     return {
-      source:
-        "recommendation-branch",
+      source: "recommendation-branch",
       reply: [
         "מעולה 😊",
         "",
@@ -1268,17 +1105,12 @@ async function buildReply({
         "",
         trialText,
         "",
-        isAdult
-          ? "תרצה שאעזור להתקדם עם אימון ניסיון?"
-          : "תרצו שאעזור להתקדם עם אימון ניסיון?",
+        QUESTIONS.trialOffer,
       ].join("\n"),
-      updates: {
-        branch,
-      },
+      updates: { branch },
       completed: false,
     };
   }
-
 
   /*
    * המלצה חדשה.
@@ -1293,13 +1125,11 @@ async function buildReply({
   if (recommendationResponse) {
     return {
       source: "recommendation",
-      reply:
-        recommendationResponse,
+      reply: recommendationResponse,
       updates: {},
       completed: false,
     };
   }
-
 
   /*
    * התעניינות כללית.
@@ -1314,13 +1144,11 @@ async function buildReply({
   if (interestResponse) {
     return {
       source: "interest",
-      reply:
-        interestResponse,
+      reply: interestResponse,
       updates: {},
       completed: false,
     };
   }
-
 
   /*
    * המשך שיחת ציוד.
@@ -1334,15 +1162,12 @@ async function buildReply({
 
   if (equipmentContinuation) {
     return {
-      source:
-        "equipment-continuation",
-      reply:
-        equipmentContinuation,
+      source: "equipment-continuation",
+      reply: equipmentContinuation,
       updates: {},
       completed: false,
     };
   }
-
 
   /*
    * FAQ רגיל.
@@ -1354,38 +1179,29 @@ async function buildReply({
     );
 
   if (automated.handled) {
-    console.log(
-      `⚡ FAQ (${automated.intent})`
-    );
-
     return {
-      source: "faq",
-      reply:
-        automated.response,
+      source: `faq:${automated.intent}`,
+      reply: automated.response,
       updates: {},
       completed: false,
     };
   }
 
-
   /*
    * OpenAI הוא המוצא האחרון.
    */
-  const reply =
-    await generateReply(
-      conversationHistory,
-      userProfile
-    );
-
   return {
     source: "openai",
-    reply,
+    reply: await generateReply(
+      conversationHistory,
+      userProfile
+    ),
     updates: {},
     completed: false,
   };
 }
 
-
 module.exports = {
   buildReply,
+  LEAD_GOALS,
 };

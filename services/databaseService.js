@@ -207,6 +207,19 @@ async function initializeDatabase() {
 
   /*
    * =========================================================
+   * משימות מתוזמנות שכבר רצו (למשל דוח נוכחות חודשי)
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      job_key TEXT PRIMARY KEY,
+      ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  /*
+   * =========================================================
    * מערכת נוכחות
    * =========================================================
    */
@@ -277,6 +290,14 @@ async function initializeDatabase() {
       group_id,
       session_date DESC
     )
+  `);
+
+  /*
+   * לייצוא חודשי לאקסל (חיפוש לפי טווח תאריכים).
+   */
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_attendance_sessions_date
+    ON attendance_sessions(session_date)
   `);
 
   await pool.query(`

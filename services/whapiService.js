@@ -133,22 +133,15 @@ function wait(ms) {
   );
 }
 
-async function sendWhatsAppMessage(to, body) {
-  const recipient = normalizeWhatsAppRecipient(to);
-
-  if (!recipient || !body) {
-    throw new Error(
-      "Missing WhatsApp recipient or message body"
-    );
-  }
-
+/*
+ * שליחה ל-Whapi עם ניסיון חוזר בשגיאות זמניות.
+ */
+async function postToWhapi(path, payload, logInfo) {
   if (!process.env.WHAPI_TOKEN) {
     throw new Error(
       "WHAPI_TOKEN is not defined"
     );
   }
-
-  rememberOutgoingBody(recipient, body);
 
   let lastError;
 
@@ -159,18 +152,16 @@ async function sendWhatsAppMessage(to, body) {
   ) {
     try {
       const response = await axios.post(
-        `${WHAPI_URL}/messages/text`,
-        {
-          to: recipient,
-          body,
-        },
+        `${WHAPI_URL}${path}`,
+        payload,
         {
           headers: {
             Authorization:
               `Bearer ${process.env.WHAPI_TOKEN}`,
             "Content-Type": "application/json",
           },
-          timeout: 15000,
+          timeout: 60000,
+          maxBodyLength: 50 * 1024 * 1024,
         }
       );
 
@@ -182,9 +173,8 @@ async function sendWhatsAppMessage(to, body) {
       rememberBotMessage(messageId);
 
       console.log("📤 הודעת WhatsApp נשלחה:", {
-        recipient: maskId(recipient),
+        ...logInfo,
         status: response.status,
-        bodyLength: body.length,
         attempt,
       });
 
@@ -193,7 +183,7 @@ async function sendWhatsAppMessage(to, body) {
       lastError = error;
 
       console.error("❌ שגיאת Whapi:", {
-        recipient: maskId(recipient),
+        ...logInfo,
         status: error.response?.status,
         message: error.message,
         attempt,
@@ -214,8 +204,74 @@ async function sendWhatsAppMessage(to, body) {
   throw lastError;
 }
 
+async function sendWhatsAppMessage(to, body) {
+  const recipient = normalizeWhatsAppRecipient(to);
+
+  if (!recipient || !body) {
+    throw new Error(
+      "Missing WhatsApp recipient or message body"
+    );
+  }
+
+  rememberOutgoingBody(recipient, body);
+
+  return postToWhapi(
+    "/messages/text",
+    {
+      to: recipient,
+      body,
+    },
+    {
+      recipient: maskId(recipient),
+      bodyLength: body.length,
+    }
+  );
+}
+
+/*
+ * שליחת קובץ (למשל אקסל) כמסמך WhatsApp.
+ */
+async function sendWhatsAppDocument(
+  to,
+  {
+    buffer,
+    filename,
+    mimeType,
+    caption = "",
+  }
+) {
+  const recipient = normalizeWhatsAppRecipient(to);
+
+  if (!recipient || !buffer || !filename) {
+    throw new Error(
+      "Missing WhatsApp recipient, file or filename"
+    );
+  }
+
+  const media = `data:${mimeType};name=${filename};base64,${Buffer.from(
+    buffer
+  ).toString("base64")}`;
+
+  return postToWhapi(
+    "/messages/document",
+    {
+      to: recipient,
+      media,
+      filename,
+      mime_type: mimeType,
+      caption,
+    },
+    {
+      recipient: maskId(recipient),
+      filename,
+      bytes: buffer.length,
+    }
+  );
+}
+
 module.exports = {
   sendWhatsAppMessage,
+  sendWhatsAppDocument,
   normalizeWhatsAppRecipient,
   isRecentBotMessage,
   rememberBotMessage,

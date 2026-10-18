@@ -118,6 +118,10 @@ const {
 
 const academy = require("../knowledge/academyKnowledge");
 
+const {
+  sendAttendanceExport,
+} = require("../services/attendanceReportService");
+
 const userQueues =
   new Map();
 
@@ -193,6 +197,11 @@ function buildManagerCommandsHelp() {
     "דני כהן",
     "",
     'אפשר גם "נוכחות צעירה אתמול".',
+    "",
+    "📊 היסטוריית נוכחות לאקסל:",
+    "ייצוא נוכחות",
+    "ייצוא נוכחות חודש קודם",
+    "ייצוא נוכחות אוקטובר",
     "",
     "🤖 שליטה בבוט מול לקוח:",
     "עצור בוט 0501234567",
@@ -445,6 +454,32 @@ async function handleManagerCommand({
           `▶️ הבוט חזר לענות ל-${command.phone}.`
         );
       }
+
+      return true;
+    }
+
+    if (command.type === "EXPORT_ATTENDANCE") {
+      await sendAttendanceExport({
+        recipient: userId,
+        yearMonth: command.yearMonth,
+      });
+
+      return true;
+    }
+
+    if (command.type === "INVALID_EXPORT_COMMAND") {
+      await sendWhatsAppMessage(
+        userId,
+        [
+          "⚠️ לא הבנתי לאיזה חודש.",
+          "",
+          "אפשר לכתוב למשל:",
+          "ייצוא נוכחות",
+          "ייצוא נוכחות חודש קודם",
+          "ייצוא נוכחות אוקטובר",
+          "ייצוא נוכחות 10/2026",
+        ].join("\n")
+      );
 
       return true;
     }

@@ -45,7 +45,13 @@ const {
 const app = express();
 const port = process.env.PORT || 3000;
 
+const {
+  runMonthlyReportIfDue,
+} = require("./services/attendanceReportService");
+
 const LEAD_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+const MONTHLY_REPORT_CHECK_INTERVAL_MS =
+  60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 app.disable("x-powered-by");
@@ -96,6 +102,30 @@ function startBackgroundJobs() {
         );
       }
     }, LEAD_RETRY_INTERVAL_MS)
+  );
+
+  /*
+   * דוח נוכחות חודשי — נבדק כל שעה, נשלח פעם אחת ב-1 לחודש.
+   */
+  timers.push(
+    setInterval(async () => {
+      try {
+        const result =
+          await runMonthlyReportIfDue();
+
+        if (result.ran) {
+          console.log(
+            "📊 דוח נוכחות חודשי:",
+            result
+          );
+        }
+      } catch (error) {
+        console.error(
+          "❌ דוח נוכחות חודשי נכשל:",
+          error.message
+        );
+      }
+    }, MONTHLY_REPORT_CHECK_INTERVAL_MS)
   );
 
   timers.push(

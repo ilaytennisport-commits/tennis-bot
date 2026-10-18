@@ -49,6 +49,8 @@ function createState() {
     openaiReplies: [],
     openaiCalls: 0,
     dbDown: false,
+    attendanceRows: [],
+    jobs: new Set(),
     nextId: 1,
   };
 }
@@ -124,6 +126,32 @@ function setupHarness(env = {}) {
       state.processed.add(params[0]);
 
       return { rows: [{ message_id: params[0] }], rowCount: 1 };
+    }
+
+    if (/^SELECT s\.id AS session_id/.test(text)) {
+      const rows = state.attendanceRows.filter(
+        (row) =>
+          row.session_date >= params[0] &&
+          row.session_date < params[1]
+      );
+
+      return { rows, rowCount: rows.length };
+    }
+
+    if (/^INSERT INTO scheduled_jobs/.test(text)) {
+      if (state.jobs.has(params[0])) {
+        return { rows: [], rowCount: 0 };
+      }
+
+      state.jobs.add(params[0]);
+
+      return { rows: [{ job_key: params[0] }], rowCount: 1 };
+    }
+
+    if (/^DELETE FROM scheduled_jobs/.test(text)) {
+      state.jobs.delete(params[0]);
+
+      return { rows: [], rowCount: 1 };
     }
 
     if (/^DELETE FROM processed_messages/.test(text)) {
@@ -276,8 +304,11 @@ function setupHarness(env = {}) {
 
       state.sent.push({
         to: payload.to,
-        body: payload.body,
+        body: payload.body ?? payload.caption ?? "",
         id,
+        path: String(url).replace(/^https?:\/\/[^/]+/, ""),
+        filename: payload.filename,
+        media: payload.media,
       });
 
       return {

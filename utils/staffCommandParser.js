@@ -1,3 +1,5 @@
+const { parseMonthSpec } = require("./months");
+
 /*
  * =========================================================
  * פענוח הודעות של אנשי צוות (מנהלים ומאמנים)
@@ -419,6 +421,47 @@ function parseBotControlCommand(
 
 /*
  * =========================================================
+ * ייצוא נוכחות לאקסל
+ * =========================================================
+ *
+ * ייצוא נוכחות               → החודש הנוכחי
+ * ייצוא נוכחות חודש קודם
+ * ייצוא נוכחות אוקטובר
+ * דוח נוכחות 10/2026
+ */
+function parseExportCommand(
+  message = "",
+  now = new Date()
+) {
+  const text = cleanStaffText(message);
+
+  const match = text.match(
+    /^(?:ייצוא|יצוא|ייצא|תייצא|שלח|תשלח|תן|דוח|דו"ח|קובץ|אקסל)\s+(?:לי\s+)?(?:את\s+)?(?:ה)?(?:דוח\s+|דו"ח\s+|קובץ\s+)?נוכחות(?:\s+(?:לאקסל|באקסל|אקסל))?\s*(.*)$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const yearMonth = parseMonthSpec(
+    match[1],
+    now
+  );
+
+  if (!yearMonth) {
+    return {
+      type: "INVALID_EXPORT_COMMAND",
+    };
+  }
+
+  return {
+    type: "EXPORT_ATTENDANCE",
+    yearMonth,
+  };
+}
+
+/*
+ * =========================================================
  * פקודות ניהול – טבעיות + תאימות לפורמט הישן
  * =========================================================
  */
@@ -437,6 +480,13 @@ function parseManagerCommand(
 
   if (botControl) {
     return botControl;
+  }
+
+  const exportCommand =
+    parseExportCommand(text);
+
+  if (exportCommand) {
+    return exportCommand;
   }
 
   const naturalCommand =
@@ -524,6 +574,7 @@ module.exports = {
   parseAttendanceCommand,
   parseNaturalManagerCommand,
   parseBotControlCommand,
+  parseExportCommand,
   parseManagerCommand,
   splitNameAndGroup,
   splitMove,

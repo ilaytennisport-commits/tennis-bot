@@ -19,6 +19,8 @@ const {
   parseSlotsTarget,
   parseGaliHadarSlot,
   findMatchingTrainee,
+  parseTimeOnlyGroup,
+  parseGroupSchedule,
 } = require("../services/attendanceService");
 
 test("נוכחות: פורמט מפורש ומקוצר", () => {
@@ -189,6 +191,67 @@ test("יעד רשימה: נבחרת / מפגש / קבוצה רגילה", () => {
     "slot"
   );
   assert.equal(parseSlotsTarget("א+ד 16:45"), null);
+});
+
+test("נוכחות לפי שעה בלבד: '18:00:' בשורה הראשונה", () => {
+  const result = parseAttendanceCommand(
+    "18:00:\nמורל\nשון\nדניאל"
+  );
+
+  assert.equal(result.isAttendanceCommand, true);
+  assert.equal(result.groupName, "18:00");
+  assert.deepEqual(result.presentNames, ["מורל", "שון", "דניאל"]);
+
+  assert.equal(parseAttendanceCommand("נוכחות 18:00\nדני").groupName, "18:00");
+  assert.equal(parseAttendanceCommand("בשעה 17\nדני").groupName, "בשעה 17");
+  assert.equal(parseAttendanceCommand("18:00 שלישי\nדני").groupName, "18:00 שלישי");
+  assert.equal(
+    parseAttendanceCommand("נוכחות 18:00 אתמול\nדני").dateOffsetDays,
+    -1
+  );
+});
+
+test("parseTimeOnlyGroup: שעה ויום אופציונלי", () => {
+  assert.deepEqual(parseTimeOnlyGroup("18:00"), { time: "18:00", dayOfWeek: null });
+  assert.deepEqual(parseTimeOnlyGroup("18"), { time: "18:00", dayOfWeek: null });
+  assert.deepEqual(parseTimeOnlyGroup("16.30"), { time: "16:30", dayOfWeek: null });
+  assert.deepEqual(parseTimeOnlyGroup("בשעה 17"), { time: "17:00", dayOfWeek: null });
+  assert.deepEqual(parseTimeOnlyGroup("18:00 שלישי"), { time: "18:00", dayOfWeek: 3 });
+  assert.equal(parseTimeOnlyGroup("א+ד 16:00"), null);
+  assert.equal(parseTimeOnlyGroup("צעירה"), null);
+  assert.equal(parseTimeOnlyGroup("18:00 משהו"), null);
+  assert.equal(parseTimeOnlyGroup("99"), null);
+});
+
+test("parseGroupSchedule: ימים ושעות מתוך שם הקבוצה", () => {
+  assert.deepEqual(parseGroupSchedule("א+ד 18:00 – ו+"), [
+    { days: [1, 4], start: "18:00" },
+  ]);
+
+  assert.deepEqual(
+    parseGroupSchedule("א+ד 17:00 + ג 18:00 – עתודה"),
+    [
+      { days: [1, 4], start: "17:00" },
+      { days: [3], start: "18:00" },
+    ]
+  );
+
+  assert.deepEqual(
+    parseGroupSchedule("ב+ג+ה 16:30-18:00 – נבחרת צעירה"),
+    [{ days: [2, 3, 5], start: "16:30" }]
+  );
+
+  assert.deepEqual(
+    parseGroupSchedule(
+      "א+ד 18:45-20:15 + ב+ה 19:30-20:30 – תחרותי ללא הסעות"
+    ),
+    [
+      { days: [1, 4], start: "18:45" },
+      { days: [2, 5], start: "19:30" },
+    ]
+  );
+
+  assert.deepEqual(parseGroupSchedule("בוגרת"), []);
 });
 
 test("התאמת שם מתאמן: שם פרטי ייחודי", () => {

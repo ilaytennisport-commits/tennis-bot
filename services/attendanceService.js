@@ -1243,6 +1243,176 @@ async function resolveActiveGroup(
   };
 }
 
+/*
+ * =========================================================
+ * זיהוי קבוצה לפי שעה בלבד
+ * =========================================================
+ *
+ * מדריך יכול לכתוב רק "18:00" — הבוט מוצא את הקבוצה
+ * שמתאמנת היום בשעה הזו, לפי הימים והשעה שבשם הקבוצה.
+ */
+
+const DAY_LETTERS = {
+  א: 1,
+  ב: 2,
+  ג: 3,
+  ד: 4,
+  ה: 5,
+  ו: 6,
+  ש: 7,
+};
+
+/*
+ * "18:00", "18", "18.00", "בשעה 18:00", "18:00 שלישי", "18:00:"
+ * מחזיר { time: "18:00", dayOfWeek } או null.
+ */
+function parseTimeOnlyGroup(value = "") {
+  const text = cleanValue(value)
+    .replace(/[:\s]+$/, "")
+    .replace(/^(?:בשעה|שעה|ב-?)\s*/, "")
+    .trim();
+
+  const match = text.match(
+    /^(\d{1,2})(?:[:.](\d{2}))?(?:\s+(.+))?$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  const minute = match[2] || "00";
+
+  if (hour < 6 || hour > 23 || Number(minute) > 59) {
+    return null;
+  }
+
+  let dayOfWeek = null;
+
+  if (match[3]) {
+    dayOfWeek = getDayOfWeekFromText(match[3]);
+
+    /*
+     * אחרי השעה מותר רק יום ("18:00 שלישי").
+     */
+    if (!dayOfWeek) {
+      return null;
+    }
+  }
+
+  return {
+    time: normalizeHour(hour, minute),
+    dayOfWeek,
+  };
+}
+
+/*
+ * מפענח את לוח הזמנים מתוך שם הקבוצה:
+ * "א+ד 17:00 + ג 18:00 – עתודה" →
+ *   [{ days: [1, 4], start: "17:00" }, { days: [3], start: "18:00" }]
+ */
+function parseGroupSchedule(groupName = "") {
+  const schedulePart = String(groupName).split(
+    /\s+[–—-]\s+/
+  )[0];
+
+  const segments = [];
+  const pattern =
+    /([אבגדהוש](?:\s*\+\s*[אבגדהוש])*)\s+(\d{1,2}):(\d{2})(?:\s*-\s*\d{1,2}:\d{2})?/g;
+
+  let match;
+
+  while ((match = pattern.exec(schedulePart))) {
+    segments.push({
+      days: match[1]
+        .split("+")
+        .map((letter) => DAY_LETTERS[letter.trim()])
+        .filter(Boolean),
+      start: normalizeHour(match[2], match[3]),
+    });
+  }
+
+  return segments;
+}
+
+async function resolveGroupByTime({
+  time,
+  dayOfWeek,
+}) {
+  const groups = await getActiveGroups();
+
+  let matches = groups.filter((group) =>
+    parseGroupSchedule(group.name).some(
+      (segment) =>
+        segment.start === time &&
+        segment.days.includes(dayOfWeek)
+    )
+  );
+
+  /*
+   * כמה קבוצות באותה שעה, אבל רק באחת יש מתאמנים —
+   * בוחרים בה (למשל עתודה ריקה מול מתחילים ב-17:00).
+   */
+  if (matches.length > 1) {
+    const withTrainees = [];
+
+    for (const group of matches) {
+      const trainees =
+        await getActiveTraineesByGroupId(group.id);
+
+      if (trainees.length > 0) {
+        withTrainees.push(group);
+      }
+    }
+
+    if (withTrainees.length === 1) {
+      matches = withTrainees;
+    }
+  }
+
+  const dayName = DAY_NAMES[dayOfWeek];
+
+  if (matches.length === 0) {
+    return {
+      success: false,
+      code: "GROUP_NOT_FOUND",
+      matches: [],
+      message: `❌ לא מצאתי קבוצה שמתאמנת ביום ${dayName} בשעה ${time}.`,
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      success: false,
+      code: "AMBIGUOUS_GROUP",
+      matches,
+      message: [
+        `⚠️ ביום ${dayName} בשעה ${time} יש כמה קבוצות.`,
+        "",
+        "כתבו את שם הקבוצה, למשל:",
+        ...[
+          ...new Set(
+            matches.map((group) => {
+              const teamLabel =
+                getTeamLabelFromGroupName(group.name);
+
+              return teamLabel
+                ? `נוכחות ${teamLabel}`
+                : `נוכחות ${group.name}`;
+            })
+          ),
+        ],
+      ].join("\n"),
+    };
+  }
+
+  return {
+    success: true,
+    group: matches[0],
+    matches,
+  };
+}
+
 async function getActiveGroupByName(
   groupName
 ) {
@@ -2836,14 +3006,79 @@ async function submitAttendance({
         group.id
       );
   } else {
-    const resolution =
-      await resolveActiveGroup(
-        groupName
-      );
+    /*
+     * רק שעה ("18:00") — מזהים את הקבוצה לפי היום והשעה.
+     */
+    const timeOnly =
+      parseTimeOnlyGroup(groupName);
+
+    sessionInfo = resolveSessionDate({
+      dayOfWeek:
+        timeOnly?.dayOfWeek || null,
+      dateOffsetDays,
+    });
+
+    const resolution = timeOnly
+      ? await resolveGroupByTime({
+          time: timeOnly.time,
+          dayOfWeek: sessionInfo.dayOfWeek,
+        })
+      : await resolveActiveGroup(
+          groupName
+        );
+
+    if (resolution.success) {
+      group = resolution.group;
+
+      trainees =
+        await getActiveTraineesByGroupId(
+          group.id
+        );
+    }
+
+    /*
+     * לפי שעה: אם אין קבוצה עם מתאמנים, אבל יש שיבוצים
+     * בגלי הדר ליום ולשעה האלה — מדווחים לפי השיבוצים.
+     */
+    const groupIsEmpty =
+      !resolution.success ||
+      trainees.length === 0;
 
     if (
-      !resolution.success
+      timeOnly &&
+      groupIsEmpty &&
+      resolution.code !== "AMBIGUOUS_GROUP"
     ) {
+      const candidateSlot = {
+        branch: BRANCH_GALI_HADAR,
+        dayOfWeek: sessionInfo.dayOfWeek,
+        dayName:
+          DAY_NAMES[sessionInfo.dayOfWeek],
+        startTime: timeOnly.time,
+        displayName: `${DAY_NAMES[sessionInfo.dayOfWeek]} ${timeOnly.time}`,
+      };
+
+      const slotRoster =
+        await getGaliHadarSlotRoster(
+          candidateSlot
+        );
+
+      if (slotRoster.length > 0) {
+        slot = candidateSlot;
+
+        group =
+          await ensureGaliHadarAttendanceGroup(
+            slot
+          );
+
+        trainees =
+          await getActiveTraineesByGroupId(
+            group.id
+          );
+      }
+    }
+
+    if (!group) {
       return {
         success: false,
 
@@ -2858,19 +3093,6 @@ async function submitAttendance({
           [],
       };
     }
-
-    group =
-      resolution.group;
-
-    sessionInfo =
-      resolveSessionDate({
-        dateOffsetDays,
-      });
-
-    trainees =
-      await getActiveTraineesByGroupId(
-        group.id
-      );
   }
 
   if (
@@ -3271,6 +3493,9 @@ module.exports = {
   getDayOfWeekFromText,
   getTeamLabelFromGroupName,
   parseSlotsTarget,
+  parseTimeOnlyGroup,
+  parseGroupSchedule,
+  resolveGroupByTime,
   isInternalAttendanceGroup,
   findMatchingTrainee,
 

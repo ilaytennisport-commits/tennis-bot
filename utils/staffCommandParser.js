@@ -126,12 +126,25 @@ function parseAttendanceCommand(
     const teamCommandPattern =
       /^(?:נבחרת\s+)?(?:צעירה|בוגרת)(?:\s+(?:ב|ביום\s+)?(?:ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת))?$/i;
 
+    /*
+     * רק שעה: "18:00", "18:00:", "בשעה 18", "18:00 שלישי".
+     * הקבוצה תזוהה לפי היום והשעה.
+     */
+    const timeOnlyPattern =
+      /^(?:בשעה\s+|ב-?)?\d{1,2}(?:[:.]\d{2})?(?:\s+(?:ב|ביום\s+)?(?:ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת))?\s*:?$/;
+
     if (
       teamCommandPattern.test(
         possibleGroupName
+      ) ||
+      timeOnlyPattern.test(
+        possibleGroupName
       )
     ) {
-      groupName = possibleGroupName;
+      groupName = possibleGroupName.replace(
+        /\s*:$/,
+        ""
+      );
     } else {
       return {
         isAttendanceCommand: false,

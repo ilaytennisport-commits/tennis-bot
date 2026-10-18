@@ -53,6 +53,7 @@ function createState() {
     jobs: new Set(),
     settings: new Map(),
     notes: [],
+    staffLinks: new Map(),
     nextId: 1,
   };
 }
@@ -180,6 +181,36 @@ function setupHarness(env = {}) {
       note.resolution = params[1];
 
       return { rows: [note], rowCount: 1 };
+    }
+
+    if (/^SELECT token FROM staff_links WHERE phone/.test(text)) {
+      const token = state.staffLinks.get(params[0]);
+
+      return {
+        rows: token ? [{ token }] : [],
+        rowCount: token ? 1 : 0,
+      };
+    }
+
+    if (/^SELECT phone, token FROM staff_links WHERE token/.test(text)) {
+      const entry = [...state.staffLinks.entries()].find(
+        ([, token]) => token === params[0]
+      );
+
+      return {
+        rows: entry ? [{ phone: entry[0], token: entry[1] }] : [],
+        rowCount: entry ? 1 : 0,
+      };
+    }
+
+    if (/^INSERT INTO staff_links/.test(text)) {
+      const replace = /DO UPDATE/.test(text);
+
+      if (replace || !state.staffLinks.has(params[0])) {
+        state.staffLinks.set(params[0], params[1]);
+      }
+
+      return { rows: [], rowCount: 1 };
     }
 
     if (/^SELECT value FROM app_settings/.test(text)) {

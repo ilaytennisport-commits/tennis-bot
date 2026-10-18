@@ -30,6 +30,7 @@ const {
 
 const webhookRouter = require("./routes/webhook");
 const attendanceRouter = require("./routes/attendance");
+const reportRouter = require("./routes/report");
 
 const {
   retryPendingLeads,
@@ -59,6 +60,7 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 app.use("/webhook", webhookRouter);
 app.use("/attendance", attendanceRouter);
+app.use("/report", reportRouter);
 
 app.get("/", (req, res) => {
   res.send("🎾 Tennis Bot עובד!");

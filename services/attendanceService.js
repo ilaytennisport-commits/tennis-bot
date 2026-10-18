@@ -3178,8 +3178,36 @@ async function submitAttendance({
     };
   }
 
-  const sessionDate =
-    sessionInfo.sessionDate;
+  return recordAttendance({
+    group,
+    trainees,
+    matchedTrainees,
+    slot,
+    teamContext,
+    sessionDate:
+      sessionInfo.sessionDate,
+    submittedByPhone,
+  });
+}
+
+/*
+ * =========================================================
+ * שמירת דיווח נוכחות
+ * =========================================================
+ *
+ * משותף לדיווח ב-WhatsApp ולדיווח מדף הנוכחות של המדריך.
+ * matchedTrainees = מי שהגיע. כל השאר נרשמים כנעדרים,
+ * חוץ ממתאמנים "גמישים" במפגש לפי יום ושעה (לא נרשמים כנעדרים).
+ */
+async function recordAttendance({
+  group,
+  trainees,
+  matchedTrainees,
+  slot = null,
+  teamContext = null,
+  sessionDate,
+  submittedByPhone,
+}) {
 
   const submittedBy =
     getStaffName(
@@ -3519,5 +3547,10 @@ module.exports = {
   moveTrainee,
 
   submitAttendance,
+  recordAttendance,
+  getOrCreateAttendanceSession,
+  ensureGaliHadarAttendanceGroup,
+  ensureGaliHadarTeamAttendanceGroup,
+  getGaliHadarSlotRoster,
   buildAttendanceSummary,
 };

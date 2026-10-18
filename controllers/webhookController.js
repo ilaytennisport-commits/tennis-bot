@@ -128,6 +128,16 @@ const {
 } = require("../services/attendanceViewService");
 
 const {
+  sendToOtherManagers,
+  buildManagerAttendanceMessage,
+} = require("../services/staffNotifyService");
+
+const {
+  getStaffReportLink,
+  rotateStaffToken,
+} = require("../services/coachReportService");
+
+const {
   parseSupportNote,
   createSupportNote,
   listOpenSupportNotes,
@@ -216,6 +226,9 @@ function buildManagerCommandsHelp() {
     "",
     "מספיק לכתוב את השעה — הקבוצה מזוהה לפי היום והשעה.",
     'אפשר גם "נוכחות צעירה שלישי" או "נוכחות צעירה אתמול".',
+    "",
+    "✅ דף דיווח נוכחות (סימון ✔ / ✘ לכל ילד):",
+    "קישור דיווח",
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
@@ -359,56 +372,6 @@ function buildManagerAdminNotification({
   }
 
   return null;
-}
-
-/*
- * שולח הודעה לכל המנהלים חוץ מהמדווח.
- * מחזיר true אם כולם קיבלו.
- */
-async function sendToOtherManagers(
-  reporterPhone,
-  message
-) {
-  const managerPhones = getManagerPhones();
-
-  if (managerPhones.length === 0) {
-    console.warn("⚠️ לא הוגדרו מספרי מנהלים.");
-
-    return false;
-  }
-
-  const normalizedReporter =
-    normalizePhone(reporterPhone);
-
-  const recipients = managerPhones.filter(
-    (phone) =>
-      normalizePhone(phone) !==
-      normalizedReporter
-  );
-
-  let allSent = true;
-
-  for (const recipient of recipients) {
-    try {
-      await sendWhatsAppMessage(
-        recipient,
-        message
-      );
-    } catch (error) {
-      allSent = false;
-
-      console.error(
-        "❌ שליחת עדכון למנהל נכשלה:",
-        {
-          recipient: maskId(recipient),
-          status: error.response?.status,
-          message: error.message,
-        }
-      );
-    }
-  }
-
-  return allSent;
 }
 
 /*
@@ -673,60 +636,6 @@ async function buildGroupsHelpMessage() {
   }
 }
 
-function formatAttendanceDate(value) {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value.slice(0, 10);
-  }
-
-  try {
-    return new Intl.DateTimeFormat("he-IL", {
-      timeZone: "Asia/Jerusalem",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return String(value);
-  }
-}
-
-function buildManagerAttendanceMessage(
-  result
-) {
-  const absentLines =
-    result.absent.length > 0
-      ? result.absent.map(
-          (trainee) => `❌ ${trainee.name}`
-        )
-      : ["✅ אין נעדרים"];
-
-  const attendanceTitle =
-    result.teamContext
-      ? `${result.teamContext.teamLabel} (${result.teamContext.dayName})`
-      : result.slot
-        ? `${result.slot.dayName} ${result.slot.startTime}`
-        : result.group.name;
-
-  return [
-    `📋 דיווח נוכחות – ${attendanceTitle}`,
-    "",
-    `📅 תאריך: ${formatAttendanceDate(
-      result?.session?.session_date
-    )}`,
-    `👤 דווח על ידי: ${result.submittedBy}`,
-    "",
-    `✅ הגיעו: ${result.presentCount} מתוך ${result.total}`,
-    `❌ נעדרו: ${result.absentCount}`,
-    "",
-    "לא הגיעו:",
-    ...absentLines,
-  ].join("\n");
-}
-
 /*
  * =========================================================
  * טיפול באנשי צוות
@@ -772,6 +681,66 @@ async function handleStaffMessage({
         "",
         supportNote.body,
       ].join("\n")
+    );
+
+    return true;
+  }
+
+  /*
+   * קישור אישי לדף דיווח הנוכחות.
+   * מאמן: "קישור" / "קישור דיווח" / "קישור נוכחות"
+   * מנהל: "קישור דיווח" ("קישור נוכחות" אצל מנהל = הדף החי)
+   */
+  const linkText = String(userMessage)
+    .trim()
+    .replace(/[!.?]+$/, "");
+
+  /*
+   * אצל מנהל "נוכחות" שמור לדף החי, ולכן מנהל כותב "דיווח".
+   */
+  const linkTopics = manager
+    ? "דיווח"
+    : "דיווח|נוכחות";
+
+  const wantsReportLink = new RegExp(
+    manager
+      ? `^(?:קישור|לינק|דף)\\s+(?:ל)?(?:ה)?(?:${linkTopics})$`
+      : `^(?:קישור|לינק|דף)(?:\\s+(?:ל)?(?:ה)?(?:${linkTopics}))?$`
+  ).test(linkText);
+
+  const wantsNewReportLink = new RegExp(
+    manager
+      ? `^(?:החלף|תחליף)\\s+(?:את\\s+)?(?:ה)?קישור\\s+(?:ל)?(?:ה)?(?:${linkTopics})$`
+      : `^(?:החלף|תחליף)\\s+(?:את\\s+)?(?:ה)?קישור(?:\\s+(?:ל)?(?:ה)?(?:${linkTopics}))?$`
+  ).test(linkText);
+
+  if (wantsReportLink || wantsNewReportLink) {
+    if (wantsNewReportLink) {
+      await rotateStaffToken(staffPhone);
+    }
+
+    const link = await getStaffReportLink(
+      staffPhone,
+      lastKnownHost
+    );
+
+    await sendWhatsAppMessage(
+      userId,
+      link
+        ? [
+            "📋 הקישור האישי שלך לדיווח נוכחות:",
+            "",
+            link,
+            "",
+            "1. פותחים את הקישור",
+            "2. בוחרים את האימון",
+            "3. מסמנים ✔ הגיע / ✘ לא הגיע ליד כל ילד",
+            "4. לוחצים 💾 שמירה",
+            "",
+            "💡 שמרו את ההודעה (⭐ סימון בכוכב) — הקישור לא משתנה.",
+            "⚠️ הקישור אישי — לא להעביר לאחרים.",
+          ].join("\n")
+        : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );
 
     return true;
@@ -834,7 +803,10 @@ async function handleStaffMessage({
       : [
           "🎾 זוהית כמאמן מורשה.",
           "",
-          "כדי לדווח נוכחות:",
+          "📋 הכי נוח: שלחו את המילה  קישור",
+          "ותקבלו דף שבו מסמנים ✔ / ✘ ליד כל ילד.",
+          "",
+          "או בהודעה:",
           "",
           "18:00",
           "שם מתאמן",

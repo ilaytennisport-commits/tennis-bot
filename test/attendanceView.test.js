@@ -127,14 +127,18 @@ test("מנהל: מקבל קישור עם קוד סודי, ואותו קישור 
   assert.match(first.reply, /מתעדכן לבד כל דקה/);
 });
 
-test("מאמן: אין הרשאה לקישור", async () => {
+test("מאמן: 'קישור נוכחות' נותן קישור דיווח אישי, לא את הדף החי", async () => {
   state.sent.length = 0;
 
   await processIncomingMessage(
     textMessage(COACH_CHAT, "קישור נוכחות")
   );
 
-  assert.match(sentTo(state, COACH_CHAT)[0].body, /אין לך הרשאה/);
+  const reply = sentTo(state, COACH_CHAT)[0].body;
+
+  assert.match(reply, /הקישור האישי שלך לדיווח נוכחות/);
+  assert.match(reply, /\/report\/[a-f0-9]{48}/);
+  assert.doesNotMatch(reply, /\/attendance\//);
 });
 
 test("דף: קוד נכון — מציג נוכחות, מתרענן כל דקה ולא נכנס למנועי חיפוש", async () => {

@@ -227,6 +227,20 @@ async function initializeDatabase() {
 
   /*
    * =========================================================
+   * קישור אישי לדיווח נוכחות — לכל איש צוות
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff_links (
+      phone TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  /*
+   * =========================================================
    * הערות ובקשות מהצוות ("הערה: ..." ב-WhatsApp)
    * =========================================================
    */

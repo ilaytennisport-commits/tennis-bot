@@ -495,6 +495,25 @@ function parseManagerCommand(
     return botControl;
   }
 
+  /*
+   * קישור לדף הנוכחות החי.
+   */
+  if (
+    /^(?:החלף|תחליף|חדש)\s+(?:את\s+)?(?:ה)?קישור\s+(?:ל)?(?:ה)?נוכחות$|^קישור\s+(?:נוכחות\s+)?חדש$/.test(
+      text
+    )
+  ) {
+    return { type: "ROTATE_ATTENDANCE_LINK" };
+  }
+
+  if (
+    /^(?:שלח\s+|תשלח\s+|תן\s+)?(?:לי\s+)?(?:את\s+)?(?:ה)?(?:קישור|לינק|דף)\s+(?:ל)?(?:ה)?נוכחות$/.test(
+      text
+    )
+  ) {
+    return { type: "ATTENDANCE_LINK" };
+  }
+
   const exportCommand =
     parseExportCommand(text);
 

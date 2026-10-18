@@ -51,6 +51,7 @@ function createState() {
     dbDown: false,
     attendanceRows: [],
     jobs: new Set(),
+    settings: new Map(),
     nextId: 1,
   };
 }
@@ -136,6 +137,21 @@ function setupHarness(env = {}) {
       );
 
       return { rows, rowCount: rows.length };
+    }
+
+    if (/^SELECT value FROM app_settings/.test(text)) {
+      const value = state.settings.get(params[0]);
+
+      return {
+        rows: value ? [{ value }] : [],
+        rowCount: value ? 1 : 0,
+      };
+    }
+
+    if (/^INSERT INTO app_settings/.test(text)) {
+      state.settings.set(params[0], params[1]);
+
+      return { rows: [], rowCount: 1 };
     }
 
     if (/^INSERT INTO scheduled_jobs/.test(text)) {

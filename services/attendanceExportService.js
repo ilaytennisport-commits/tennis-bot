@@ -519,7 +519,10 @@ async function buildAttendanceWorkbook({
  * =========================================================
  */
 
-async function createMonthlyAttendanceFile(
+/*
+ * נתוני הנוכחות של חודש — משמש גם לקובץ האקסל וגם לדף החי.
+ */
+async function getMonthlyAttendanceSummary(
   yearMonth,
   db = pool
 ) {
@@ -538,9 +541,35 @@ async function createMonthlyAttendanceFile(
     range.startDate < range.endDate
       ? await fetchAttendanceRows(range, db)
       : [];
-  const summary = summarizeAttendance(rows);
-  const monthLabel = formatMonthLabel(yearMonth);
 
+  return {
+    summary: summarizeAttendance(rows),
+    monthLabel: formatMonthLabel(yearMonth),
+  };
+}
+
+async function createMonthlyAttendanceFile(
+  yearMonth,
+  db = pool
+) {
+  const { summary, monthLabel } =
+    await getMonthlyAttendanceSummary(
+      yearMonth,
+      db
+    );
+
+  return buildMonthlyFile({
+    yearMonth,
+    summary,
+    monthLabel,
+  });
+}
+
+async function buildMonthlyFile({
+  yearMonth,
+  summary,
+  monthLabel,
+}) {
   if (summary.sessions.length === 0) {
     return {
       empty: true,
@@ -583,5 +612,6 @@ module.exports = {
   buildAttendanceWorkbook,
   makeSheetName,
   fetchAttendanceRows,
+  getMonthlyAttendanceSummary,
   createMonthlyAttendanceFile,
 };

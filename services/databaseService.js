@@ -211,6 +211,20 @@ async function initializeDatabase() {
    * =========================================================
    */
 
+  /*
+   * =========================================================
+   * הגדרות מערכת (למשל הקוד הסודי של דף הנוכחות)
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scheduled_jobs (
       job_key TEXT PRIMARY KEY,

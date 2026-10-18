@@ -29,6 +29,7 @@ const {
 } = require("./services/databaseService");
 
 const webhookRouter = require("./routes/webhook");
+const attendanceRouter = require("./routes/attendance");
 
 const {
   retryPendingLeads,
@@ -57,6 +58,7 @@ const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 app.use("/webhook", webhookRouter);
+app.use("/attendance", attendanceRouter);
 
 app.get("/", (req, res) => {
   res.send("🎾 Tennis Bot עובד!");

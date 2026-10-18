@@ -122,6 +122,17 @@ const {
   sendAttendanceExport,
 } = require("../services/attendanceReportService");
 
+const {
+  getViewLink,
+  rotateViewToken,
+} = require("../services/attendanceViewService");
+
+/*
+ * הכתובת הציבורית של השרת, כפי שנראתה בבקשת ה-Webhook האחרונה
+ * (גיבוי למקרה ש-PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN לא קיימים).
+ */
+let lastKnownHost = null;
+
 const userQueues =
   new Map();
 
@@ -198,6 +209,9 @@ function buildManagerCommandsHelp() {
     "",
     "מספיק לכתוב את השעה — הקבוצה מזוהה לפי היום והשעה.",
     'אפשר גם "נוכחות צעירה שלישי" או "נוכחות צעירה אתמול".',
+    "",
+    "🌐 דף נוכחות חי (מתעדכן כל דקה):",
+    "קישור נוכחות",
     "",
     "📊 היסטוריית נוכחות לאקסל:",
     "ייצוא נוכחות",
@@ -455,6 +469,39 @@ async function handleManagerCommand({
           `▶️ הבוט חזר לענות ל-${command.phone}.`
         );
       }
+
+      return true;
+    }
+
+    if (
+      command.type === "ATTENDANCE_LINK" ||
+      command.type === "ROTATE_ATTENDANCE_LINK"
+    ) {
+      if (command.type === "ROTATE_ATTENDANCE_LINK") {
+        await rotateViewToken();
+      }
+
+      const link = await getViewLink(lastKnownHost);
+
+      await sendWhatsAppMessage(
+        userId,
+        link
+          ? [
+              command.type === "ROTATE_ATTENDANCE_LINK"
+                ? "🔄 נוצר קישור חדש. הקישור הקודם כבר לא עובד."
+                : "📋 דף הנוכחות החי:",
+              "",
+              link,
+              "",
+              "• הדף מתעדכן לבד כל דקה",
+              "• אפשר לעבור בין חודשים ולהוריד אקסל",
+              "• אפשר להעביר את הקישור למנהלים נוספים",
+              "",
+              "⚠️ בדף יש שמות של ילדים — לא להעביר מחוץ לצוות.",
+              'אם הקישור הגיע למישהו שלא צריך — שלחו "החלף קישור נוכחות".',
+            ].join("\n")
+          : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+      );
 
       return true;
     }
@@ -1955,6 +2002,12 @@ async function handleWebhook(req, res) {
     success: true,
     message: "Webhook received",
   });
+
+  const host = req.get?.("host");
+
+  if (host && /^[a-z0-9.-]+$/i.test(host)) {
+    lastKnownHost = host;
+  }
 
   try {
     if (req.body?.event?.type !== "messages") {

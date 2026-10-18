@@ -225,6 +225,28 @@ async function initializeDatabase() {
     )
   `);
 
+  /*
+   * =========================================================
+   * הערות ובקשות מהצוות ("הערה: ..." ב-WhatsApp)
+   * =========================================================
+   */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_notes (
+      id BIGSERIAL PRIMARY KEY,
+      from_phone TEXT NOT NULL,
+      from_name TEXT,
+      chat_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'הערה',
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'done')),
+      resolution TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scheduled_jobs (
       job_key TEXT PRIMARY KEY,

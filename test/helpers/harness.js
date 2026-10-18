@@ -52,6 +52,7 @@ function createState() {
     attendanceRows: [],
     jobs: new Set(),
     settings: new Map(),
+    notes: [],
     nextId: 1,
   };
 }
@@ -137,6 +138,48 @@ function setupHarness(env = {}) {
       );
 
       return { rows, rowCount: rows.length };
+    }
+
+    if (/^INSERT INTO support_notes/.test(text)) {
+      const note = {
+        id: state.nextId++,
+        from_phone: params[0],
+        from_name: params[1],
+        chat_id: params[2],
+        kind: params[3],
+        body: params[4],
+        status: "open",
+        resolution: null,
+        created_at: new Date(),
+      };
+
+      state.notes.push(note);
+
+      return { rows: [note], rowCount: 1 };
+    }
+
+    if (/^SELECT id, from_name, from_phone, chat_id, kind, body, created_at FROM support_notes/.test(text)) {
+      const rows = state.notes.filter(
+        (note) => note.status === "open"
+      );
+
+      return { rows, rowCount: rows.length };
+    }
+
+    if (/^UPDATE support_notes/.test(text)) {
+      const note = state.notes.find(
+        (item) =>
+          item.id === params[0] && item.status === "open"
+      );
+
+      if (!note) {
+        return { rows: [], rowCount: 0 };
+      }
+
+      note.status = "done";
+      note.resolution = params[1];
+
+      return { rows: [note], rowCount: 1 };
     }
 
     if (/^SELECT value FROM app_settings/.test(text)) {

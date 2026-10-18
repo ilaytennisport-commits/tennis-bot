@@ -127,6 +127,13 @@ const {
   rotateViewToken,
 } = require("../services/attendanceViewService");
 
+const {
+  parseSupportNote,
+  createSupportNote,
+  listOpenSupportNotes,
+  buildOpenNotesMessage,
+} = require("../services/supportNotesService");
+
 /*
  * הכתובת הציבורית של השרת, כפי שנראתה בבקשת ה-Webhook האחרונה
  * (גיבוי למקרה ש-PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN לא קיימים).
@@ -221,6 +228,10 @@ function buildManagerCommandsHelp() {
     "🤖 שליטה בבוט מול לקוח:",
     "עצור בוט 0501234567",
     "הפעל בוט 0501234567",
+    "",
+    "📝 הערה או בקשה לשיפור הבוט:",
+    "הערה: מה שרוצים לשנות או לתקן",
+    "הערות פתוחות — רשימת ההערות שעוד לא טופלו",
   ].join("\n");
 }
 
@@ -728,6 +739,60 @@ async function handleStaffMessage({
   staffPhone,
   manager,
 }) {
+  /*
+   * הערה / בעיה / בקשה מהצוות — נשמרת ומועברת למנהלים.
+   */
+  const supportNote =
+    parseSupportNote(userMessage);
+
+  if (supportNote) {
+    const staffName = getStaffName(staffPhone);
+
+    const note = await createSupportNote({
+      fromPhone: normalizePhone(staffPhone),
+      fromName: staffName,
+      chatId: userId,
+      kind: supportNote.kind,
+      body: supportNote.body,
+    });
+
+    await sendWhatsAppMessage(
+      userId,
+      [
+        `✅ ה${supportNote.kind} נשמרה (#${note.id}).`,
+        "",
+        "נעדכן אותך כאן כשזה יטופל. תודה! 🙏",
+      ].join("\n")
+    );
+
+    await sendToOtherManagers(
+      staffPhone,
+      [
+        `📝 ${supportNote.kind} חדשה #${note.id} מ${staffName}:`,
+        "",
+        supportNote.body,
+      ].join("\n")
+    );
+
+    return true;
+  }
+
+  if (
+    manager &&
+    /^(?:הערות|הערות פתוחות|רשימת הערות)$/.test(
+      String(userMessage).trim()
+    )
+  ) {
+    await sendWhatsAppMessage(
+      userId,
+      buildOpenNotesMessage(
+        await listOpenSupportNotes()
+      )
+    );
+
+    return true;
+  }
+
   const managerCommand =
     parseManagerCommand(userMessage);
 
@@ -779,6 +844,9 @@ async function handleStaffMessage({
           'אפשר גם "נוכחות א+ד 16:00" או "נוכחות צעירה אתמול".',
           "",
           groupsHelp,
+          "",
+          "📝 משהו לא עובד או רעיון לשיפור? כתבו:",
+          "הערה: ...",
           "",
           "ℹ️ מאמנים יכולים לדווח נוכחות בלבד.",
         ].join("\n");

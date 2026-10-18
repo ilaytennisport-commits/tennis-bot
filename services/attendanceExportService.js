@@ -49,6 +49,22 @@ const COLORS = {
  * =========================================================
  */
 
+/*
+ * מאיזה תאריך נספרת היסטוריית הנוכחות בדוחות.
+ * דיווחים מלפני התאריך (בדיקות מתקופת הבנייה) נשארים במסד
+ * הנתונים, אבל לא נכללים בקובצי האקסל.
+ * אפשר לשנות במשתנה הסביבה ATTENDANCE_START_DATE (YYYY-MM-DD).
+ */
+const DEFAULT_ATTENDANCE_START_DATE = "2026-10-18";
+
+function getAttendanceStartDate() {
+  const value = process.env.ATTENDANCE_START_DATE;
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(value || "")
+    ? value
+    : DEFAULT_ATTENDANCE_START_DATE;
+}
+
 function getMonthRange({ year, month }) {
   const pad = (value) =>
     String(value).padStart(2, "0");
@@ -507,8 +523,21 @@ async function createMonthlyAttendanceFile(
   yearMonth,
   db = pool
 ) {
-  const range = getMonthRange(yearMonth);
-  const rows = await fetchAttendanceRows(range, db);
+  const monthRange = getMonthRange(yearMonth);
+  const startDate = getAttendanceStartDate();
+
+  const range = {
+    startDate:
+      monthRange.startDate > startDate
+        ? monthRange.startDate
+        : startDate,
+    endDate: monthRange.endDate,
+  };
+
+  const rows =
+    range.startDate < range.endDate
+      ? await fetchAttendanceRows(range, db)
+      : [];
   const summary = summarizeAttendance(rows);
   const monthLabel = formatMonthLabel(yearMonth);
 
@@ -547,6 +576,7 @@ module.exports = {
   getIsraelYearMonth,
   shiftMonth,
   getMonthRange,
+  getAttendanceStartDate,
   formatMonthLabel,
   formatGroupName,
   summarizeAttendance,

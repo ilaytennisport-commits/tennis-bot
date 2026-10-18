@@ -11,6 +11,7 @@ const {
 
 const {
   createMonthlyAttendanceFile,
+  getAttendanceStartDate,
 } = require("./attendanceExportService");
 
 const {
@@ -53,9 +54,15 @@ async function sendAttendanceExport({
     await createMonthlyAttendanceFile(yearMonth);
 
   if (file.empty) {
+    const [year, month, day] =
+      getAttendanceStartDate().split("-");
+
     await sendWhatsAppMessage(
       recipient,
-      `ℹ️ לא נמצאו דיווחי נוכחות ב${monthLabel}.`
+      [
+        `ℹ️ לא נמצאו דיווחי נוכחות ב${monthLabel}.`,
+        `(הדוחות כוללים דיווחים מ-${day}/${month}/${year} והלאה)`,
+      ].join("\n")
     );
 
     return { sent: false, empty: true };

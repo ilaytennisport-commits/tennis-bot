@@ -11,7 +11,12 @@ const {
   sentTo,
 } = require("./helpers/harness");
 
-const state = setupHarness();
+/*
+ * נתוני הדוגמה הם מתחילת אוקטובר — לפני תאריך ההתחלה ברירת המחדל.
+ */
+const state = setupHarness({
+  ATTENDANCE_START_DATE: "2020-01-01",
+});
 
 const ExcelJS = require("exceljs");
 
@@ -251,6 +256,41 @@ test("מנהל: חודש בלי דיווחים — הודעה ולא קובץ", 
     messages[messages.length - 1].body,
     /לא נמצאו דיווחי נוכחות במאי 2026/
   );
+});
+
+test("תאריך התחלה: דיווחים ישנים לא נכללים בקובץ", async () => {
+  const {
+    createMonthlyAttendanceFile,
+    getAttendanceStartDate,
+  } = require("../services/attendanceExportService");
+
+  state.attendanceRows = sampleRows();
+
+  process.env.ATTENDANCE_START_DATE = "2026-10-12";
+
+  try {
+    // 06/10 לא נכלל, 11/10 לא נכלל, 13/10 נכלל
+    const october = await createMonthlyAttendanceFile({
+      year: 2026,
+      month: 10,
+    });
+
+    assert.equal(october.sessionCount, 1);
+
+    // ספטמבר כולו לפני תאריך ההתחלה
+    const september = await createMonthlyAttendanceFile({
+      year: 2026,
+      month: 9,
+    });
+
+    assert.equal(september.empty, true);
+  } finally {
+    process.env.ATTENDANCE_START_DATE = "2020-01-01";
+  }
+
+  delete process.env.ATTENDANCE_START_DATE;
+  assert.equal(getAttendanceStartDate(), "2026-10-18");
+  process.env.ATTENDANCE_START_DATE = "2020-01-01";
 });
 
 test("מאמן: אין הרשאה לייצוא", async () => {

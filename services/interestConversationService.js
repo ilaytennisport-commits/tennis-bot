@@ -10,9 +10,16 @@ function getInterestResponse({
    * השירות הזה מטפל רק בהתעניינות כללית.
    * המלצות מטופלות ב-recommendationService.
    */
+  /*
+   * רק התעניינות מפורשת ("אשמח לפרטים", "מתעניינת").
+   * "התעניינות" שנובעת רק מפרטים שמורים בפרופיל
+   * (ביטחון נמוך) אינה סיבה לענות תשובה כללית —
+   * למשל "40" כתשובה לשאלת גיל.
+   */
   if (
     conversationIntent.stage !==
-    "interest"
+      "interest" ||
+    (conversationIntent.confidence || 0) < 0.8
   ) {
     return null;
   }

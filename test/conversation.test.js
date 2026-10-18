@@ -89,6 +89,75 @@ test("ליד 'תחזרו אליי' מגיע למנהל (הבאג המרכזי)",
   assert.match(managerMessage, /wa\.me\/972/);
 });
 
+test("שיחה אמיתית (ליזה): בקשת חזרה עם שגיאת הקלדה הופכת לליד", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "היי");
+  await say(chatId, "דרך הפייסבוק");
+
+  assert.match(
+    await say(chatId, "אשמח שצחזור אלי טלפונית"),
+    /מה שם המתאמן/
+  );
+
+  assert.match(
+    await say(chatId, "ליזה, מתעניינת בחוג טניס"),
+    /מה גיל/
+  );
+
+  assert.match(await say(chatId, "40"), /באיזה סניף/);
+  await say(chatId, "גלי הדר");
+
+  assert.equal(state.leads.length, 1);
+  assert.equal(state.leads[0].details.name, "ליזה");
+  assert.equal(state.leads[0].details.age, 40);
+  assert.match(lastSentTo(state, MANAGER), /ליזה/);
+});
+
+test("'מבוגרים' כתשובה ל'למי מיועד האימון?' מחזיר מחירון", async () => {
+  const chatId = await regularCustomer();
+
+  assert.match(await say(chatId, "מחירים"), /למי מיועד האימון/);
+
+  const reply = await say(chatId, "מבוגרים");
+
+  assert.match(reply, /מחירון מבוגרים/);
+  assert.match(reply, /320/);
+});
+
+test("'כן' להצעה של הבינה המלאכותית שיחזרו — פותח ליד אמיתי", async () => {
+  const chatId = await regularCustomer();
+
+  state.openaiReplies.push(
+    "כרגע אין לי את המידע הזה.\n\nתרצו שצוות האקדמיה יחזור אליכם?"
+  );
+
+  await say(chatId, "יש לכם משהו בשישי בבוקר לגיל הזהב?");
+
+  assert.match(await say(chatId, "כן"), /מה שם המתאמן/);
+});
+
+test("'מתי יש?' — מציע שיחזרו, ו'כן' פותח ליד", async () => {
+  const chatId = await regularCustomer();
+
+  assert.match(
+    await say(chatId, "מתי יש?"),
+    /תרצו שצוות האקדמיה יחזור אליכם/
+  );
+
+  assert.match(await say(chatId, "כן"), /מה שם המתאמן/);
+});
+
+test("גיל כתשובה לא מקבל תשובה כללית 'מה היית רוצה לדעת'", async () => {
+  const chatId = await regularCustomer();
+
+  await say(chatId, "אני מתעניינת בחוג למבוגרים");
+
+  const reply = await say(chatId, "40");
+
+  assert.doesNotMatch(reply, /מה היית רוצה לדעת קודם/);
+});
+
 test("ליד הרשמה רגיל נשלח פעם אחת בלבד", async () => {
   const chatId = await regularCustomer();
 

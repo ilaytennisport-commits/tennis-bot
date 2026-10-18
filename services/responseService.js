@@ -10,6 +10,10 @@ const {
   getFaqResponse,
 } = require("./faqService");
 
+const {
+  QUESTIONS,
+} = require("../prompts/questionTexts");
+
 
 function detectAudience(
   message = "",
@@ -110,6 +114,9 @@ function isScheduleQuestion(
   }
 
   return (
+    /^מתי יש/.test(text) ||
+    /^מתי זה/.test(text) ||
+    /^מתי האימון/.test(text) ||
     /באיזה ימים/.test(text) ||
     /באילו ימים/.test(text) ||
     /איזה ימים/.test(text) ||
@@ -173,8 +180,10 @@ function buildScheduleResponse(
 
   parts.push("");
   parts.push(
-    "אחרי קבלת הפרטים, צוות האקדמיה יבדוק את הקבוצות המתאימות ויחזור עם הימים והשעות הרלוונטיים."
+    "צוות האקדמיה יכול לבדוק את הקבוצות המתאימות ולחזור עם הימים והשעות הרלוונטיים."
   );
+  parts.push("");
+  parts.push(QUESTIONS.callbackOffer);
 
   return parts.join("\n");
 }

@@ -24,7 +24,16 @@ const {
 
 const {
   getAutomatedResponse,
+  detectAudience,
 } = require("./responseService");
+
+const {
+  getFaqResponse,
+} = require("./faqService");
+
+const {
+  polishResponse,
+} = require("./responsePolisher");
 
 const {
   generateReply,
@@ -271,6 +280,73 @@ function isTrialConfirmation({
     ),
     "trialOffer"
   );
+}
+
+/*
+ * הבוט (בדרך כלל OpenAI) הציע שצוות האקדמיה יחזור ללקוח,
+ * והלקוח הסכים — נכנסים למסלול הליד האמיתי.
+ */
+const CALLBACK_OFFER_PATTERN =
+  /יחזור\s+אלי|יחזרו\s+אלי|נחזור\s+אלי|לחזור\s+אלי|לאסוף\s+את\s+(?:ה)?פרטי|אאסוף\s+את\s+(?:ה)?פרטי|שאעביר\s+את\s+(?:ה)?פרטי|ליצור\s+איתך\s+קשר|ליצור\s+איתכם\s+קשר/;
+
+function isCallbackConfirmation({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  const text = String(userMessage)
+    .toLowerCase()
+    .replace(/[!.,😊🙂👍🙏]+/gu, "")
+    .trim();
+
+  const confirms =
+    CONFIRMATIONS.has(text) ||
+    /^(כן|בטח|אשמח|נשמח|בשמחה|אוקיי|אוקי)(?:\s|$)/.test(text);
+
+  if (!confirms || looksLikeQuestion(userMessage)) {
+    return false;
+  }
+
+  const lastAssistantMessage =
+    getLastAssistantMessage(
+      conversationHistory
+    );
+
+  return (
+    askedQuestion(
+      lastAssistantMessage,
+      "callbackOffer"
+    ) ||
+    CALLBACK_OFFER_PATTERN.test(
+      lastAssistantMessage
+    )
+  );
+}
+
+/*
+ * תשובה לשאלה "למי מיועד האימון?" אחרי שאלת מחיר.
+ */
+function getPricingAudienceAnswer({
+  userMessage = "",
+  conversationHistory = [],
+}) {
+  if (
+    !askedQuestion(
+      getLastAssistantMessage(
+        conversationHistory
+      ),
+      "pricingAudience"
+    )
+  ) {
+    return null;
+  }
+
+  const text = String(userMessage).trim();
+
+  if (/^(לי|אני|בשבילי|לעצמי|עבורי)[\s!.]*$/.test(text)) {
+    return "adult";
+  }
+
+  return detectAudience(text, {});
 }
 
 /*
@@ -768,6 +844,13 @@ async function buildReply({
       conversationHistory,
     });
 
+  const callbackConfirmation =
+    !trialConfirmation &&
+    isCallbackConfirmation({
+      userMessage,
+      conversationHistory,
+    });
+
   const activeLeadQuestion = Boolean(
     getPendingLeadQuestion(
       conversationHistory
@@ -801,7 +884,11 @@ async function buildReply({
    */
   if (
     leadAlreadySent &&
-    (startingLeadNow || trialConfirmation)
+    (
+      startingLeadNow ||
+      trialConfirmation ||
+      callbackConfirmation
+    )
   ) {
     return buildAlreadySentResponse(
       userProfile
@@ -815,6 +902,16 @@ async function buildReply({
     return buildLeadStartResponse(
       userProfile,
       LEAD_GOALS.trial
+    );
+  }
+
+  /*
+   * הלקוח הסכים שצוות האקדמיה יחזור אליו.
+   */
+  if (callbackConfirmation) {
+    return buildLeadStartResponse(
+      userProfile,
+      LEAD_GOALS.callback
     );
   }
 
@@ -857,7 +954,14 @@ async function buildReply({
             userProfile
           );
 
-    const parts = [interruptionReply];
+    /*
+     * כבר באמצע איסוף פרטים — לא מציעים שוב "שיחזרו אליכם".
+     */
+    const parts = [
+      interruptionReply
+        .replace(QUESTIONS.callbackOffer, "")
+        .trim(),
+    ];
 
     if (pendingLeadQuestion) {
       parts.push(
@@ -899,6 +1003,32 @@ async function buildReply({
           leadContinuation.completed === true,
       };
     }
+  }
+
+  /*
+   * "מבוגרים" / "לילד" כתשובה ל"למי מיועד האימון?" → מחירון.
+   */
+  const pricingAudience =
+    getPricingAudienceAnswer({
+      userMessage,
+      conversationHistory,
+    });
+
+  if (pricingAudience) {
+    return {
+      source: "faq:pricing-audience",
+      reply: polishResponse(
+        getFaqResponse("pricing", {
+          audience: pricingAudience,
+          profile: userProfile,
+          originalMessage: userMessage,
+        })
+      ),
+      updates: {
+        audience: pricingAudience,
+      },
+      completed: false,
+    };
   }
 
   const recommendationIntent = {

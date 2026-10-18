@@ -104,6 +104,30 @@ function getQuestionForStep(step) {
 function normalizeName(
   message = ""
 ) {
+  const text = String(message).trim();
+
+  /*
+   * "ליזה, מתעניינת בחוג טניס" → "ליזה".
+   * אם יש פסיק / מקף, מנסים קודם את החלק הראשון.
+   */
+  const firstPart = text
+    .split(/\s*[,،]\s*|\s+[-–—]\s+/)[0];
+
+  if (firstPart && firstPart !== text) {
+    const firstPartName =
+      normalizeSingleName(firstPart);
+
+    if (firstPartName) {
+      return firstPartName;
+    }
+  }
+
+  return normalizeSingleName(text);
+}
+
+function normalizeSingleName(
+  message = ""
+) {
   const name = String(message)
     .trim()
     .replace(

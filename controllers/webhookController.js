@@ -125,7 +125,13 @@ const {
 const {
   getViewLink,
   rotateViewToken,
+  getPublicBaseUrl,
 } = require("../services/attendanceViewService");
+
+const {
+  getOrCreateAdminToken: getLeagueAdminToken,
+  rotateAdminToken: rotateLeagueAdminToken,
+} = require("../services/leagueService");
 
 const {
   sendToOtherManagers,
@@ -473,6 +479,39 @@ async function handleManagerCommand({
               "",
               "⚠️ בדף יש שמות של ילדים — לא להעביר מחוץ לצוות.",
               'אם הקישור הגיע למישהו שלא צריך — שלחו "החלף קישור נוכחות".',
+            ].join("\n")
+          : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+      );
+
+      return true;
+    }
+
+    if (
+      command.type === "LEAGUE_LINK" ||
+      command.type === "ROTATE_LEAGUE_LINK"
+    ) {
+      const token =
+        command.type === "ROTATE_LEAGUE_LINK"
+          ? await rotateLeagueAdminToken()
+          : await getLeagueAdminToken();
+
+      const baseUrl = getPublicBaseUrl(lastKnownHost);
+
+      await sendWhatsAppMessage(
+        userId,
+        baseUrl
+          ? [
+              command.type === "ROTATE_LEAGUE_LINK"
+                ? "🔄 נוצר קישור ניהול חדש. הקישור הקודם כבר לא עובד."
+                : "🎾 ניהול הליגה:",
+              "",
+              `${baseUrl}/league/admin/${token}`,
+              "",
+              "הקישור לשחקנים (לתיאור קבוצת הוואטסאפ):",
+              `${baseUrl}/league`,
+              "",
+              "⚠️ קישור הניהול סודי — לא להעביר לשחקנים.",
+              'אם הוא הגיע למישהו שלא צריך — שלחו "החלף קישור ליגה".',
             ].join("\n")
           : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
       );

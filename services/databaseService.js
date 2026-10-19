@@ -1209,6 +1209,14 @@ async function initializeDatabase() {
       updated_at = NOW()
   `);
 
+  /*
+   * =========================================================
+   * ליגת טניס
+   * =========================================================
+   */
+
+  await require("./leagueService").createLeagueTables(pool);
+
   console.log(
     "✅ PostgreSQL tables are ready"
   );

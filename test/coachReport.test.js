@@ -309,6 +309,18 @@ test("אבטחה ושגיאות: קוד שגוי, קבוצה לא קיימת, ת
   assert.equal(coach.pickDate("2020-01-01"), today);
 });
 
+test("תאריכים: אפשר לדווח עד שבוע אחורה, לא יותר", () => {
+  const now = new Date("2026-10-20T12:00:00Z");
+  const dates = coach.getAllowedDates(now);
+
+  assert.equal(dates.length, 7);
+  assert.deepEqual(dates.slice(0, 2).map((d) => d.label), ["היום", "אתמול"]);
+  assert.equal(dates[2].value, "2026-10-18");
+  assert.equal(dates[2].label, "ראשון 18/10");
+  assert.equal(coach.pickDate("2026-10-14", now), "2026-10-14");
+  assert.equal(coach.pickDate("2026-10-13", now), "2026-10-20");
+});
+
 test("החלפת קישור: הישן מפסיק לעבוד, החדש עובד", async () => {
   const newToken = await coach.rotateStaffToken(COACH_PHONE);
 

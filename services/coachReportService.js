@@ -148,17 +148,26 @@ async function getStaffReportLink(phone, fallbackHost = null) {
 }
 
 /* =========================================================
- * תאריכים: היום ואתמול
+ * תאריכים: השבוע האחרון (היום, אתמול ועוד 5 ימים אחורה)
  * ========================================================= */
 
-function getAllowedDates(now = new Date()) {
-  const today = attendance.getIsraelDateString(0, now);
-  const yesterday = attendance.getIsraelDateString(-1, now);
+const DAYS_BACK = 7;
 
-  return [
-    { value: today, label: "היום" },
-    { value: yesterday, label: "אתמול" },
-  ];
+function getAllowedDates(now = new Date()) {
+  return Array.from({ length: DAYS_BACK }, (_, index) => {
+    const value = attendance.getIsraelDateString(-index, now);
+    const [, month, day] = value.split("-").map(Number);
+
+    return {
+      value,
+      label:
+        index === 0
+          ? "היום"
+          : index === 1
+            ? "אתמול"
+            : `${DAY_NAMES[dayOfWeekOf(value)]} ${day}/${month}`,
+    };
+  });
 }
 
 function pickDate(value, now = new Date()) {
@@ -553,8 +562,8 @@ const STYLE = `
   .wrap { max-width:640px; margin:0 auto; padding:14px 14px 200px; }
   h1 { font-size:22px; color:var(--brand); margin:4px 0 2px; }
   .sub { color:var(--muted); font-size:14px; margin-bottom:12px; }
-  .tabs { display:flex; gap:8px; margin:10px 0 14px; }
-  .tabs a { flex:1; text-align:center; padding:10px; border-radius:10px; border:2px solid var(--border);
+  .tabs { display:flex; gap:8px; margin:10px 0 14px; overflow-x:auto; padding-bottom:4px; }
+  .tabs a { flex:0 0 auto; white-space:nowrap; text-align:center; padding:10px 14px; border-radius:10px; border:2px solid var(--border);
             background:#fff; color:#1f2933; text-decoration:none; font-weight:700; }
   .tabs a.on { border-color:var(--brand); background:var(--soft); color:var(--brand); }
   .session { display:flex; align-items:center; gap:12px; background:#fff; border:2px solid var(--border);

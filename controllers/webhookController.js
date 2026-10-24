@@ -150,6 +150,11 @@ const {
   buildOpenNotesMessage,
 } = require("../services/supportNotesService");
 
+const {
+  parsePendingReply,
+  handlePendingReply,
+} = require("../services/pendingTraineeService");
+
 /*
  * הכתובת הציבורית של השרת, כפי שנראתה בבקשת ה-Webhook האחרונה
  * (גיבוי למקרה ש-PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN לא קיימים).
@@ -238,6 +243,10 @@ function buildManagerCommandsHelp() {
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
+    "",
+    "🆕 ילדים שמדריכים דיווחו ושלא ברשימה:",
+    "ממתינים — הרשימה",
+    "הוסף 12 / לא 12 — אישור או דחייה",
     "",
     "📊 היסטוריית נוכחות לאקסל:",
     "ייצוא נוכחות",
@@ -723,6 +732,26 @@ async function handleStaffMessage({
     );
 
     return true;
+  }
+
+  /*
+   * מנהל עונה על ילד שמדריך דיווח ושלא ברשימה: "הוסף 12" / "לא 12" / "ממתינים".
+   */
+  const pendingReply = manager
+    ? parsePendingReply(userMessage)
+    : null;
+
+  if (pendingReply) {
+    const handled = await handlePendingReply({
+      reply: pendingReply,
+      managerPhone: staffPhone,
+    });
+
+    if (handled) {
+      await sendWhatsAppMessage(userId, handled.message);
+
+      return true;
+    }
   }
 
   /*

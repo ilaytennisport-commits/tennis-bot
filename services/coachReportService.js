@@ -14,6 +14,8 @@ const {
   escapeHtml,
 } = require("./attendanceViewService");
 
+const pendingTrainees = require("./pendingTraineeService");
+
 /*
  * =========================================================
  * דף דיווח נוכחות למדריכים
@@ -501,6 +503,7 @@ async function saveReport({
   ref,
   dateString,
   marks,
+  extras = [],
 }) {
   const session = await resolveSessionRef(ref, dateString);
 
@@ -511,7 +514,39 @@ async function saveReport({
     };
   }
 
+  /*
+   * ילדים שלא ברשימה — נשלחים למנהלים לאישור.
+   */
+  const sendExtras = async () => {
+    if (extras.length === 0) {
+      return [];
+    }
+
+    try {
+      return await pendingTrainees.submitExtras({
+        ref,
+        dateString,
+        groupTitle: session.title,
+        staff,
+        extras,
+      });
+    } catch (error) {
+      console.error("❌ שליחת ילדים שלא ברשימה נכשלה:", error.message);
+
+      return [];
+    }
+  };
+
   if (session.trainees.length === 0) {
+    if (extras.length > 0) {
+      return {
+        success: true,
+        onlyExtras: true,
+        title: session.title,
+        extrasSent: await sendExtras(),
+      };
+    }
+
     return {
       success: false,
       message: "אין מתאמנים פעילים בקבוצה הזו.",
@@ -547,6 +582,7 @@ async function saveReport({
   return {
     ...result,
     title: session.title,
+    extrasSent: await sendExtras(),
   };
 }
 
@@ -596,6 +632,14 @@ const STYLE = `
   .done { background:#fff; border-radius:14px; padding:20px; text-align:center; }
   .done .big { font-size:46px; }
   .list { text-align:right; margin-top:12px; }
+  [hidden] { display:none !important; }
+  .extra { background:#fff; border:2px dashed var(--border); border-radius:14px; padding:12px; margin:16px 0; }
+  .extra-h { font-weight:800; font-size:17px; }
+  .xrow { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+  .xrow + .xrow { border-top:1px solid var(--border); padding-top:10px; }
+  .extra input { width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:2px solid var(--border); }
+  .more { background:none; border:0; color:var(--brand); font-weight:800; font-size:16px; padding:10px 0 2px; cursor:pointer; }
+  .sent { background:#fff6d6; border-radius:10px; padding:10px 12px; margin-top:12px; text-align:right; font-size:15px; }
 `;
 
 function page(title, body) {
@@ -691,6 +735,18 @@ function renderRoster({ token, dateString, ref, session, existing }) {
        <input type="hidden" name="ref" value="${escapeHtml(ref)}">
        <input type="hidden" name="date" value="${dateString}">
        ${kids || '<div class="empty">אין מתאמנים פעילים בקבוצה הזו.</div>'}
+       <div class="extra">
+         <div class="extra-h">➕ ילד שלא ברשימה / שיעור ניסיון</div>
+         <div class="sub" style="margin:2px 0 0">השם נשלח למנהל, והוא יחליט אם להוסיף לרשימה. אפשר לכתוב הערה, למשל: ניסיון, רמה טובה.</div>
+         ${Array.from(
+           { length: pendingTrainees.MAX_EXTRAS },
+           (_, i) => `<div class="xrow"${i > 0 ? " hidden" : ""} data-xrow>
+             <input type="text" name="extra_name_${i}" id="extra_name_${i}" maxlength="60" placeholder="שם הילד" aria-label="שם ילד נוסף ${i + 1}">
+             <input type="text" name="extra_note_${i}" id="extra_note_${i}" maxlength="300" placeholder="הערה (לא חובה)" aria-label="הערה על ילד נוסף ${i + 1}">
+           </div>`
+         ).join("")}
+         <button class="more" type="button" id="more">+ עוד ילד</button>
+       </div>
        <div class="bar"><div class="inner">
          <div class="count" id="count"></div>
          <button class="btn quick" type="button" id="all">✔ כולם הגיעו</button>
@@ -714,6 +770,11 @@ function renderRoster({ token, dateString, ref, session, existing }) {
              "סומנו " + marked + " מתוך " + kids.length + " · הגיעו " + present;
          }
          form.addEventListener("change", update);
+         document.getElementById("more").addEventListener("click", function () {
+           var next = document.querySelector("[data-xrow][hidden]");
+           if (next) { next.hidden = false; next.querySelector("input").focus(); }
+           if (!document.querySelector("[data-xrow][hidden]")) { this.hidden = true; }
+         });
          document.getElementById("all").addEventListener("click", function () {
            kids.forEach(function (kid) { kid.querySelector("input.yes").checked = true; });
            update();
@@ -733,6 +794,24 @@ function renderRoster({ token, dateString, ref, session, existing }) {
 }
 
 function renderSaved({ token, dateString, result }) {
+  const sent = result.extrasSent || [];
+  const sentBox = sent.length
+    ? `<div class="sent">➕ נשלחו למנהל לאישור: ${sent.map((item) => escapeHtml(item.trainee_name)).join(", ")}</div>`
+    : "";
+
+  if (result.onlyExtras) {
+    return page(
+      "נשלח למנהל",
+      `<div class="done">
+         <div class="big">✅</div>
+         <h1>נשלח למנהל</h1>
+         <div class="sub">${escapeHtml(result.title)} · ${formatDate(dateString)}</div>
+         ${sentBox || '<p class="sub">הילדים האלה כבר נשלחו קודם.</p>'}
+       </div>
+       <a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:14px" href="/report/${token}?date=${dateString}">חזרה לאימונים</a>`
+    );
+  }
+
   const absent = result.absent.length
     ? result.absent.map((trainee) => `❌ ${escapeHtml(trainee.name)}`).join("<br>")
     : "✅ כולם הגיעו";
@@ -745,6 +824,7 @@ function renderSaved({ token, dateString, result }) {
        <div class="sub">${escapeHtml(result.title)} · ${formatDate(dateString)}</div>
        <p><b>הגיעו: ${result.presentCount} מתוך ${result.total}</b></p>
        <div class="list"><b>לא הגיעו:</b><br>${absent}</div>
+       ${sentBox}
        <p class="sub">המנהלים קיבלו עדכון.</p>
      </div>
      <a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:14px" href="/report/${token}?date=${dateString}">חזרה לאימונים</a>`
@@ -863,6 +943,7 @@ async function handleSave(req, res) {
     ref: body.ref,
     dateString,
     marks,
+    extras: pendingTrainees.readExtrasFromBody(body),
   });
 
   if (!result.success) {

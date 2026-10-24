@@ -3543,6 +3543,7 @@ module.exports = {
   buildGroupRosterMessage,
 
   addTrainee,
+  addToScope,
   removeTrainee,
   moveTrainee,
 

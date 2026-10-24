@@ -17,7 +17,7 @@ Object.assign(process.env, {
   DATABASE_URL: "postgres://mem",
   OPENAI_API_KEY: "test",
   WHAPI_TOKEN: "test",
-  MANAGER_PHONES: "0500000001",
+  MANAGER_PHONES: "0500000001,0500000003",
   CLUB_MANAGER_PHONE: "0500000001",
   COACH_PHONES: "0500000002",
   STAFF_NAMES: "0500000002:אבי",
@@ -109,6 +109,8 @@ test.before(async () => {
     CREATE TABLE trainee_training_slots (id BIGSERIAL PRIMARY KEY, trainee_name TEXT NOT NULL, branch TEXT NOT NULL, group_label TEXT, day_of_week INTEGER NOT NULL, start_time TIME NOT NULL, notes TEXT, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(trainee_name, branch, day_of_week, start_time, group_label));
     CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW());
   `);
+
+  await require("../services/pendingTraineeService").createPendingTraineesTable(pool);
 
   /*
    * קבוצה שמתאמנת היום ב-18:00 + קבוצה ריקה.
@@ -327,4 +329,182 @@ test("החלפת קישור: הישן מפסיק לעבוד, החדש עובד",
   assert.notEqual(newToken, token);
   assert.equal(await coach.resolveStaffByToken(token), null);
   assert.equal((await coach.resolveStaffByToken(newToken)).name, "אבי");
+});
+
+/* =========================================================
+ * ילד שלא ברשימה → אישור מנהל
+ * ========================================================= */
+
+const pendingTrainees = require("../services/pendingTraineeService");
+
+function managerMessages(id) {
+  return sent.filter((message) => String(message.body).includes(`הוסף ${id}`));
+}
+
+test("ילד שלא ברשימה: בדף יש תיבה, והשם נשלח לשני המנהלים עם מספר", async () => {
+  const currentToken = await coach.getOrCreateStaffToken(COACH_PHONE);
+  let res = fakeRes();
+
+  await coach.handleSession(
+    { params: { token: currentToken }, query: { ref: `g:${groupId}`, date: today } },
+    res
+  );
+
+  assert.match(res.body, /ילד שלא ברשימה \/ שיעור ניסיון/);
+  assert.match(res.body, /name="extra_name_0"/);
+
+  sent.length = 0;
+  res = fakeRes();
+
+  await coach.handleSave(
+    {
+      params: { token: currentToken },
+      body: {
+        ref: `g:${groupId}`,
+        date: today,
+        [`t_${traineeIds.דני}`]: "present",
+        [`t_${traineeIds.נועה}`]: "present",
+        [`t_${traineeIds.יואב}`]: "absent",
+        extra_name_0: "  מיכל  ",
+        extra_note_0: "ניסיון, רמה טובה",
+        extra_name_1: "",
+        extra_name_2: "עידו",
+      },
+    },
+    res
+  );
+
+  assert.match(res.body, /הנוכחות נשמרה/);
+  assert.match(res.body, /נשלחו למנהל לאישור: מיכל, עידו/);
+
+  const rows = (await pool.query(`SELECT * FROM pending_trainees ORDER BY id`)).rows;
+
+  assert.deepEqual(rows.map((row) => row.trainee_name), ["מיכל", "עידו"]);
+  assert.equal(rows[0].notes, "ניסיון, רמה טובה");
+  assert.equal(rows[0].submitted_by, "אבי");
+
+  const messages = managerMessages(rows[0].id);
+
+  assert.equal(messages.length, 2, "גם אור וגם אשר מקבלים");
+  assert.match(messages[0].body, /🧒 מיכל/);
+  assert.match(messages[0].body, /ניסיון, רמה טובה/);
+  assert.match(messages[0].body, /לא \d+/);
+
+  /*
+   * שמירה חוזרת של אותו דיווח לא שולחת שוב את אותו ילד.
+   */
+  sent.length = 0;
+
+  await coach.handleSave(
+    {
+      params: { token: currentToken },
+      body: { ref: `g:${groupId}`, date: today, [`t_${traineeIds.דני}`]: "present", extra_name_0: "מיכל" },
+    },
+    fakeRes()
+  );
+
+  assert.equal(managerMessages(rows[0].id).length, 0);
+  assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM pending_trainees`)).rows[0].n, 2);
+});
+
+test("תשובת מנהל: פענוח הוסף / לא / ממתינים", () => {
+  assert.deepEqual(pendingTrainees.parsePendingReply("הוסף 12"), { action: "add", id: 12 });
+  assert.deepEqual(pendingTrainees.parsePendingReply("תוסיף #7"), { action: "add", id: 7 });
+  assert.deepEqual(pendingTrainees.parsePendingReply("לא 3"), { action: "reject", id: 3 });
+  assert.deepEqual(pendingTrainees.parsePendingReply("ממתינים"), { action: "list" });
+  assert.equal(pendingTrainees.parsePendingReply("לא הבנתי מה קרה"), null);
+  assert.equal(pendingTrainees.parsePendingReply("תוסיף את דני לצעירה"), null);
+});
+
+test("הוסף: הילד נכנס לרשימה, מסומן 'הגיע' בדיווח של אותו יום, והמנהל השני מקבל עדכון", async () => {
+  const request = (await pool.query(`SELECT * FROM pending_trainees WHERE trainee_name = 'מיכל'`)).rows[0];
+
+  sent.length = 0;
+
+  const result = await pendingTrainees.handlePendingReply({
+    reply: { action: "add", id: Number(request.id) },
+    managerPhone: "0500000001",
+  });
+
+  assert.match(result.message, /מיכל נוסף\/ה ל/);
+  assert.match(result.message, /סומן\/ה "הגיע"/);
+
+  const trainee = (
+    await pool.query(`SELECT id FROM trainees WHERE group_id = $1 AND name = 'מיכל' AND active`, [groupId])
+  ).rows[0];
+
+  assert.ok(trainee, "מיכל ברשימת הקבוצה");
+
+  const record = (
+    await pool.query(
+      `SELECT r.status FROM attendance_records r JOIN attendance_sessions s ON s.id = r.session_id
+       WHERE r.trainee_id = $1 AND s.session_date = $2::DATE`,
+      [trainee.id, today]
+    )
+  ).rows[0];
+
+  assert.equal(record.status, "present");
+
+  assert.ok(sent.some((message) => message.to.includes("0500000003") || String(message.to).includes("500000003")));
+  assert.ok(sent.every((message) => !String(message.to).includes("500000001")), "המנהל שאישר לא מקבל עדכון על עצמו");
+
+  const again = await pendingTrainees.handlePendingReply({
+    reply: { action: "add", id: Number(request.id) },
+    managerPhone: "0500000003",
+  });
+
+  assert.match(again.message, /כבר טופלה/);
+});
+
+test("לא: הבקשה נסגרת והילד לא נכנס לרשימה; בלי מספר — רק כשיש בקשה אחת", async () => {
+  const result = await pendingTrainees.handlePendingReply({
+    reply: { action: "reject", id: null },
+    managerPhone: "0500000003",
+  });
+
+  assert.match(result.message, /עידו לא נוסף\/ה/);
+  assert.equal(
+    (await pool.query(`SELECT COUNT(*)::int AS n FROM trainees WHERE name = 'עידו'`)).rows[0].n,
+    0
+  );
+
+  const list = await pendingTrainees.handlePendingReply({ reply: { action: "list" }, managerPhone: "0500000001" });
+
+  assert.match(list.message, /אין ילדים שממתינים/);
+
+  assert.equal(
+    await pendingTrainees.handlePendingReply({ reply: { action: "reject", id: null }, managerPhone: "0500000001" }),
+    null,
+    "'לא' בלי בקשות פתוחות לא נבלע"
+  );
+});
+
+test("הוסף באימון לפי יום ושעה (גלי הדר): הילד נכנס לשיבוץ של אותו יום ושעה", async () => {
+  const currentToken = await coach.getOrCreateStaffToken(COACH_PHONE);
+
+  await coach.handleSave(
+    {
+      params: { token: currentToken },
+      body: { ref: "s:17:00", date: today, extra_name_0: "גלעד", extra_note_0: "ניסיון" },
+    },
+    fakeRes()
+  );
+
+  const request = (await pool.query(`SELECT * FROM pending_trainees WHERE trainee_name = 'גלעד'`)).rows[0];
+  const result = await pendingTrainees.handlePendingReply({
+    reply: { action: "add", id: Number(request.id) },
+    managerPhone: "0500000001",
+  });
+
+  assert.match(result.message, /גלעד נוסף\/ה ל/);
+
+  const slot = (
+    await pool.query(
+      `SELECT group_label, day_of_week FROM trainee_training_slots WHERE trainee_name = 'גלעד' AND start_time = '17:00' AND active`
+    )
+  ).rows[0];
+
+  assert.ok(slot);
+  assert.equal(Number(slot.day_of_week), todayDow);
+  assert.equal(slot.group_label, "קטנים");
 });

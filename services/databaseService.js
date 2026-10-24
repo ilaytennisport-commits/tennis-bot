@@ -1217,6 +1217,11 @@ async function initializeDatabase() {
 
   await require("./leagueService").createLeagueTables(pool);
 
+  /*
+   * ילדים שמדריך דיווח עליהם ושלא מופיעים ברשימה — ממתינים לאישור מנהל.
+   */
+  await require("./pendingTraineeService").createPendingTraineesTable(pool);
+
   console.log(
     "✅ PostgreSQL tables are ready"
   );

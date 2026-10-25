@@ -2649,6 +2649,128 @@ async function removeTrainee({
 
 /*
  * =========================================================
+ * פתיחה וסגירה של קבוצה (מנהל, מ-WhatsApp)
+ * =========================================================
+ *
+ * השם חייב לכלול ימים ושעה ("א+ד 18:00 – ותיקים"),
+ * כי לפיהם הקבוצה מופיעה לבד בדף הדיווח של המדריכים.
+ */
+
+function cleanNewGroupName(value = "") {
+  return cleanValue(value)
+    .replace(/(?:^|\s)(?:ב)?(?:בית\s+)?חשמונאי(?=\s|$)/g, " ")
+    .replace(/(?:^|\s)(?:ב)?גלי\s*הדר(?=\s|$)/g, " ")
+    .replace(/\s+[-–—]\s+/g, " – ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function createGroup({ groupName }) {
+  const name = cleanNewGroupName(groupName);
+
+  if (!name || parseGroupSchedule(name).length === 0) {
+    return {
+      success: false,
+      code: "MISSING_SCHEDULE",
+      message: [
+        "❌ בשם הקבוצה חייבים להופיע הימים והשעה.",
+        "",
+        "לדוגמה:",
+        "פתח קבוצה א+ד 18:00 – ותיקים",
+        "פתח קבוצה בית חשמונאי ב+ה 16:45 – מתחילים",
+      ].join("\n"),
+    };
+  }
+
+  const branch =
+    detectBranchFromText(groupName) ||
+    BRANCH_GALI_HADAR;
+
+  const existing = await pool.query(
+    `SELECT id, name, branch, active FROM training_groups WHERE name = $1`,
+    [name]
+  );
+
+  if (existing.rows[0]?.active) {
+    return {
+      success: false,
+      code: "GROUP_EXISTS",
+      group: existing.rows[0],
+      message: `⚠️ הקבוצה ${name} כבר קיימת.`,
+    };
+  }
+
+  const result = existing.rows[0]
+    ? await pool.query(
+        `
+          UPDATE training_groups
+          SET active = TRUE, branch = $2, updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, name, branch, active
+        `,
+        [existing.rows[0].id, branch]
+      )
+    : await pool.query(
+        `
+          INSERT INTO training_groups (name, branch, active)
+          VALUES ($1, $2, TRUE)
+          RETURNING id, name, branch, active
+        `,
+        [name, branch]
+      );
+
+  return {
+    success: true,
+    code: existing.rows[0] ? "GROUP_REOPENED" : "GROUP_CREATED",
+    group: result.rows[0],
+    message: [
+      existing.rows[0]
+        ? `✅ הקבוצה ${name} נפתחה מחדש.`
+        : `✅ נפתחה קבוצה חדשה: ${name}`,
+      `📍 ${branch}`,
+      "",
+      "עכשיו מוסיפים ילדים:",
+      `תוסיף את <שם> לקבוצה ${name}`,
+    ].join("\n"),
+  };
+}
+
+async function closeGroup({ groupName }) {
+  const resolution = await resolveActiveGroup(groupName);
+
+  if (!resolution.success) {
+    return resolution;
+  }
+
+  const { group } = resolution;
+
+  if (isInternalAttendanceGroup(group.name)) {
+    return {
+      success: false,
+      code: "INTERNAL_GROUP",
+      message: "❌ את הקבוצה הזו אי אפשר לסגור, כי היא נבנית לבד מהשיבוצים לפי יום ושעה.",
+    };
+  }
+
+  await pool.query(
+    `UPDATE training_groups SET active = FALSE, updated_at = NOW() WHERE id = $1`,
+    [group.id]
+  );
+
+  return {
+    success: true,
+    code: "GROUP_CLOSED",
+    group,
+    message: [
+      `✅ הקבוצה ${group.name} נסגרה.`,
+      "היא כבר לא תופיע בדף הדיווח. היסטוריית הנוכחות שלה נשמרת.",
+      `לפתוח שוב: פתח קבוצה ${group.name}`,
+    ].join("\n"),
+  };
+}
+
+/*
+ * =========================================================
  * העברת מתאמן
  * =========================================================
  */
@@ -3545,6 +3667,8 @@ module.exports = {
   addTrainee,
   addToScope,
   removeTrainee,
+  createGroup,
+  closeGroup,
   moveTrainee,
 
   submitAttendance,

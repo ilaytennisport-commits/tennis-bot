@@ -86,6 +86,8 @@ const {
   addTrainee,
   removeTrainee,
   moveTrainee,
+  createGroup,
+  closeGroup,
 
   submitAttendance,
   buildAttendanceSummary,
@@ -243,6 +245,11 @@ function buildManagerCommandsHelp() {
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
+    "",
+    "👥 פתיחה / סגירה של קבוצה:",
+    "פתח קבוצה א+ד 18:00 – ותיקים",
+    "פתח קבוצה בית חשמונאי ב+ה 16:45 – מתחילים",
+    "סגור קבוצה א+ד 18:00 – ותיקים",
     "",
     "🆕 ילדים שמדריכים דיווחו ושלא ברשימה:",
     "ממתינים — הרשימה",
@@ -524,6 +531,29 @@ async function handleManagerCommand({
             ].join("\n")
           : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
       );
+
+      return true;
+    }
+
+    if (
+      command.type === "CREATE_GROUP" ||
+      command.type === "CLOSE_GROUP"
+    ) {
+      const result =
+        command.type === "CREATE_GROUP"
+          ? await createGroup({ groupName: command.groupName })
+          : await closeGroup({ groupName: command.groupName });
+
+      await sendWhatsAppMessage(userId, result.message);
+
+      if (result.success) {
+        await sendToOtherManagers(
+          managerPhone,
+          `👥 ${getStaffName(managerPhone)} ${
+            command.type === "CREATE_GROUP" ? "פתח" : "סגר"
+          } את הקבוצה ${result.group.name}.`
+        );
+      }
 
       return true;
     }

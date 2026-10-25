@@ -508,3 +508,64 @@ test("הוסף באימון לפי יום ושעה (גלי הדר): הילד נ�
   assert.equal(Number(slot.day_of_week), todayDow);
   assert.equal(slot.group_label, "קטנים");
 });
+
+/* =========================================================
+ * פתיחה וסגירה של קבוצה מ-WhatsApp
+ * ========================================================= */
+
+test("פקודות: פתח קבוצה / סגור קבוצה מזוהות, ולא מתנגשות עם הוספת ילד", () => {
+  const { parseManagerCommand } = require("../utils/staffCommandParser");
+
+  assert.deepEqual(parseManagerCommand("פתח קבוצה א+ד 18:00 – ותיקים"), {
+    type: "CREATE_GROUP",
+    groupName: "א+ד 18:00 – ותיקים",
+  });
+  assert.deepEqual(parseManagerCommand("תוסיף קבוצה חדשה: ב+ה 17:00 - מתחילים"), {
+    type: "CREATE_GROUP",
+    groupName: "ב+ה 17:00 - מתחילים",
+  });
+  assert.deepEqual(parseManagerCommand("סגור את הקבוצה א+ד 18:00 – ותיקים"), {
+    type: "CLOSE_GROUP",
+    groupName: "א+ד 18:00 – ותיקים",
+  });
+  assert.notEqual(parseManagerCommand("תוסיף את דני לוי לקבוצה א+ד 16:00")?.type, "CREATE_GROUP");
+});
+
+test("פתח קבוצה: נוצרת עם סניף, מופיעה בדף הדיווח כשיש בה ילדים, ונסגרת", async () => {
+  const noSchedule = await attendance.createGroup({ groupName: "ותיקים" });
+
+  assert.equal(noSchedule.success, false);
+  assert.match(noSchedule.message, /הימים והשעה/);
+
+  const created = await attendance.createGroup({ groupName: `${DAY_LETTERS[todayDow - 1]} 18:00 - ותיקים` });
+
+  assert.equal(created.success, true);
+  assert.equal(created.group.name, `${DAY_LETTERS[todayDow - 1]} 18:00 – ותיקים`);
+  assert.equal(created.group.branch, GALI_HADAR);
+
+  const again = await attendance.createGroup({ groupName: `${DAY_LETTERS[todayDow - 1]} 18:00 – ותיקים` });
+
+  assert.equal(again.code, "GROUP_EXISTS");
+
+  const hashmonai = await attendance.createGroup({ groupName: "בית חשמונאי ב+ה 16:45 – מתחילים" });
+
+  assert.equal(hashmonai.group.name, "ב+ה 16:45 – מתחילים");
+  assert.equal(hashmonai.group.branch, "בית חשמונאי");
+
+  const added = await attendance.addTrainee({ groupName: created.group.name, traineeName: "אדל" });
+
+  assert.equal(added.success, true);
+
+  const sessions = await coach.getSessionsForDate(today);
+
+  assert.ok(sessions.some((session) => session.title === created.group.name));
+
+  const closed = await attendance.closeGroup({ groupName: created.group.name });
+
+  assert.equal(closed.success, true);
+  assert.ok(!(await coach.getSessionsForDate(today)).some((session) => session.title === created.group.name));
+
+  const reopened = await attendance.createGroup({ groupName: created.group.name });
+
+  assert.equal(reopened.code, "GROUP_REOPENED");
+});

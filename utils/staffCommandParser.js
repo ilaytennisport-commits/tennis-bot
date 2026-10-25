@@ -507,6 +507,32 @@ function parseManagerCommand(
   }
 
   /*
+   * פתיחה / סגירה של קבוצה.
+   * "פתח קבוצה א+ד 18:00 – ותיקים" / "סגור קבוצה א+ד 18:00 – ותיקים"
+   */
+  const createGroupMatch = text.match(
+    /^(?:פתח|תפתח|צור|תיצור|הוסף|תוסיף)\s+(?:ה)?קבוצה(?:\s+חדשה)?\s*[:\-–—]?\s*(.+)$/
+  );
+
+  if (createGroupMatch) {
+    return {
+      type: "CREATE_GROUP",
+      groupName: createGroupMatch[1].trim(),
+    };
+  }
+
+  const closeGroupMatch = text.match(
+    /^(?:סגור|תסגור|מחק|תמחק)\s+(?:את\s+)?(?:ה)?קבוצה\s*[:\-–—]?\s*(.+)$/
+  );
+
+  if (closeGroupMatch) {
+    return {
+      type: "CLOSE_GROUP",
+      groupName: closeGroupMatch[1].trim(),
+    };
+  }
+
+  /*
    * קישור לניהול הליגה.
    */
   if (

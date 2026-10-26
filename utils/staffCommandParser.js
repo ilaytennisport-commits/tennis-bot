@@ -481,6 +481,60 @@ function parseExportCommand(
 
 /*
  * =========================================================
+ * נוכחות של מתאמן אחד
+ * =========================================================
+ *
+ * "תן לי נוכחות של נועם לוי החודש" / "נוכחות של אדל חודש קודם"
+ * "נוכחות של נועם ספטמבר" / "דוח נוכחות של נועם 10/2026"
+ */
+function parseTraineeAttendanceCommand(text = "", now = new Date()) {
+  /*
+   * הודעה בכמה שורות היא דיווח נוכחות ("נוכחות צעירה" + שמות), לא בקשה לדוח.
+   */
+  if (/\n/.test(String(text).trim())) {
+    return null;
+  }
+
+  const match = cleanStaffText(text).match(
+    /^(?:(?:תן|שלח|תשלח|הראה|תראה|הצג|תציג|מה)\s+)?(?:לי\s+)?(?:את\s+)?(?:ה)?(?:דוח\s+|דו"ח\s+)?נוכחות\s+(?:של|עבור)\s+(.+)$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const words = match[1].split(" ");
+
+  /*
+   * החודש בסוף ההודעה (עד 3 מילים: "בחודש הקודם", "אוקטובר 2026").
+   */
+  for (let take = Math.min(3, words.length - 1); take >= 1; take -= 1) {
+    const spec = words
+      .slice(-take)
+      .join(" ")
+      .replace(/^ב(?=ה?חודש)/, "");
+    const yearMonth =
+      parseMonthSpec(spec, now) ||
+      (/^חודש/.test(spec) ? parseMonthSpec(`ה${spec}`, now) : null);
+
+    if (yearMonth) {
+      return {
+        type: "TRAINEE_ATTENDANCE",
+        name: words.slice(0, -take).join(" "),
+        yearMonth,
+      };
+    }
+  }
+
+  return {
+    type: "TRAINEE_ATTENDANCE",
+    name: match[1],
+    yearMonth: parseMonthSpec("", now),
+  };
+}
+
+/*
+ * =========================================================
  * שינוי שם (קבוצה / מתאמן)
  * =========================================================
  *
@@ -566,6 +620,12 @@ function parseManagerCommand(
 
   if (/^(?:קבוצות|רשימת קבוצות|כל הקבוצות|מה הקבוצות)$/.test(text)) {
     return { type: "LIST_GROUPS" };
+  }
+
+  const traineeReport = parseTraineeAttendanceCommand(message);
+
+  if (traineeReport) {
+    return traineeReport;
   }
 
   const botControl =
@@ -770,6 +830,7 @@ module.exports = {
   parseExportCommand,
   parseManagerCommand,
   parseRenameCommand,
+  parseTraineeAttendanceCommand,
   splitNameAndGroup,
   splitMove,
 };

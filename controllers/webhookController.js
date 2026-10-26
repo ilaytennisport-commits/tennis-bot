@@ -167,6 +167,10 @@ const {
   COACH_SHORT_GUIDE,
 } = require("../knowledge/coachGuide");
 
+const {
+  buildTraineeAttendanceReport,
+} = require("../services/traineeReportService");
+
 /*
  * הכתובת הציבורית של השרת, כפי שנראתה בבקשת ה-Webhook האחרונה
  * (גיבוי למקרה ש-PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN לא קיימים).
@@ -279,6 +283,10 @@ function buildManagerCommandsHelp() {
     "🆕 ילדים שמדריכים דיווחו ושלא ברשימה:",
     "ממתינים — הרשימה",
     "הוסף 12 / לא 12 — אישור או דחייה",
+    "",
+    "🧒 נוכחות של ילד אחד:",
+    "נוכחות של נועם לוי החודש",
+    "נוכחות של נועם לוי חודש קודם",
     "",
     "📊 היסטוריית נוכחות לאקסל:",
     "ייצוא נוכחות",
@@ -555,6 +563,15 @@ async function handleManagerCommand({
               'אם הוא הגיע למישהו שלא צריך — שלחו "החלף קישור ליגה".',
             ].join("\n")
           : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+      );
+
+      return true;
+    }
+
+    if (command.type === "TRAINEE_ATTENDANCE") {
+      await sendWhatsAppMessage(
+        userId,
+        await buildTraineeAttendanceReport(command)
       );
 
       return true;

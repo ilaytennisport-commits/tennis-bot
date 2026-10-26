@@ -720,3 +720,48 @@ test("שינוי שם מתאמן: מתעדכן בקבוצה ובשיבוצים, 
 
   assert.match(missing.message, /לא מצאתי/);
 });
+
+/* =========================================================
+ * נוכחות של מתאמן אחד
+ * ========================================================= */
+
+test("פקודה: 'תן לי נוכחות של נועם לוי החודש' — שם וחודש", () => {
+  const { parseManagerCommand } = require("../utils/staffCommandParser");
+  const now = new Date("2026-10-26T12:00:00Z");
+  const { parseTraineeAttendanceCommand } = require("../utils/staffCommandParser");
+
+  assert.deepEqual(parseTraineeAttendanceCommand("תן לי נוכחות של נועם לוי החודש", now), {
+    type: "TRAINEE_ATTENDANCE",
+    name: "נועם לוי",
+    yearMonth: { year: 2026, month: 10 },
+  });
+  assert.deepEqual(parseTraineeAttendanceCommand("נוכחות של אדל חודש קודם", now).yearMonth, { year: 2026, month: 9 });
+  assert.equal(parseTraineeAttendanceCommand("דוח נוכחות של אדל שלומון ספטמבר", now).name, "אדל שלומון");
+  assert.equal(parseTraineeAttendanceCommand("נוכחות של נועם בחודש הקודם", now).name, "נועם");
+  assert.deepEqual(parseTraineeAttendanceCommand("נוכחות של נועם", now).yearMonth, { year: 2026, month: 10 });
+  assert.equal(parseTraineeAttendanceCommand("נוכחות צעירה\nדני\nנועה", now), null, "דיווח בכמה שורות אינו בקשה לדוח");
+  assert.equal(parseManagerCommand("ייצוא נוכחות").type, "EXPORT_ATTENDANCE");
+});
+
+test("דוח של מתאמן: כמה הגיע מתוך כמה, לפי תאריך", async () => {
+  const { buildTraineeAttendanceReport } = require("../services/traineeReportService");
+  const [year, month] = today.split("-").map(Number);
+
+  const report = await buildTraineeAttendanceReport({ name: "נועה", yearMonth: { year, month } });
+
+  assert.match(report, /📊 נוכחות – נועה/);
+  assert.match(report, /הגיע\/ה: \d+ מתוך \d+ אימונים/);
+  assert.match(report, /לפי תאריך:/);
+
+  const ambiguous = await buildTraineeAttendanceReport({ name: "דני", yearMonth: { year, month } });
+
+  assert.match(ambiguous, /יש כמה מתאמנים/);
+
+  const missing = await buildTraineeAttendanceReport({ name: "לא קיים", yearMonth: { year, month } });
+
+  assert.match(missing, /לא מצאתי/);
+
+  const before = await buildTraineeAttendanceReport({ name: "נועה", yearMonth: { year: 2026, month: 8 } });
+
+  assert.match(before, /הנוכחות נספרת מ-18\.10/);
+});

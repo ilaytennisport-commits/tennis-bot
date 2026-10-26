@@ -90,6 +90,7 @@ const {
   closeGroup,
   addCoach,
   removeCoach,
+  findCoach,
   buildCoachListMessage,
 
   submitAttendance,
@@ -253,6 +254,7 @@ function buildManagerCommandsHelp() {
     "מאמנים — הרשימה",
     "הוסף מאמן 0541234567 דנה",
     "הסר מאמן 0541234567",
+    "קישור דיווח של דנה — הקישור שלה, כדי להעביר לה",
     "",
     "👥 פתיחה / סגירה של קבוצה:",
     "פתח קבוצה א+ד 18:00 – ותיקים",
@@ -881,6 +883,56 @@ async function handleStaffMessage({
             "",
             "💡 שמרו את ההודעה (⭐ סימון בכוכב) — הקישור לא משתנה.",
             "⚠️ הקישור אישי — לא להעביר לאחרים.",
+          ].join("\n")
+        : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+    );
+
+    return true;
+  }
+
+  /*
+   * מנהל מבקש את הקישור של מאמן כדי להעביר לו:
+   * "קישור דיווח של אלונה" / "קישור דיווח ל-0541234567" / "קישור של אלונה"
+   */
+  const coachLinkMatch = manager
+    ? linkText.match(/^(?:קישור|לינק)\s+(?:ה)?דיווח\s+(?:של\s+|ל-?\s*)(.+)$/) ||
+      linkText.match(/^(?:קישור|לינק)\s+של\s+(.+)$/)
+    : null;
+
+  if (coachLinkMatch) {
+    const found = findCoach(coachLinkMatch[1]);
+
+    if (!found.success || !isCoachPhone(found.phone)) {
+      await sendWhatsAppMessage(
+        userId,
+        found.success
+          ? [
+              `❌ ${found.phone} לא מוגדר כמאמן.`,
+              `קודם מוסיפים: הוסף מאמן ${found.phone} <שם>`,
+            ].join("\n")
+          : found.message
+      );
+
+      return true;
+    }
+
+    const coachLink = await getStaffReportLink(
+      found.phone,
+      lastKnownHost
+    );
+
+    const coachName = getStaffName(found.phone);
+
+    await sendWhatsAppMessage(
+      userId,
+      coachLink
+        ? [
+            `📋 הקישור האישי של ${coachName} לדיווח נוכחות:`,
+            "",
+            coachLink,
+            "",
+            `העבירו אותו רק ל${coachName}, בהודעה פרטית.`,
+            "הדיווחים שנשלחים ממנו נרשמים על שמו/ה.",
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );

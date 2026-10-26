@@ -128,3 +128,32 @@ test("עזרה למדריך מזכירה את אפשרות ההערות", async 
 
   assert.match(sentTo(state, COACH).pop().body, /הערה: \.\.\./);
 });
+
+test("מנהל מבקש קישור דיווח של מאמן — מקבל את הקישור כדי להעביר", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  await processIncomingMessage(textMessage(OWNER, "קישור דיווח של אבי"));
+
+  const reply = lastSentTo(state, OWNER);
+
+  assert.match(reply, /הקישור האישי של אבי/);
+  assert.match(reply, /https:\/\/bot\.example\.com\/report\/[a-f0-9]{48}/);
+
+  await processIncomingMessage(textMessage(OWNER, "קישור דיווח ל-0500000002"));
+  assert.match(lastSentTo(state, OWNER), /הקישור האישי של אבי/);
+
+  await processIncomingMessage(textMessage(OWNER, "קישור דיווח של 0541112222"));
+  assert.match(lastSentTo(state, OWNER), /לא מוגדר כמאמן/);
+
+  /*
+   * הקישור של המנהל עצמו ממשיך לעבוד כרגיל.
+   */
+  await processIncomingMessage(textMessage(OWNER, "קישור דיווח"));
+  assert.match(lastSentTo(state, OWNER), /הקישור האישי שלך/);
+
+  /*
+   * מאמן לא יכול לבקש קישור של מישהו אחר.
+   */
+  await processIncomingMessage(textMessage(COACH, "קישור של יוסי"));
+  assert.doesNotMatch(lastSentTo(state, COACH) || "", /הקישור האישי של יוסי/);
+});

@@ -170,28 +170,45 @@ async function addCoach({ phone, name, managerPhone }) {
   };
 }
 
-async function removeCoach({ phoneOrName, managerPhone }) {
-  const text = cleanValue(phoneOrName || "");
-  let target = normalizePhone(text);
+/*
+ * מאמן לפי טלפון או לפי שם ("אלונה", "אריק מנדלבאום").
+ */
+function findCoach(phoneOrName = "") {
+  const text = cleanValue(phoneOrName);
+  const phone = normalizePhone(text);
 
-  if (!isValidMobile(target)) {
-    const names = getStaffNames();
-    const matches = getCoachPhones().filter(
-      (phone) => names[phone] && normalizeName(names[phone]).startsWith(normalizeName(text))
-    );
-
-    if (matches.length !== 1) {
-      return {
-        success: false,
-        message:
-          matches.length > 1
-            ? `⚠️ יש כמה מאמנים בשם הזה: ${matches.map((phone) => `${names[phone]} (${phone})`).join(", ")}. כתבו את מספר הטלפון.`
-            : `❌ לא מצאתי מאמן בשם ${text}. לרשימה: מאמנים`,
-      };
-    }
-
-    target = matches[0];
+  if (isValidMobile(phone)) {
+    return { success: true, phone };
   }
+
+  const names = getStaffNames();
+  const matches = getCoachPhones().filter(
+    (coachPhone) =>
+      names[coachPhone] &&
+      normalizeName(names[coachPhone]).startsWith(normalizeName(text))
+  );
+
+  if (matches.length === 1) {
+    return { success: true, phone: matches[0] };
+  }
+
+  return {
+    success: false,
+    message:
+      matches.length > 1
+        ? `⚠️ יש כמה מאמנים בשם הזה: ${matches.map((match) => `${names[match]} (${match})`).join(", ")}. כתבו את מספר הטלפון.`
+        : `❌ לא מצאתי מאמן בשם ${text}. לרשימה: מאמנים`,
+  };
+}
+
+async function removeCoach({ phoneOrName, managerPhone }) {
+  const found = findCoach(phoneOrName);
+
+  if (!found.success) {
+    return found;
+  }
+
+  const target = found.phone;
 
   if (!isCoachPhone(target)) {
     return {
@@ -3874,6 +3891,7 @@ module.exports = {
   loadCoachOverrides,
   addCoach,
   removeCoach,
+  findCoach,
   buildCoachListMessage,
   moveTrainee,
 

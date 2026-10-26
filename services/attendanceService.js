@@ -2988,6 +2988,287 @@ async function closeGroup({ groupName }) {
 
 /*
  * =========================================================
+ * שינוי שם של קבוצה / מתאמן (מנהל, מ-WhatsApp)
+ * =========================================================
+ */
+
+const RENAME_EXAMPLE_GROUP = [
+  "לדוגמה (שלוש שורות):",
+  "שנה שם קבוצה",
+  "א+ד 18:00 – ותיקים",
+  "א+ד 18:30 – ותיקים",
+].join("\n");
+
+async function renameGroup({ oldName, newName }) {
+  if (!oldName || !newName) {
+    return {
+      success: false,
+      message: `❌ לא הבנתי מה השם הישן ומה החדש.\n\n${RENAME_EXAMPLE_GROUP}`,
+    };
+  }
+
+  const resolution = await resolveActiveGroup(oldName);
+
+  if (!resolution.success) {
+    return resolution;
+  }
+
+  const { group } = resolution;
+
+  if (isInternalAttendanceGroup(group.name)) {
+    return {
+      success: false,
+      message: "❌ את השם של הקבוצה הזו אי אפשר לשנות, כי היא נבנית לבד מהשיבוצים לפי יום ושעה.",
+    };
+  }
+
+  const name = cleanNewGroupName(newName);
+
+  if (!name || parseGroupSchedule(name).length === 0) {
+    return {
+      success: false,
+      message: `❌ בשם החדש חייבים להופיע הימים והשעה.\n\n${RENAME_EXAMPLE_GROUP}`,
+    };
+  }
+
+  if (name === group.name) {
+    return {
+      success: false,
+      message: `ℹ️ לקבוצה כבר קוראים ${name}.`,
+    };
+  }
+
+  const taken = await pool.query(
+    `SELECT id, active FROM training_groups WHERE name = $1`,
+    [name]
+  );
+
+  if (taken.rows[0]) {
+    return {
+      success: false,
+      message: taken.rows[0].active
+        ? `❌ כבר יש קבוצה בשם ${name}.`
+        : `❌ יש קבוצה סגורה בשם ${name}. אפשר לפתוח אותה: פתח קבוצה ${name}`,
+    };
+  }
+
+  const branch = detectBranchFromText(newName) || group.branch;
+
+  await pool.query(
+    `UPDATE training_groups SET name = $2, branch = $3, updated_at = NOW() WHERE id = $1`,
+    [group.id, name, branch]
+  );
+
+  return {
+    success: true,
+    group: { ...group, name, branch },
+    oldName: group.name,
+    message: [
+      "✅ שם הקבוצה שונה:",
+      `לפני: ${group.name}`,
+      `אחרי: ${name}`,
+      "",
+      "הילדים והיסטוריית הנוכחות נשארו כמו שהם.",
+    ].join("\n"),
+  };
+}
+
+/*
+ * מחליף שם של מתאמן בכל המקומות: קבוצות, שיבוצים לפי יום ושעה,
+ * והיסטוריית הנוכחות (אותו מתאמן, רק שם מעודכן).
+ */
+async function renameTrainee({ oldName, newName }) {
+  const cleanOld = cleanValue(oldName);
+  const cleanNew = cleanValue(newName);
+
+  if (!cleanOld || !cleanNew) {
+    return {
+      success: false,
+      message: [
+        "❌ לא הבנתי מה השם הישן ומה החדש.",
+        "",
+        "לדוגמה: שנה שם אדל לאדל שלומון",
+        "או בשלוש שורות:",
+        "שנה שם",
+        "נועם",
+        "נועם לוי",
+      ].join("\n"),
+    };
+  }
+
+  const names = await pool.query(
+    `
+      SELECT DISTINCT t.name
+      FROM trainees t
+      JOIN training_groups g ON g.id = t.group_id
+      WHERE t.active = TRUE AND g.active = TRUE
+      UNION
+      SELECT DISTINCT trainee_name AS name
+      FROM trainee_training_slots
+      WHERE active = TRUE
+    `
+  );
+
+  const candidates = names.rows.map((row) => ({ name: row.name }));
+  const exact = candidates.filter(
+    (row) => normalizeName(row.name) === normalizeName(cleanOld)
+  );
+
+  let matches = exact;
+
+  if (matches.length === 0) {
+    const parts = normalizeName(cleanOld).split(" ");
+
+    matches = candidates.filter((row) => {
+      const words = normalizeName(row.name).split(" ");
+      return parts.every((part) => words.includes(part));
+    });
+  }
+
+  if (matches.length === 0) {
+    return {
+      success: false,
+      message: `❌ לא מצאתי מתאמן בשם ${cleanOld}.`,
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      success: false,
+      message: [
+        `⚠️ יש כמה מתאמנים בשם ${cleanOld}:`,
+        ...matches.map((row) => `• ${row.name}`),
+        "",
+        "כתבו את השם המלא, למשל:",
+        `שנה שם ${matches[0].name} ל-${cleanNew}`,
+      ].join("\n"),
+    };
+  }
+
+  const fullOld = matches[0].name;
+
+  if (fullOld === cleanNew) {
+    return {
+      success: false,
+      message: `ℹ️ השם כבר ${cleanNew}.`,
+    };
+  }
+
+  const groupsBefore = await pool.query(
+    `
+      SELECT DISTINCT g.name
+      FROM trainees t
+      JOIN training_groups g ON g.id = t.group_id
+      WHERE t.name = $1 AND t.active = TRUE AND g.active = TRUE
+        AND g.name NOT LIKE 'גלי הדר |%'
+      ORDER BY g.name
+    `,
+    [fullOld]
+  );
+
+  const slotsBefore = await pool.query(
+    `
+      SELECT DISTINCT group_label, day_of_week
+      FROM trainee_training_slots
+      WHERE trainee_name = $1 AND active = TRUE
+      ORDER BY day_of_week
+    `,
+    [fullOld]
+  );
+
+  /*
+   * שורה שכבר קיימת עם השם החדש (באותה קבוצה / שיבוץ) נשארת כמו שהיא,
+   * כדי לא להתנגש במפתח הייחודי.
+   */
+  const traineeRows = await pool.query(
+    `SELECT id, group_id FROM trainees WHERE name = $1`,
+    [fullOld]
+  );
+
+  for (const row of traineeRows.rows) {
+    const clash = await pool.query(
+      `SELECT 1 FROM trainees WHERE group_id = $1 AND name = $2`,
+      [row.group_id, cleanNew]
+    );
+
+    if (!clash.rows[0]) {
+      await pool.query(
+        `UPDATE trainees SET name = $2, updated_at = NOW() WHERE id = $1`,
+        [row.id, cleanNew]
+      );
+    }
+  }
+
+  const slotRows = await pool.query(
+    `
+      SELECT id, branch, day_of_week, start_time, group_label
+      FROM trainee_training_slots
+      WHERE trainee_name = $1
+    `,
+    [fullOld]
+  );
+
+  for (const row of slotRows.rows) {
+    const clash = await pool.query(
+      `
+        SELECT 1 FROM trainee_training_slots
+        WHERE trainee_name = $1 AND branch = $2 AND day_of_week = $3
+          AND start_time = $4 AND COALESCE(group_label, '') = COALESCE($5, '')
+      `,
+      [cleanNew, row.branch, row.day_of_week, row.start_time, row.group_label]
+    );
+
+    if (!clash.rows[0]) {
+      await pool.query(
+        `UPDATE trainee_training_slots SET trainee_name = $2, updated_at = NOW() WHERE id = $1`,
+        [row.id, cleanNew]
+      );
+    }
+  }
+
+  const profileRows = await pool.query(
+    `SELECT id, branch, group_label FROM trainee_group_profiles WHERE trainee_name = $1`,
+    [fullOld]
+  );
+
+  for (const row of profileRows.rows) {
+    const clash = await pool.query(
+      `SELECT 1 FROM trainee_group_profiles WHERE trainee_name = $1 AND branch = $2 AND group_label = $3`,
+      [cleanNew, row.branch, row.group_label]
+    );
+
+    if (!clash.rows[0]) {
+      await pool.query(
+        `UPDATE trainee_group_profiles SET trainee_name = $2, updated_at = NOW() WHERE id = $1`,
+        [row.id, cleanNew]
+      );
+    }
+  }
+
+  const places = [
+    ...groupsBefore.rows.map((row) => row.name),
+    ...[...new Set(slotsBefore.rows.map((row) => row.group_label).filter(Boolean))].map(
+      (label) =>
+        `${label} (${slotsBefore.rows
+          .filter((row) => row.group_label === label)
+          .map((row) => DAY_NAMES[row.day_of_week])
+          .join(", ")})`
+    ),
+  ];
+
+  return {
+    success: true,
+    oldName: fullOld,
+    newName: cleanNew,
+    message: [
+      `✅ ${fullOld} ← עכשיו: ${cleanNew}`,
+      ...(places.length ? ["", "עודכן ב:", ...places.map((place) => `• ${place}`)] : []),
+    ].join("\n"),
+  };
+}
+
+/*
+ * =========================================================
  * העברת מתאמן
  * =========================================================
  */
@@ -3886,6 +4167,8 @@ module.exports = {
   removeTrainee,
   createGroup,
   closeGroup,
+  renameGroup,
+  renameTrainee,
   getCoachPhones,
   createStaffCoachesTable,
   loadCoachOverrides,

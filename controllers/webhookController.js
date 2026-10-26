@@ -88,6 +88,8 @@ const {
   moveTrainee,
   createGroup,
   closeGroup,
+  renameGroup,
+  renameTrainee,
   addCoach,
   removeCoach,
   findCoach,
@@ -261,10 +263,18 @@ function buildManagerCommandsHelp() {
     "קישור דיווח של דנה — הקישור שלה, כדי להעביר לה",
     "שלח לי מדריך למדריכים — הסבר קצר להעתקה לקבוצת המאמנים",
     "",
-    "👥 פתיחה / סגירה של קבוצה:",
+    "👥 קבוצות:",
+    "קבוצות — כל הקבוצות הפעילות",
     "פתח קבוצה א+ד 18:00 – ותיקים",
     "פתח קבוצה בית חשמונאי ב+ה 16:45 – מתחילים",
     "סגור קבוצה א+ד 18:00 – ותיקים",
+    "שינוי שם קבוצה (שלוש שורות):",
+    "שנה שם קבוצה",
+    "<השם הישן>",
+    "<השם החדש>",
+    "",
+    "✏️ שינוי שם של ילד:",
+    "שנה שם אדל לאדל שלומון",
     "",
     "🆕 ילדים שמדריכים דיווחו ושלא ברשימה:",
     "ממתינים — הרשימה",
@@ -546,6 +556,35 @@ async function handleManagerCommand({
             ].join("\n")
           : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
       );
+
+      return true;
+    }
+
+    if (command.type === "LIST_GROUPS") {
+      await sendWhatsAppMessage(userId, await buildGroupsHelpMessage());
+
+      return true;
+    }
+
+    if (
+      command.type === "RENAME_GROUP" ||
+      command.type === "RENAME_TRAINEE"
+    ) {
+      const result =
+        command.type === "RENAME_GROUP"
+          ? await renameGroup(command)
+          : await renameTrainee(command);
+
+      await sendWhatsAppMessage(userId, result.message);
+
+      if (result.success) {
+        await sendToOtherManagers(
+          managerPhone,
+          command.type === "RENAME_GROUP"
+            ? `✏️ ${getStaffName(managerPhone)} שינה שם קבוצה:\n${result.oldName}\n← ${result.group.name}`
+            : `✏️ ${getStaffName(managerPhone)} שינה שם: ${result.oldName} ← ${result.newName}`
+        );
+      }
 
       return true;
     }

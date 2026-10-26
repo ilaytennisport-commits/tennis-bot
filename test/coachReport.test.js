@@ -110,6 +110,7 @@ test.before(async () => {
     CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW());
   `);
 
+  await pool.query(`CREATE TABLE trainee_group_profiles (id BIGSERIAL PRIMARY KEY, trainee_name TEXT NOT NULL, branch TEXT NOT NULL, group_label TEXT NOT NULL, notes TEXT, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(trainee_name, branch, group_label))`);
   await require("../services/pendingTraineeService").createPendingTraineesTable(pool);
   await require("../services/attendanceService").createStaffCoachesTable(pool);
   await require("../services/attendanceService").loadCoachOverrides(pool);
@@ -638,4 +639,84 @@ test("הוסף מאמן: מקבל קישור דיווח מיד, נשמר אחר�
   const manager = await attendance.addCoach({ phone: "0500000001", name: "אור", managerPhone: "0500000001" });
 
   assert.match(manager.message, /כבר מוגדר כמנהל/);
+});
+
+/* =========================================================
+ * שינוי שם של קבוצה ושל מתאמן
+ * ========================================================= */
+
+test("פקודות שינוי שם: שורה אחת או שלוש שורות", () => {
+  const { parseManagerCommand } = require("../utils/staffCommandParser");
+
+  assert.deepEqual(parseManagerCommand("שנה שם אדל לאדל שלומון"), {
+    type: "RENAME_TRAINEE",
+    oldName: "אדל",
+    newName: "אדל שלומון",
+  });
+  assert.deepEqual(parseManagerCommand("שנה שם\nנועם\nנועם לוי"), {
+    type: "RENAME_TRAINEE",
+    oldName: "נועם",
+    newName: "נועם לוי",
+  });
+  assert.deepEqual(
+    parseManagerCommand("שנה שם קבוצה\nא+ד 18:45-20:15 + ב+ה 19:30-20:30 – תחרותי ללא הסעות\nא+ד 18:45-20:15 + ב+ה 18:45-20:15 – תחרותי ללא הסעות"),
+    {
+      type: "RENAME_GROUP",
+      oldName: "א+ד 18:45-20:15 + ב+ה 19:30-20:30 – תחרותי ללא הסעות",
+      newName: "א+ד 18:45-20:15 + ב+ה 18:45-20:15 – תחרותי ללא הסעות",
+    }
+  );
+  assert.deepEqual(parseManagerCommand("שנה שם קבוצה א+ד 18:00 – ותיקים ל- א+ד 18:30 – ותיקים"), {
+    type: "RENAME_GROUP",
+    oldName: "א+ד 18:00 – ותיקים",
+    newName: "א+ד 18:30 – ותיקים",
+  });
+  assert.deepEqual(parseManagerCommand("קבוצות"), { type: "LIST_GROUPS" });
+});
+
+test("שינוי שם קבוצה: נשמר, הילדים נשארים, ושם בלי ימים ושעה נדחה", async () => {
+  const before = (await pool.query(`SELECT name FROM training_groups WHERE id = $1`, [groupId])).rows[0].name;
+  const newName = before.replace("18:00", "18:30");
+
+  const bad = await attendance.renameGroup({ oldName: before, newName: "קבוצה בלי שעה" });
+
+  assert.equal(bad.success, false);
+
+  const renamed = await attendance.renameGroup({ oldName: before, newName });
+
+  assert.equal(renamed.success, true);
+  assert.equal(
+    (await pool.query(`SELECT name FROM training_groups WHERE id = $1`, [groupId])).rows[0].name,
+    newName
+  );
+  assert.ok((await attendance.getActiveTraineesByGroupId(groupId)).some((t) => t.name === "דני"));
+
+  await attendance.renameGroup({ oldName: newName, newName: before });
+});
+
+test("שינוי שם מתאמן: מתעדכן בקבוצה ובשיבוצים, ושם כפול מבקש שם מלא", async () => {
+  const renamed = await attendance.renameTrainee({ oldName: "רון", newName: "רון שמש" });
+
+  assert.equal(renamed.success, true);
+  assert.equal(
+    (await pool.query(`SELECT COUNT(*)::int AS n FROM trainee_training_slots WHERE trainee_name = 'רון שמש'`)).rows[0].n,
+    1
+  );
+
+  const danny = await attendance.renameTrainee({ oldName: "דני", newName: "דני כהן" });
+
+  assert.equal(danny.success, true);
+  assert.match(danny.message, /עודכן ב:/);
+  assert.ok((await attendance.getActiveTraineesByGroupId(groupId)).some((t) => t.name === "דני כהן"));
+
+  await pool.query(`INSERT INTO trainees (group_id, name) VALUES ($1, 'דני לוי')`, [groupId]);
+
+  const ambiguous = await attendance.renameTrainee({ oldName: "דני", newName: "דני ש" });
+
+  assert.equal(ambiguous.success, false);
+  assert.match(ambiguous.message, /יש כמה מתאמנים/);
+
+  const missing = await attendance.renameTrainee({ oldName: "אין כזה", newName: "x" });
+
+  assert.match(missing.message, /לא מצאתי/);
 });

@@ -445,6 +445,115 @@ async function initializeDatabase() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trainee_group_profiles (
+      id BIGSERIAL PRIMARY KEY,
+
+      trainee_name TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      group_label TEXT NOT NULL,
+      notes TEXT,
+
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+      UNIQUE (
+        trainee_name,
+        branch,
+        group_label
+      )
+    )
+  `);
+
+  /*
+   * =========================================================
+   * רשימות ההתחלה (קבוצות, מתאמנים ושיבוצים) — פעם אחת בלבד
+   * =========================================================
+   *
+   * מאז הכל מנוהל מ-WhatsApp (שינוי שם, הוספה, הסרה), ולכן
+   * עלייה מחדש של השרת לא מכניסה שוב שמות וקבוצות ישנים.
+   */
+
+  await seedInitialRostersOnce();
+
+  /*
+   * =========================================================
+   * ליגת טניס
+   * =========================================================
+   */
+
+  await require("./leagueService").createLeagueTables(pool);
+
+  /*
+   * ילדים שמדריך דיווח עליהם ושלא מופיעים ברשימה — ממתינים לאישור מנהל.
+   */
+  await require("./pendingTraineeService").createPendingTraineesTable(pool);
+
+  /*
+   * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
+   */
+  const staffDirectory = require("./attendanceService");
+
+  await staffDirectory.createStaffCoachesTable(pool);
+  await staffDirectory.loadCoachOverrides(pool);
+
+  console.log(
+    "✅ PostgreSQL tables are ready"
+  );
+
+  console.log(
+    "✅ Attendance groups and trainees are ready"
+  );
+
+  console.log(
+    "✅ Gali Hadar training slots are ready"
+  );
+}
+
+/*
+ * =========================================================
+ * רשימות ההתחלה
+ * =========================================================
+ */
+
+const INITIAL_ROSTERS_KEY = "initial_rosters_seeded";
+
+async function seedInitialRostersOnce() {
+  const flag = await pool.query(
+    `SELECT value FROM app_settings WHERE key = $1`,
+    [INITIAL_ROSTERS_KEY]
+  );
+
+  if (flag.rows[0]) {
+    return false;
+  }
+
+  /*
+   * מסד נתונים שכבר עובד (הקבוצות קיימות) — רק מסמנים, בלי להכניס שוב.
+   */
+  const existing = await pool.query(
+    `SELECT COUNT(*)::INT AS n FROM training_groups`
+  );
+
+  if (Number(existing.rows[0].n) === 0) {
+    await seedInitialRosters();
+  }
+
+  await pool.query(
+    `
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ($1, 'yes', NOW())
+      ON CONFLICT (key) DO NOTHING
+    `,
+    [INITIAL_ROSTERS_KEY]
+  );
+
+  return true;
+}
+
+async function seedInitialRosters() {
   /*
    * =========================================================
    * קבוצות גלי הדר
@@ -964,28 +1073,6 @@ async function initializeDatabase() {
    */
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS trainee_group_profiles (
-      id BIGSERIAL PRIMARY KEY,
-
-      trainee_name TEXT NOT NULL,
-      branch TEXT NOT NULL,
-      group_label TEXT NOT NULL,
-      notes TEXT,
-
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-      UNIQUE (
-        trainee_name,
-        branch,
-        group_label
-      )
-    )
-  `);
-
-  await pool.query(`
     INSERT INTO trainee_group_profiles (
       trainee_name,
       branch,
@@ -1209,38 +1296,6 @@ async function initializeDatabase() {
       updated_at = NOW()
   `);
 
-  /*
-   * =========================================================
-   * ליגת טניס
-   * =========================================================
-   */
-
-  await require("./leagueService").createLeagueTables(pool);
-
-  /*
-   * ילדים שמדריך דיווח עליהם ושלא מופיעים ברשימה — ממתינים לאישור מנהל.
-   */
-  await require("./pendingTraineeService").createPendingTraineesTable(pool);
-
-  /*
-   * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
-   */
-  const staffDirectory = require("./attendanceService");
-
-  await staffDirectory.createStaffCoachesTable(pool);
-  await staffDirectory.loadCoachOverrides(pool);
-
-  console.log(
-    "✅ PostgreSQL tables are ready"
-  );
-
-  console.log(
-    "✅ Attendance groups and trainees are ready"
-  );
-
-  console.log(
-    "✅ Gali Hadar training slots are ready"
-  );
 }
 
 module.exports = {

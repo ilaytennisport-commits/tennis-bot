@@ -479,6 +479,76 @@ function parseExportCommand(
  * =========================================================
  */
 
+/*
+ * =========================================================
+ * שינוי שם (קבוצה / מתאמן)
+ * =========================================================
+ *
+ * שתי שורות אחרי הפקודה:        או בשורה אחת:
+ *   שנה שם קבוצה                 שנה שם קבוצה <ישן> ל- <חדש>
+ *   <השם הישן>                   שנה שם אדל לאדל שלומון
+ *   <השם החדש>
+ */
+function parseRenameCommand(message = "") {
+  const lines = String(message)
+    .split(/\r?\n/)
+    .map((line) => cleanStaffText(line))
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const head = lines[0].match(
+    /^(?:שנה|תשנה|שינוי|לשנות)\s+(?:את\s+)?(?:ה)?שם(?:\s+(?:של\s+)?(?:ה)?(קבוצה|ילד|ילדה|מתאמן|מתאמנת|שחקן|שחקנית))?\s*[:\-–—]?\s*(.*)$/
+  );
+
+  if (!head) {
+    return null;
+  }
+
+  const type = head[1] === "קבוצה" ? "RENAME_GROUP" : "RENAME_TRAINEE";
+  const rest = head[2].trim();
+  let oldName = "";
+  let newName = "";
+
+  if (!rest && lines.length >= 3) {
+    oldName = lines[1];
+    newName = lines[2];
+  } else if (rest && lines.length >= 2) {
+    oldName = rest;
+    newName = lines[1];
+  } else if (rest) {
+    const arrow = rest.split(/\s*(?:→|->|=>|>>|⬅|←)\s*/);
+    const explicit = rest.split(/\s+ל-\s*|\s+לשם\s+/);
+
+    if (arrow.length === 2) {
+      [oldName, newName] = arrow;
+    } else if (explicit.length === 2) {
+      [oldName, newName] = explicit;
+    } else {
+      /*
+       * "אדל לאדל שלומון" — רק אם יש בדיוק מילה אחת שמתחילה ב-ל.
+       */
+      const words = rest.split(" ");
+      const splitAt = words
+        .map((word, index) => (index > 0 && /^ל[א-ת]/.test(word) ? index : -1))
+        .filter((index) => index > 0);
+
+      if (splitAt.length === 1) {
+        oldName = words.slice(0, splitAt[0]).join(" ");
+        newName = [words[splitAt[0]].slice(1), ...words.slice(splitAt[0] + 1)].join(" ");
+      }
+    }
+  }
+
+  return {
+    type,
+    oldName: cleanManagerPart(oldName),
+    newName: cleanStaffText(newName),
+  };
+}
+
 function parseManagerCommand(
   message = ""
 ) {
@@ -486,6 +556,16 @@ function parseManagerCommand(
 
   if (!text) {
     return null;
+  }
+
+  const renameCommand = parseRenameCommand(message);
+
+  if (renameCommand) {
+    return renameCommand;
+  }
+
+  if (/^(?:קבוצות|רשימת קבוצות|כל הקבוצות|מה הקבוצות)$/.test(text)) {
+    return { type: "LIST_GROUPS" };
   }
 
   const botControl =
@@ -689,6 +769,7 @@ module.exports = {
   parseBotControlCommand,
   parseExportCommand,
   parseManagerCommand,
+  parseRenameCommand,
   splitNameAndGroup,
   splitMove,
 };

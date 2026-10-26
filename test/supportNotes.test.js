@@ -157,3 +157,16 @@ test("מנהל מבקש קישור דיווח של מאמן — מקבל את ה
   await processIncomingMessage(textMessage(COACH, "קישור של יוסי"));
   assert.doesNotMatch(lastSentTo(state, COACH) || "", /הקישור האישי של יוסי/);
 });
+
+test("'שלח לי מדריך למדריכים' — המנהל מקבל את המדריך הקצר", async () => {
+  for (const text of ["שלח לי מדריך למדריכים", "מדריך למאמנים", "תשלח את המדריך הקצר למדריכים", "מדריך למדריכים!"]) {
+    state.sent.length = 0;
+    await processIncomingMessage(textMessage(OWNER, text));
+
+    const reply = lastSentTo(state, OWNER);
+
+    assert.match(reply, /נוכחות – מהיום רק בקישור/, text);
+    assert.match(reply, /קישור דיווח/);
+    assert.match(reply, /ילד שלא ברשימה/);
+  }
+});

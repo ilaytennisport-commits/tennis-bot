@@ -161,6 +161,10 @@ const {
   handlePendingReply,
 } = require("../services/pendingTraineeService");
 
+const {
+  COACH_SHORT_GUIDE,
+} = require("../knowledge/coachGuide");
+
 /*
  * הכתובת הציבורית של השרת, כפי שנראתה בבקשת ה-Webhook האחרונה
  * (גיבוי למקרה ש-PUBLIC_BASE_URL / RAILWAY_PUBLIC_DOMAIN לא קיימים).
@@ -255,6 +259,7 @@ function buildManagerCommandsHelp() {
     "הוסף מאמן 0541234567 דנה",
     "הסר מאמן 0541234567",
     "קישור דיווח של דנה — הקישור שלה, כדי להעביר לה",
+    "שלח לי מדריך למדריכים — הסבר קצר להעתקה לקבוצת המאמנים",
     "",
     "👥 פתיחה / סגירה של קבוצה:",
     "פתח קבוצה א+ד 18:00 – ותיקים",
@@ -886,6 +891,19 @@ async function handleStaffMessage({
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );
+
+    return true;
+  }
+
+  /*
+   * "שלח לי מדריך למדריכים" — המדריך הקצר, מוכן להעתקה לקבוצת המאמנים.
+   */
+  if (
+    /^(?:(?:שלח|תשלח|תן)\s+(?:לי\s+)?(?:את\s+)?)?(?:ה)?מדריך\s+(?:ה)?(?:קצר\s+)?(?:ל|של\s+)?(?:ה)?(?:מדריכים|מאמנים)(?:\s+(?:ה)?קצר)?$/.test(
+      linkText
+    )
+  ) {
+    await sendWhatsAppMessage(userId, COACH_SHORT_GUIDE);
 
     return true;
   }

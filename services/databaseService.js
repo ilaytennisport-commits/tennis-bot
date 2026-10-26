@@ -1222,6 +1222,14 @@ async function initializeDatabase() {
    */
   await require("./pendingTraineeService").createPendingTraineesTable(pool);
 
+  /*
+   * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
+   */
+  const staffDirectory = require("./attendanceService");
+
+  await staffDirectory.createStaffCoachesTable(pool);
+  await staffDirectory.loadCoachOverrides(pool);
+
   console.log(
     "✅ PostgreSQL tables are ready"
   );

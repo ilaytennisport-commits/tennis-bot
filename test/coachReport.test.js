@@ -111,6 +111,8 @@ test.before(async () => {
   `);
 
   await require("../services/pendingTraineeService").createPendingTraineesTable(pool);
+  await require("../services/attendanceService").createStaffCoachesTable(pool);
+  await require("../services/attendanceService").loadCoachOverrides(pool);
 
   /*
    * קבוצה שמתאמנת היום ב-18:00 + קבוצה ריקה.
@@ -568,4 +570,72 @@ test("פתח קבוצה: נוצרת עם סניף, מופיעה בדף הדיו�
   const reopened = await attendance.createGroup({ groupName: created.group.name });
 
   assert.equal(reopened.code, "GROUP_REOPENED");
+});
+
+/* =========================================================
+ * הוספה והסרה של מאמנים מ-WhatsApp
+ * ========================================================= */
+
+test("פקודות מאמנים: הוסף / הסר / רשימה", () => {
+  const { parseManagerCommand } = require("../utils/staffCommandParser");
+
+  assert.deepEqual(parseManagerCommand("הוסף מאמן 054-228-4211 אלונה"), {
+    type: "ADD_COACH",
+    phone: "054-228-4211",
+    name: "אלונה",
+  });
+  assert.deepEqual(parseManagerCommand("תוסיף מאמן מרסל 0507123323"), {
+    type: "ADD_COACH",
+    phone: "0507123323",
+    name: "מרסל",
+  });
+  assert.deepEqual(parseManagerCommand("הסר מאמן אבי"), { type: "REMOVE_COACH", phoneOrName: "אבי" });
+  assert.deepEqual(parseManagerCommand("מאמנים"), { type: "LIST_COACHES" });
+});
+
+test("הוסף מאמן: מקבל קישור דיווח מיד, נשמר אחרי עלייה מחדש, והסרה חוסמת את הקישור", async () => {
+  const NEW_COACH = "0507123323";
+
+  assert.equal(attendance.isCoachPhone(NEW_COACH), false);
+
+  const bad = await attendance.addCoach({ phone: "123", name: "x", managerPhone: "0500000001" });
+
+  assert.equal(bad.success, false);
+
+  const added = await attendance.addCoach({ phone: "050-712-3323", name: "מרסל", managerPhone: "0500000001" });
+
+  assert.equal(added.success, true);
+  assert.match(added.message, /מרסל \(0507123323\) נוסף/);
+  assert.equal(attendance.isCoachPhone(NEW_COACH), true);
+  assert.equal(attendance.getStaffName(NEW_COACH), "מרסל");
+
+  const newToken = await coach.getOrCreateStaffToken(NEW_COACH);
+
+  assert.equal((await coach.resolveStaffByToken(newToken)).name, "מרסל");
+  assert.match(attendance.buildCoachListMessage(), /מרסל – 0507123323/);
+
+  /*
+   * עלייה מחדש של השרת: הרשימה נטענת מהמסד.
+   */
+  await attendance.loadCoachOverrides(pool);
+  assert.equal(attendance.isCoachPhone(NEW_COACH), true);
+
+  const removed = await attendance.removeCoach({ phoneOrName: "מרסל", managerPhone: "0500000001" });
+
+  assert.equal(removed.success, true);
+  assert.equal(attendance.isCoachPhone(NEW_COACH), false);
+  assert.equal(await coach.resolveStaffByToken(newToken), null, "הקישור שלו כבר לא עובד");
+
+  /*
+   * מאמן מ-COACH_PHONES אפשר להסיר, ולהחזיר.
+   */
+  await attendance.removeCoach({ phoneOrName: COACH_PHONE, managerPhone: "0500000001" });
+  assert.equal(attendance.isCoachPhone(COACH_PHONE), false);
+  await attendance.addCoach({ phone: COACH_PHONE, name: "", managerPhone: "0500000001" });
+  assert.equal(attendance.isCoachPhone(COACH_PHONE), true);
+  assert.equal(attendance.getStaffName(COACH_PHONE), "אבי");
+
+  const manager = await attendance.addCoach({ phone: "0500000001", name: "אור", managerPhone: "0500000001" });
+
+  assert.match(manager.message, /כבר מוגדר כמנהל/);
 });

@@ -88,6 +88,9 @@ const {
   moveTrainee,
   createGroup,
   closeGroup,
+  addCoach,
+  removeCoach,
+  buildCoachListMessage,
 
   submitAttendance,
   buildAttendanceSummary,
@@ -245,6 +248,11 @@ function buildManagerCommandsHelp() {
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
+    "",
+    "👟 מאמנים (מי יכול לקבל קישור דיווח):",
+    "מאמנים — הרשימה",
+    "הוסף מאמן 0541234567 דנה",
+    "הסר מאמן 0541234567",
     "",
     "👥 פתיחה / סגירה של קבוצה:",
     "פתח קבוצה א+ד 18:00 – ותיקים",
@@ -531,6 +539,42 @@ async function handleManagerCommand({
             ].join("\n")
           : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
       );
+
+      return true;
+    }
+
+    if (command.type === "LIST_COACHES") {
+      await sendWhatsAppMessage(userId, buildCoachListMessage());
+
+      return true;
+    }
+
+    if (
+      command.type === "ADD_COACH" ||
+      command.type === "REMOVE_COACH"
+    ) {
+      const result =
+        command.type === "ADD_COACH"
+          ? await addCoach({
+              phone: command.phone,
+              name: command.name,
+              managerPhone,
+            })
+          : await removeCoach({
+              phoneOrName: command.phoneOrName,
+              managerPhone,
+            });
+
+      await sendWhatsAppMessage(userId, result.message);
+
+      if (result.success) {
+        await sendToOtherManagers(
+          managerPhone,
+          `👟 ${getStaffName(managerPhone)} ${
+            command.type === "ADD_COACH" ? "הוסיף מאמן" : "הסיר את המאמן"
+          }: ${result.name ? `${result.name} (${result.phone})` : result.phone}`
+        );
+      }
 
       return true;
     }

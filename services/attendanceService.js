@@ -47,7 +47,195 @@ function getStaffNames() {
     }
   }
 
+  for (const [phone, coach] of coachOverrides) {
+    if (coach.active && coach.name) {
+      names[phone] = coach.name;
+    }
+  }
+
   return names;
+}
+
+/*
+ * =========================================================
+ * מאמנים שמנהל הוסיף או הסיר ב-WhatsApp
+ * =========================================================
+ *
+ * "הוסף מאמן 0541234567 דנה" / "הסר מאמן 0541234567".
+ * נשמרים בטבלת staff_coaches ונטענים לזיכרון בעליית השרת.
+ * מאמן שהוסר כאן נחסם גם אם הוא מופיע ב-COACH_PHONES.
+ */
+const coachOverrides = new Map();
+
+async function createStaffCoachesTable(db = pool) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS staff_coaches (
+      phone TEXT PRIMARY KEY,
+      name TEXT,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function loadCoachOverrides(db = pool) {
+  const result = await db.query(
+    `SELECT phone, name, active FROM staff_coaches`
+  );
+
+  coachOverrides.clear();
+
+  for (const row of result.rows) {
+    coachOverrides.set(row.phone, {
+      name: row.name,
+      active: row.active,
+    });
+  }
+
+  return coachOverrides.size;
+}
+
+async function saveCoachOverride(
+  { phone, name, active, updatedBy },
+  db = pool
+) {
+  await db.query(
+    `
+      INSERT INTO staff_coaches (phone, name, active, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (phone)
+      DO UPDATE SET
+        name = COALESCE(EXCLUDED.name, staff_coaches.name),
+        active = EXCLUDED.active,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+    `,
+    [phone, name || null, active, updatedBy || null]
+  );
+
+  const previous = coachOverrides.get(phone);
+
+  coachOverrides.set(phone, {
+    name: name || previous?.name || null,
+    active,
+  });
+}
+
+function isValidMobile(phone) {
+  return /^05\d{8}$/.test(phone);
+}
+
+async function addCoach({ phone, name, managerPhone }) {
+  const normalized = normalizePhone(phone);
+  const cleanName = cleanValue(name || "");
+
+  if (!isValidMobile(normalized)) {
+    return {
+      success: false,
+      message: "❌ מספר הטלפון לא תקין. לדוגמה: הוסף מאמן 0541234567 דנה",
+    };
+  }
+
+  if (isManagerPhone(normalized)) {
+    return {
+      success: false,
+      message: "ℹ️ המספר הזה כבר מוגדר כמנהל, ולמנהל יש כבר את כל ההרשאות.",
+    };
+  }
+
+  const wasCoach = isCoachPhone(normalized);
+  const finalName = cleanName || getStaffNames()[normalized] || null;
+
+  await saveCoachOverride({
+    phone: normalized,
+    name: finalName,
+    active: true,
+    updatedBy: getStaffName(managerPhone),
+  });
+
+  const label = finalName ? `${finalName} (${normalized})` : normalized;
+
+  return {
+    success: true,
+    phone: normalized,
+    name: finalName,
+    message: [
+      wasCoach
+        ? `ℹ️ ${label} כבר היה/ה מוגדר/ת כמאמן${cleanName ? ". השם עודכן" : ""}.`
+        : `✅ ${label} נוסף/ה כמאמן.`,
+      "",
+      "עכשיו המאמן יכול לשלוח לבוט: קישור דיווח",
+    ].join("\n"),
+  };
+}
+
+async function removeCoach({ phoneOrName, managerPhone }) {
+  const text = cleanValue(phoneOrName || "");
+  let target = normalizePhone(text);
+
+  if (!isValidMobile(target)) {
+    const names = getStaffNames();
+    const matches = getCoachPhones().filter(
+      (phone) => names[phone] && normalizeName(names[phone]).startsWith(normalizeName(text))
+    );
+
+    if (matches.length !== 1) {
+      return {
+        success: false,
+        message:
+          matches.length > 1
+            ? `⚠️ יש כמה מאמנים בשם הזה: ${matches.map((phone) => `${names[phone]} (${phone})`).join(", ")}. כתבו את מספר הטלפון.`
+            : `❌ לא מצאתי מאמן בשם ${text}. לרשימה: מאמנים`,
+      };
+    }
+
+    target = matches[0];
+  }
+
+  if (!isCoachPhone(target)) {
+    return {
+      success: false,
+      message: `ℹ️ ${target} לא מוגדר כמאמן.`,
+    };
+  }
+
+  const name = getStaffNames()[target] || null;
+
+  await saveCoachOverride({
+    phone: target,
+    name,
+    active: false,
+    updatedBy: getStaffName(managerPhone),
+  });
+
+  return {
+    success: true,
+    phone: target,
+    name,
+    message: `✅ ${name ? `${name} (${target})` : target} הוסר/ה מהמאמנים. הקישור האישי שלו/ה כבר לא עובד.`,
+  };
+}
+
+function buildCoachListMessage() {
+  const names = getStaffNames();
+  const coaches = getCoachPhones();
+
+  if (coaches.length === 0) {
+    return "אין מאמנים מוגדרים.";
+  }
+
+  return [
+    `👟 מאמנים (${coaches.length}):`,
+    "",
+    ...coaches
+      .map((phone) => ({ phone, name: names[phone] || "ללא שם" }))
+      .sort((a, b) => a.name.localeCompare(b.name, "he"))
+      .map((coach) => `• ${coach.name} – ${coach.phone}`),
+    "",
+    "להוספה: הוסף מאמן 0541234567 שם",
+    "להסרה: הסר מאמן 0541234567",
+  ].join("\n");
 }
 
 /*
@@ -224,10 +412,22 @@ function isManagerPhone(phone) {
  */
 
 function getCoachPhones() {
-  return parsePhoneList(
-    process.env.COACH_PHONES ||
-      ""
+  const phones = new Set(
+    parsePhoneList(
+      process.env.COACH_PHONES ||
+        ""
+    )
   );
+
+  for (const [phone, coach] of coachOverrides) {
+    if (coach.active) {
+      phones.add(phone);
+    } else {
+      phones.delete(phone);
+    }
+  }
+
+  return [...phones];
 }
 
 function isCoachPhone(phone) {
@@ -3669,6 +3869,12 @@ module.exports = {
   removeTrainee,
   createGroup,
   closeGroup,
+  getCoachPhones,
+  createStaffCoachesTable,
+  loadCoachOverrides,
+  addCoach,
+  removeCoach,
+  buildCoachListMessage,
   moveTrainee,
 
   submitAttendance,

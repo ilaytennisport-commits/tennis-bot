@@ -507,6 +507,42 @@ function parseManagerCommand(
   }
 
   /*
+   * מאמנים: "הוסף מאמן 0541234567 דנה" / "הסר מאמן 0541234567" / "מאמנים".
+   */
+  if (/^(?:מאמנים|רשימת מאמנים|מי המאמנים)$/.test(text)) {
+    return { type: "LIST_COACHES" };
+  }
+
+  const addCoachMatch = text.match(
+    /^(?:הוסף|תוסיף|הגדר|תגדיר)\s+(?:את\s+)?(?:ה)?(?:מאמן|מאמנת|מדריך|מדריכה)\s+(.+)$/
+  );
+
+  if (addCoachMatch) {
+    const rest = addCoachMatch[1];
+    const phoneMatch = rest.match(/(?:\+?972|0)[\d\s-]{8,13}\d/);
+
+    return {
+      type: "ADD_COACH",
+      phone: phoneMatch ? phoneMatch[0] : "",
+      name: (phoneMatch ? rest.replace(phoneMatch[0], " ") : rest)
+        .replace(/[,:\-–—]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    };
+  }
+
+  const removeCoachMatch = text.match(
+    /^(?:הסר|תסיר|מחק|תמחק|הורד|תוריד)\s+(?:את\s+)?(?:ה)?(?:מאמן|מאמנת|מדריך|מדריכה)\s+(.+)$/
+  );
+
+  if (removeCoachMatch) {
+    return {
+      type: "REMOVE_COACH",
+      phoneOrName: removeCoachMatch[1].trim(),
+    };
+  }
+
+  /*
    * פתיחה / סגירה של קבוצה.
    * "פתח קבוצה א+ד 18:00 – ותיקים" / "סגור קבוצה א+ד 18:00 – ותיקים"
    */

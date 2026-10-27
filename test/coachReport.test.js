@@ -107,7 +107,7 @@ test.before(async () => {
     CREATE TABLE attendance_sessions (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL, session_date DATE NOT NULL, submitted_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(group_id, session_date));
     CREATE TABLE attendance_records (id BIGSERIAL PRIMARY KEY, session_id BIGINT NOT NULL, trainee_id BIGINT NOT NULL, status TEXT NOT NULL, notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(session_id, trainee_id));
     CREATE TABLE trainee_training_slots (id BIGSERIAL PRIMARY KEY, trainee_name TEXT NOT NULL, branch TEXT NOT NULL, group_label TEXT, day_of_week INTEGER NOT NULL, start_time TIME NOT NULL, notes TEXT, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(trainee_name, branch, day_of_week, start_time, group_label));
-    CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, short_token TEXT UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW());
   `);
 
   await pool.query(`CREATE TABLE trainee_group_profiles (id BIGSERIAL PRIMARY KEY, trainee_name TEXT NOT NULL, branch TEXT NOT NULL, group_label TEXT NOT NULL, notes TEXT, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(trainee_name, branch, group_label))`);
@@ -158,7 +158,7 @@ test.before(async () => {
 });
 
 test("קישור אישי: קבוע, מזהה את המאמן, ונדחה למי שאינו צוות", async () => {
-  assert.match(token, /^[a-f0-9]{48}$/);
+  assert.match(token, /^[2-9a-km-np-zA-HJ-NP-Z]{12}$/);
   assert.equal(await coach.getOrCreateStaffToken(COACH_PHONE), token);
   assert.equal((await coach.resolveStaffByToken(token)).name, "אבי");
 

@@ -240,6 +240,13 @@ async function initializeDatabase() {
   `);
 
   /*
+   * קוד קצר לקישור (הקוד הישן והארוך ממשיך לעבוד).
+   */
+  await pool.query(`
+    ALTER TABLE staff_links ADD COLUMN IF NOT EXISTS short_token TEXT UNIQUE
+  `);
+
+  /*
    * =========================================================
    * הערות ובקשות מהצוות ("הערה: ..." ב-WhatsApp)
    * =========================================================

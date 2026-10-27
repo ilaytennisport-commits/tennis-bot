@@ -219,7 +219,7 @@ async function getTasksLink(phone, fallbackHost = null) {
     return null;
   }
 
-  return `${baseUrl}/tasks/${await getOrCreateStaffToken(phone)}`;
+  return `${baseUrl}/t/${await getOrCreateStaffToken(phone)}`;
 }
 
 /*

@@ -137,7 +137,7 @@ test("מנהל מבקש קישור דיווח של מאמן — מקבל את ה
   const reply = lastSentTo(state, OWNER);
 
   assert.match(reply, /הקישור האישי של אבי/);
-  assert.match(reply, /https:\/\/bot\.example\.com\/report\/[a-f0-9]{48}/);
+  assert.match(reply, /https:\/\/bot\.example\.com\/r\/[2-9a-km-np-zA-HJ-NP-Z]{12}/);
 
   await processIncomingMessage(textMessage(OWNER, "קישור דיווח ל-0500000002"));
   assert.match(lastSentTo(state, OWNER), /הקישור האישי של אבי/);
@@ -180,7 +180,7 @@ test("מנהל כותב \"משימות\" — מקבל קישור אישי ללו
     const reply = lastSentTo(state, OWNER);
 
     assert.match(reply, /לוח המשימות של המועדון/, text);
-    assert.match(reply, /https:\/\/bot\.example\.com\/tasks\/[a-f0-9]{48}/, text);
+    assert.match(reply, /https:\/\/bot\.example\.com\/t\/[2-9a-km-np-zA-HJ-NP-Z]{12}/, text);
   }
 
   await processIncomingMessage(textMessage(OWNER, "משימות של יוסי"));

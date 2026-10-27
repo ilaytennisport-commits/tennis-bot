@@ -86,7 +86,7 @@ async function rows() {
 
 test.before(async () => {
   await pool.query(
-    `CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW())`
+    `CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, short_token TEXT UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW())`
   );
   await require("../services/attendanceService").createStaffCoachesTable(pool);
   await tasks.createTasksTable(pool);
@@ -98,7 +98,7 @@ test.before(async () => {
 test("הקישור של מנהל: כתובת /tasks עם הקוד האישי", async () => {
   const link = await tasks.getTasksLink("0500000003");
 
-  assert.match(link, /^https:\/\/bot\.example\.com\/tasks\/[a-f0-9]{48}$/);
+  assert.match(link, /^https:\/\/bot\.example\.com\/t\/[2-9a-km-np-zA-HJ-NP-Z]{12}$/);
   assert.equal(tasks.findManagerPhoneByName("אשר"), "0500000003");
   assert.equal(tasks.findManagerPhoneByName("אבי"), null);
 });
@@ -180,7 +180,7 @@ test("הוספה, סטטוס, עריכה ומחיקה", async () => {
 
   /* עריכה */
   res = await call(tasks.handleBoard, { token: orToken, query: { edit: id } });
-  assert.match(res.body, /action="\/tasks\/[a-f0-9]{48}\/task\/\d+\/edit"/);
+  assert.match(res.body, /action="\/tasks\/[2-9a-km-np-zA-HJ-NP-Z]{12}\/task\/\d+\/edit"/);
 
   await call(tasks.handleEdit, {
     token: orToken,
@@ -229,4 +229,58 @@ test("סדר: לא טופל, אחר כך מתוזמנות לפי תאריך, ו�
 
   /* שיוך לא מוכר → המנהל הראשון */
   assert.equal(list[0].assignee, "אור");
+});
+
+test("קישורים ישנים (ארוכים) ממשיכים לעבוד, וקישור חדש קצר", async () => {
+  const oldToken = "ab12".repeat(12);
+
+  await pool.query(`DELETE FROM staff_links WHERE phone = '0500000003'`);
+
+  await pool.query(
+    `INSERT INTO staff_links (phone, token) VALUES ('0500000003', $1)`,
+    [oldToken]
+  );
+
+  assert.equal((await coach.resolveStaffByToken(oldToken, pool)).name, "אשר");
+
+  const short = await coach.getOrCreateStaffToken("0500000003", pool);
+
+  assert.match(short, /^[2-9a-km-np-zA-HJ-NP-Z]{12}$/);
+  assert.equal(await coach.getOrCreateStaffToken("0500000003", pool), short);
+  assert.equal((await coach.resolveStaffByToken(short, pool)).name, "אשר");
+  assert.equal((await coach.resolveStaffByToken(oldToken, pool)).name, "אשר");
+
+  /* החלפת קישור מבטלת את שניהם */
+  const fresh = await coach.rotateStaffToken("0500000003", pool);
+
+  assert.equal(await coach.resolveStaffByToken(oldToken, pool), null);
+  assert.equal(await coach.resolveStaffByToken(short, pool), null);
+  assert.equal((await coach.resolveStaffByToken(fresh, pool)).name, "אשר");
+});
+
+test("דף הנוכחות החי: קוד ישן עובד, הקישור החדש קצר, והחלפה מבטלת את שניהם", async () => {
+  await pool.query(
+    `CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`
+  );
+
+  const view = require("../services/attendanceViewService");
+  const oldToken = "cd34".repeat(12);
+
+  await pool.query(
+    `INSERT INTO app_settings (key, value) VALUES ('attendance_view_token', $1)`,
+    [oldToken]
+  );
+
+  const short = await view.getOrCreateViewToken(pool);
+
+  assert.match(short, /^[2-9a-km-np-zA-HJ-NP-Z]{12}$/);
+  assert.equal(await view.isValidViewToken(oldToken, pool), true);
+  assert.equal(await view.isValidViewToken(short, pool), true);
+  assert.equal(await view.isValidViewToken("zzzzzzzzzzzz", pool), false);
+
+  const fresh = await view.rotateViewToken(pool);
+
+  assert.equal(await view.isValidViewToken(oldToken, pool), false);
+  assert.equal(await view.isValidViewToken(short, pool), false);
+  assert.equal(await view.isValidViewToken(fresh, pool), true);
 });

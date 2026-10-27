@@ -67,6 +67,13 @@ app.use("/league", leagueRouter);
 app.use("/tasks", tasksRouter);
 
 /*
+ * כתובות קצרות לקישורים שנשלחים ב-WhatsApp.
+ */
+app.use("/r", reportRouter);
+app.use("/a", attendanceRouter);
+app.use("/t", tasksRouter);
+
+/*
  * הלוגו של האקדמיה — לדפים של הבוט.
  */
 app.get("/logo.png", (req, res) => {

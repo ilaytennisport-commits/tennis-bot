@@ -183,22 +183,22 @@ function setupHarness(env = {}) {
       return { rows: [note], rowCount: 1 };
     }
 
-    if (/^SELECT token FROM staff_links WHERE phone/.test(text)) {
+    if (/^SELECT token, short_token FROM staff_links WHERE phone/.test(text)) {
       const token = state.staffLinks.get(params[0]);
 
       return {
-        rows: token ? [{ token }] : [],
+        rows: token ? [{ token, short_token: token }] : [],
         rowCount: token ? 1 : 0,
       };
     }
 
-    if (/^SELECT phone, token FROM staff_links WHERE token/.test(text)) {
+    if (/^SELECT phone, token, short_token FROM staff_links WHERE token/.test(text)) {
       const entry = [...state.staffLinks.entries()].find(
         ([, token]) => token === params[0]
       );
 
       return {
-        rows: entry ? [{ phone: entry[0], token: entry[1] }] : [],
+        rows: entry ? [{ phone: entry[0], token: entry[1], short_token: entry[1] }] : [],
         rowCount: entry ? 1 : 0,
       };
     }

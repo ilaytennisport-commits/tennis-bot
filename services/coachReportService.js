@@ -1,4 +1,8 @@
-const crypto = require("crypto");
+const {
+  generateShortToken,
+  isLinkToken,
+  sameToken,
+} = require("../utils/linkToken");
 
 const { pool } = require("./databaseService");
 
@@ -46,9 +50,11 @@ const DAY_NAMES = {
  * קישור אישי
  * ========================================================= */
 
-function generateToken() {
-  return crypto.randomBytes(24).toString("hex");
-}
+/*
+ * לכל איש צוות יש קוד קצר (short_token) שנשלח בקישורים.
+ * קוד ישן וארוך (token) ממשיך לעבוד, כדי שקישורים שנשמרו לא יישברו.
+ * "החלף קישור" מבטל את שניהם ויוצר קוד קצר חדש.
+ */
 
 function isStaffPhone(phone) {
   return (
@@ -57,47 +63,54 @@ function isStaffPhone(phone) {
   );
 }
 
+async function readStaffLink(phone, db) {
+  const result = await db.query(
+    `SELECT token, short_token FROM staff_links WHERE phone = $1`,
+    [phone]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function getOrCreateStaffToken(phone, db = pool) {
   const normalized = attendance.normalizePhone(phone);
+  const existing = await readStaffLink(normalized, db);
 
-  const existing = await db.query(
-    `SELECT token FROM staff_links WHERE phone = $1`,
-    [normalized]
-  );
-
-  if (existing.rows[0]) {
-    return existing.rows[0].token;
+  if (existing?.short_token) {
+    return existing.short_token;
   }
 
-  const token = generateToken();
+  const token = generateShortToken();
 
-  await db.query(
-    `
-      INSERT INTO staff_links (phone, token)
-      VALUES ($1, $2)
-      ON CONFLICT (phone) DO NOTHING
-    `,
-    [normalized, token]
-  );
+  if (existing) {
+    await db.query(
+      `UPDATE staff_links SET short_token = $2 WHERE phone = $1 AND short_token IS NULL`,
+      [normalized, token]
+    );
+  } else {
+    await db.query(
+      `
+        INSERT INTO staff_links (phone, token, short_token)
+        VALUES ($1, $2, $2)
+        ON CONFLICT (phone) DO NOTHING
+      `,
+      [normalized, token]
+    );
+  }
 
-  const saved = await db.query(
-    `SELECT token FROM staff_links WHERE phone = $1`,
-    [normalized]
-  );
-
-  return saved.rows[0].token;
+  return (await readStaffLink(normalized, db)).short_token;
 }
 
 async function rotateStaffToken(phone, db = pool) {
   const normalized = attendance.normalizePhone(phone);
-  const token = generateToken();
+  const token = generateShortToken();
 
   await db.query(
     `
-      INSERT INTO staff_links (phone, token)
-      VALUES ($1, $2)
+      INSERT INTO staff_links (phone, token, short_token)
+      VALUES ($1, $2, $2)
       ON CONFLICT (phone)
-      DO UPDATE SET token = EXCLUDED.token, created_at = NOW()
+      DO UPDATE SET token = EXCLUDED.token, short_token = EXCLUDED.short_token, created_at = NOW()
     `,
     [normalized, token]
   );
@@ -110,23 +123,22 @@ async function rotateStaffToken(phone, db = pool) {
  * רק אם הוא עדיין מוגדר כמנהל או מאמן.
  */
 async function resolveStaffByToken(token, db = pool) {
-  if (!token || !/^[a-f0-9]{48}$/.test(String(token))) {
+  if (!isLinkToken(token)) {
     return null;
   }
 
+  const value = String(token);
+
   const result = await db.query(
-    `SELECT phone, token FROM staff_links WHERE token = $1`,
-    [String(token)]
+    `SELECT phone, token, short_token FROM staff_links WHERE token = $1 OR short_token = $1`,
+    [value]
   );
 
   const row = result.rows[0];
 
   if (
     !row ||
-    !crypto.timingSafeEqual(
-      Buffer.from(row.token),
-      Buffer.from(String(token))
-    ) ||
+    !(sameToken(row.token, value) || sameToken(row.short_token, value)) ||
     !isStaffPhone(row.phone)
   ) {
     return null;
@@ -146,7 +158,7 @@ async function getStaffReportLink(phone, fallbackHost = null) {
     return null;
   }
 
-  return `${baseUrl}/report/${await getOrCreateStaffToken(phone)}`;
+  return `${baseUrl}/r/${await getOrCreateStaffToken(phone)}`;
 }
 
 /* =========================================================
@@ -597,6 +609,7 @@ const STYLE = `
   body { margin:0; background:var(--bg); color:#1f2933; font:17px/1.45 "Segoe UI", Arial, sans-serif; }
   .wrap { max-width:640px; margin:0 auto; padding:14px 14px 200px; }
   h1 { font-size:22px; color:var(--brand); margin:4px 0 2px; }
+  .logo { display:block; width:76px; height:auto; margin:0 auto 4px; }
   .sub { color:var(--muted); font-size:14px; margin-bottom:12px; }
   .tabs { display:flex; gap:8px; margin:10px 0 14px; overflow-x:auto; padding-bottom:4px; }
   .tabs a { flex:0 0 auto; white-space:nowrap; text-align:center; padding:10px 14px; border-radius:10px; border:2px solid var(--border);
@@ -650,9 +663,10 @@ function page(title, body) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
+<link rel="icon" type="image/png" href="/logo.png">
 <style>${STYLE}</style>
 </head>
-<body><div class="wrap">${body}</div></body>
+<body><div class="wrap"><img class="logo" src="/logo.png" alt="האקדמיה לטניס גלי הדר" width="76">${body}</div></body>
 </html>`;
 }
 
@@ -687,7 +701,7 @@ function renderHome({ staff, token, dateString, sessions, allChoices, now }) {
 
   return page(
     "דיווח נוכחות",
-    `<h1>📋 דיווח נוכחות</h1>
+    `<h1>דיווח נוכחות</h1>
      <div class="sub">שלום ${escapeHtml(staff.name)} · ${escapeHtml(DAY_NAMES[dayOfWeekOf(dateString)])} ${formatDate(dateString)}</div>
      <div class="tabs">${tabs}</div>
      <div class="sub">בחרו את האימון:</div>

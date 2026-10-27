@@ -1,4 +1,8 @@
-const crypto = require("crypto");
+const {
+  generateShortToken,
+  isLinkToken,
+  sameToken,
+} = require("../utils/linkToken");
 
 const { pool } = require("./databaseService");
 
@@ -27,24 +31,24 @@ const {
  */
 
 const TOKEN_KEY = "attendance_view_token";
+const SHORT_TOKEN_KEY = "attendance_view_short_token";
 const REFRESH_SECONDS = 60;
 
-/* ---------- קוד סודי ---------- */
+/* ---------- קוד סודי ----------
+ * הקישור נשלח עם קוד קצר. קוד ישן וארוך ממשיך לעבוד
+ * עד ש"החלף קישור נוכחות" מבטל את שניהם.
+ */
 
-function generateToken() {
-  return crypto.randomBytes(24).toString("hex");
-}
-
-async function getViewToken(db = pool) {
+async function readSetting(key, db) {
   const result = await db.query(
     `SELECT value FROM app_settings WHERE key = $1`,
-    [TOKEN_KEY]
+    [key]
   );
 
   return result.rows[0]?.value || null;
 }
 
-async function setViewToken(token, db = pool) {
+async function writeSetting(key, value, db) {
   await db.query(
     `
       INSERT INTO app_settings (key, value, updated_at)
@@ -54,40 +58,35 @@ async function setViewToken(token, db = pool) {
         value = EXCLUDED.value,
         updated_at = NOW()
     `,
-    [TOKEN_KEY, token]
+    [key, value]
   );
 
-  return token;
+  return value;
 }
 
 async function getOrCreateViewToken(db = pool) {
   return (
-    (await getViewToken(db)) ||
-    setViewToken(generateToken(), db)
+    (await readSetting(SHORT_TOKEN_KEY, db)) ||
+    writeSetting(SHORT_TOKEN_KEY, generateShortToken(), db)
   );
 }
 
 async function rotateViewToken(db = pool) {
-  return setViewToken(generateToken(), db);
+  const token = generateShortToken();
+
+  await writeSetting(TOKEN_KEY, token, db);
+
+  return writeSetting(SHORT_TOKEN_KEY, token, db);
 }
 
 async function isValidViewToken(token, db = pool) {
-  if (!token || !/^[a-f0-9]{48}$/.test(String(token))) {
+  if (!isLinkToken(token)) {
     return false;
   }
-
-  const stored = await getViewToken(db);
-
-  if (!stored) {
-    return false;
-  }
-
-  const a = Buffer.from(String(token));
-  const b = Buffer.from(stored);
 
   return (
-    a.length === b.length &&
-    crypto.timingSafeEqual(a, b)
+    sameToken(token, await readSetting(SHORT_TOKEN_KEY, db)) ||
+    sameToken(token, await readSetting(TOKEN_KEY, db))
   );
 }
 
@@ -115,7 +114,7 @@ async function getViewLink(fallbackHost = null) {
     return null;
   }
 
-  return `${baseUrl}/attendance/${await getOrCreateViewToken()}`;
+  return `${baseUrl}/a/${await getOrCreateViewToken()}`;
 }
 
 /* ---------- בחירת חודש ---------- */
@@ -182,6 +181,8 @@ const PAGE_STYLE = `
   }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
   header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo { width: 64px; height: auto; flex-shrink: 0; }
   h1 { margin: 0; font-size: 22px; color: var(--brand); }
   .updated { color: var(--muted); font-size: 13px; }
   .nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
@@ -327,12 +328,13 @@ function renderAttendancePage({
 <meta name="robots" content="noindex, nofollow">
 <meta http-equiv="refresh" content="${REFRESH_SECONDS}">
 <title>נוכחות – ${escapeHtml(monthLabel)}</title>
+<link rel="icon" type="image/png" href="/logo.png">
 <style>${PAGE_STYLE}</style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>📋 נוכחות האקדמיה לטניס</h1>
+    <h1 class="brand"><img class="logo" src="/logo.png" alt="" width="64">נוכחות האקדמיה לטניס</h1>
     <span class="updated">עודכן ב-${formatUpdatedAt(now)} · מתעדכן לבד כל דקה</span>
   </header>
   <nav class="nav">

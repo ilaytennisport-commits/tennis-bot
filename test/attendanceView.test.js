@@ -104,7 +104,7 @@ async function getLinkFromBot() {
 
   const reply = sentTo(state, MANAGER_CHAT).pop().body;
   const match = reply.match(
-    /https:\/\/bot\.example\.com\/attendance\/([a-f0-9]{48})/
+    /https:\/\/bot\.example\.com\/a\/([2-9a-km-np-zA-HJ-NP-Z]{12})/
   );
 
   return { reply, token: match?.[1] };
@@ -137,7 +137,7 @@ test("מאמן: 'קישור נוכחות' נותן קישור דיווח איש�
   const reply = sentTo(state, COACH_CHAT)[0].body;
 
   assert.match(reply, /הקישור האישי שלך לדיווח נוכחות/);
-  assert.match(reply, /\/report\/[a-f0-9]{48}/);
+  assert.match(reply, /\/r\/[2-9a-km-np-zA-HJ-NP-Z]{12}/);
   assert.doesNotMatch(reply, /\/attendance\//);
 });
 
@@ -231,7 +231,7 @@ test("החלפת קישור: הקישור הישן מפסיק לעבוד", async
   );
 
   const reply = sentTo(state, MANAGER_CHAT).pop().body;
-  const newToken = reply.match(/attendance\/([a-f0-9]{48})/)[1];
+  const newToken = reply.match(/\/a\/([2-9a-km-np-zA-HJ-NP-Z]{12})/)[1];
 
   assert.notEqual(newToken, before.token);
   assert.match(reply, /הקישור הקודם כבר לא עובד/);

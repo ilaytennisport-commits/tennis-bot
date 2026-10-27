@@ -492,6 +492,11 @@ async function initializeDatabase() {
   await require("./pendingTraineeService").createPendingTraineesTable(pool);
 
   /*
+   * לוח משימות שוטפות למנהלים ("משימות" ב-WhatsApp).
+   */
+  await require("./taskBoardService").createTasksTable(pool);
+
+  /*
    * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
    */
   const staffDirectory = require("./attendanceService");

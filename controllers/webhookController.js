@@ -152,6 +152,11 @@ const {
 } = require("../services/coachReportService");
 
 const {
+  getTasksLink,
+  findManagerPhoneByName,
+} = require("../services/taskBoardService");
+
+const {
   parseSupportNote,
   createSupportNote,
   listOpenSupportNotes,
@@ -259,6 +264,10 @@ function buildManagerCommandsHelp() {
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
+    "",
+    "📝 לוח משימות שוטפות למנהלים:",
+    "משימות — הקישור האישי שלך",
+    "משימות של אשר — הקישור שלו, כדי להעביר לו",
     "",
     "👟 מאמנים (מי יכול לקבל קישור דיווח):",
     "מאמנים — הרשימה",
@@ -946,6 +955,65 @@ async function handleStaffMessage({
             "⚠️ הקישור אישי — לא להעביר לאחרים.",
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+    );
+
+    return true;
+  }
+
+  /*
+   * לוח המשימות של המנהלים:
+   * "משימות" / "קישור משימות" — הקישור האישי שלי.
+   * "משימות של אשר" — הקישור של מנהל אחר, כדי להעביר לו.
+   */
+  const tasksMatch = manager
+    ? linkText.match(
+        /^(?:(?:שלח|תשלח|תן)\s+(?:לי\s+)?)?(?:(?:את\s+)?(?:ה)?(?:קישור|לינק|דף|לוח|רשימת)\s+)?(?:ל|של\s+)?(?:ה)?משימות(?:\s+(?:של\s+|ל-?\s*)(.+))?$/
+      )
+    : null;
+
+  if (tasksMatch) {
+    const targetPhone = tasksMatch[1]
+      ? findManagerPhoneByName(tasksMatch[1])
+      : staffPhone;
+
+    if (!targetPhone) {
+      await sendWhatsAppMessage(
+        userId,
+        `❌ לא מצאתי מנהל בשם "${tasksMatch[1].trim()}".`
+      );
+
+      return true;
+    }
+
+    const tasksLink = await getTasksLink(targetPhone, lastKnownHost);
+    const forOther =
+      normalizePhone(targetPhone) !== normalizePhone(staffPhone);
+    const targetName = getStaffName(targetPhone);
+
+    await sendWhatsAppMessage(
+      userId,
+      !tasksLink
+        ? "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+        : forOther
+          ? [
+              `📝 הקישור האישי של ${targetName} ללוח המשימות:`,
+              "",
+              tasksLink,
+              "",
+              `העבירו אותו רק ל${targetName}, בהודעה פרטית.`,
+            ].join("\n")
+          : [
+              "📝 לוח המשימות של המועדון:",
+              "",
+              tasksLink,
+              "",
+              "• מוסיפים משימה ובוחרים מי אחראי",
+              "• לוחצים: לא טופל / יטופל ב… / טופל",
+              "• אפשר לערוך ולמחוק",
+              "",
+              "💡 שמרו את ההודעה (⭐ סימון בכוכב) — הקישור לא משתנה.",
+              "⚠️ הקישור אישי — לא להעביר לאחרים.",
+            ].join("\n")
     );
 
     return true;

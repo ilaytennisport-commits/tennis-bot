@@ -170,3 +170,31 @@ test("'שלח לי מדריך למדריכים' — המנהל מקבל את ה�
     assert.match(reply, /ילד שלא ברשימה/);
   }
 });
+
+test("מנהל כותב \"משימות\" — מקבל קישור אישי ללוח המשימות", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  for (const text of ["משימות", "קישור משימות", "שלח לי את הקישור למשימות", "לוח משימות"]) {
+    await processIncomingMessage(textMessage(OWNER, text));
+
+    const reply = lastSentTo(state, OWNER);
+
+    assert.match(reply, /לוח המשימות של המועדון/, text);
+    assert.match(reply, /https:\/\/bot\.example\.com\/tasks\/[a-f0-9]{48}/, text);
+  }
+
+  await processIncomingMessage(textMessage(OWNER, "משימות של יוסי"));
+  assert.match(lastSentTo(state, OWNER), /הקישור האישי של יוסי ללוח המשימות/);
+
+  await processIncomingMessage(textMessage(OWNER, "משימות של אבי"));
+  assert.match(lastSentTo(state, OWNER), /לא מצאתי מנהל בשם "אבי"/);
+});
+
+test("מאמן שכותב \"משימות\" לא מקבל קישור ללוח", async () => {
+  await processIncomingMessage(textMessage(COACH, "משימות"));
+
+  assert.doesNotMatch(
+    sentTo(state, COACH).map((m) => m.body).join("\n"),
+    /\/tasks\//
+  );
+});

@@ -32,6 +32,7 @@ const webhookRouter = require("./routes/webhook");
 const attendanceRouter = require("./routes/attendance");
 const reportRouter = require("./routes/report");
 const leagueRouter = require("./routes/league");
+const tasksRouter = require("./routes/tasks");
 
 const {
   retryPendingLeads,
@@ -63,6 +64,7 @@ app.use("/webhook", webhookRouter);
 app.use("/attendance", attendanceRouter);
 app.use("/report", reportRouter);
 app.use("/league", leagueRouter);
+app.use("/tasks", tasksRouter);
 
 app.get("/", (req, res) => {
   res.send("🎾 Tennis Bot עובד!");

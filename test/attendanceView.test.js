@@ -179,6 +179,64 @@ test("דף: שמות מוצגים בבטחה (בלי הרצת קוד)", async ()
   assert.equal(escapeHtml(`<a href="x">`), "&lt;a href=&quot;x&quot;&gt;");
 });
 
+test("דף לפי יום: מי הגיע ומי לא, מעבר בין ימים, ולשונית 'כל החודש'", async () => {
+  const { token } = await getLinkFromBot();
+
+  state.attendanceRows = sampleRows();
+
+  const res = fakeRes();
+
+  await handleAttendancePage(
+    { params: { token }, query: { date: "2026-10-19" } },
+    res
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /יום שני 19\/10\/2026/);
+  assert.match(res.body, /הגיעו 1 מתוך 2/);
+  assert.match(res.body, /<ul class="names p"><li>מורל<\/li><\/ul>/);
+  assert.match(res.body, /<ul class="names a"><li>&lt;script&gt;/);
+  assert.doesNotMatch(res.body, /<script>alert/);
+  assert.match(res.body, /dir="rtl"/);
+  assert.match(res.body, /\?date=2026-10-18">→ יום קודם/);
+  assert.match(res.body, /\?date=2026-10-20">יום הבא ←/);
+  assert.match(res.body, /class="chip on" href="[^"]*\?date=2026-10-19"/);
+  assert.match(res.body, /\?view=month&month=2026-10">כל החודש/);
+
+  /* יום בלי דיווח */
+  const empty = fakeRes();
+
+  await handleAttendancePage(
+    { params: { token }, query: { date: "2026-10-20" } },
+    empty
+  );
+
+  assert.match(empty.body, /אין דיווחי נוכחות ביום שלישי 20\/10\/2026/);
+  assert.match(empty.body, /\?date=2026-10-19"/);
+
+  /* תאריך לא חוקי → היום, בלי שגיאה */
+  const bad = fakeRes();
+
+  await handleAttendancePage(
+    { params: { token }, query: { date: "2026-02-31" } },
+    bad
+  );
+
+  assert.equal(bad.statusCode, 200);
+  assert.match(bad.body, /class="tab on"[^>]*>לפי יום/);
+
+  /* בלי פרמטרים — לפי יום; view=month — הטבלה המלאה */
+  const month = fakeRes();
+
+  await handleAttendancePage(
+    { params: { token }, query: { view: "month", month: "2026-10" } },
+    month
+  );
+
+  assert.match(month.body, /סיכום לפי קבוצה/);
+  assert.match(month.body, /class="tab on"[^>]*>כל החודש/);
+});
+
 test("דף: קוד שגוי או חסר — 404", async () => {
   for (const token of ["wrong", "a".repeat(48), ""]) {
     const res = fakeRes();

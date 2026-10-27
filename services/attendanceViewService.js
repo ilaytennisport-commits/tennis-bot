@@ -216,6 +216,28 @@ const PAGE_STYLE = `
   .empty { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 16px; }
   .day { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin: 20px 0 8px; }
+  .tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--border); margin-top: 14px; }
+  .tab { padding: 9px 18px; border-radius: 8px 8px 0 0; color: var(--muted); font-weight: 700; text-decoration: none; margin-bottom: -2px; border: 2px solid transparent; }
+  .tab.on { color: var(--brand); background: var(--card); border-color: var(--border); border-bottom-color: var(--card); }
+  .pick { display: flex; gap: 6px; align-items: center; margin: 0; }
+  .pick input { font: inherit; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); }
+  .pick .btn { cursor: pointer; font: inherit; font-weight: 600; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; font-size: 14px; }
+  .chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text); text-decoration: none; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .day-total { font-weight: 700; margin: 0 0 12px; }
+  .meta { color: var(--muted); margin: -4px 0 10px; font-size: 14px; }
+  .meta b { color: var(--text); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  h3 { margin: 0 0 6px; font-size: 15px; }
+  h3.ok { color: var(--present-text); }
+  h3.no { color: var(--absent-text); }
+  .names { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .names li { padding: 5px 10px; border-radius: 8px; }
+  .names.p li { background: var(--present); }
+  .names.a li { background: var(--absent); }
+  .none { margin: 0; }
+  @media (max-width: 600px) { .cols { grid-template-columns: 1fr; } }
   @media (max-width: 600px) {
     .hide-mobile { display: none; }
     .wrap { padding: 12px; }
@@ -273,17 +295,201 @@ function renderGroup(group) {
     </section>`;
 }
 
+/* ---------- תצוגה לפי יום ---------- */
+
+const DAY_NAMES_FULL = [
+  "ראשון",
+  "שני",
+  "שלישי",
+  "רביעי",
+  "חמישי",
+  "שישי",
+  "שבת",
+];
+
+function isDateString(value) {
+  const text = String(value || "");
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return false;
+  }
+
+  const [year, month, day] = text.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function shiftDay(dateString, days) {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day + days, 12))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function israelToday(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+function yearMonthOf(dateString) {
+  const [year, month] = dateString.split("-").map(Number);
+
+  return { year, month };
+}
+
+function fullDayName(dateString) {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  return DAY_NAMES_FULL[
+    new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay()
+  ];
+}
+
+function formatLongDate(dateString) {
+  const [year, month, day] = dateString.split("-");
+
+  return `${day}/${month}/${year}`;
+}
+
+/*
+ * מי הגיע ומי לא — לכל קבוצה שדווחה ביום הזה.
+ */
+function getDaySessions(summary, dateString) {
+  return summary.sessions
+    .filter((session) => session.date === dateString)
+    .map((session) => {
+      const group = summary.groups.find(
+        (item) =>
+          item.name === session.groupName &&
+          item.branch === session.branch
+      );
+
+      const present = [];
+      const absent = [];
+
+      for (const trainee of group?.trainees || []) {
+        const status = trainee.byDate.get(dateString);
+
+        if (status === "present") present.push(trainee.name);
+        if (status === "absent") absent.push(trainee.name);
+      }
+
+      return { ...session, presentNames: present, absentNames: absent };
+    })
+    .sort((a, b) => a.groupName.localeCompare(b.groupName, "he"));
+}
+
+function renderNameList(names, kind) {
+  if (!names.length) {
+    return `<p class="muted none">${kind === "p" ? "אף אחד" : "אין"}</p>`;
+  }
+
+  return `<ul class="names ${kind}">${names
+    .map((name) => `<li>${escapeHtml(name)}</li>`)
+    .join("")}</ul>`;
+}
+
+function renderDayView({ summary, dateString, base, today }) {
+  const sessions = getDaySessions(summary, dateString);
+
+  const reportedDays = [
+    ...new Set(summary.sessions.map((session) => session.date)),
+  ].sort().reverse();
+
+  const chips = reportedDays.length
+    ? `<div class="chips"><span class="muted">ימים עם דיווח בחודש:</span>${reportedDays
+        .map(
+          (date) =>
+            `<a class="chip${date === dateString ? " on" : ""}" href="${base}?date=${date}">${dayLetter(date)}׳ ${formatShortDate(date)}</a>`
+        )
+        .join("")}</div>`
+    : "";
+
+  const totals = sessions.reduce(
+    (sum, session) => ({
+      present: sum.present + session.present,
+      total: sum.total + session.total,
+    }),
+    { present: 0, total: 0 }
+  );
+
+  const cards = sessions.length
+    ? `<p class="day-total">${sessions.length} ${sessions.length === 1 ? "קבוצה דווחה" : "קבוצות דווחו"} · הגיעו ${totals.present} מתוך ${totals.total}</p>
+      ${sessions
+        .map(
+          (session) => `
+        <section class="card">
+          <h2>${escapeHtml(session.groupName)}<span class="branch">${escapeHtml(session.branch)}</span></h2>
+          <p class="meta">דווח על ידי ${escapeHtml(session.reportedBy || "—")}${session.reportedAt ? ` · ${escapeHtml(session.reportedAt)}` : ""} · <b>הגיעו ${session.present} מתוך ${session.total}</b></p>
+          <div class="cols">
+            <div><h3 class="ok">✔ הגיעו (${session.presentNames.length})</h3>${renderNameList(session.presentNames, "p")}</div>
+            <div><h3 class="no">✘ לא הגיעו (${session.absentNames.length})</h3>${renderNameList(session.absentNames, "a")}</div>
+          </div>
+        </section>`
+        )
+        .join("")}`
+    : `<div class="card empty">אין דיווחי נוכחות ביום ${fullDayName(dateString)} ${formatLongDate(dateString)}.${
+        reportedDays.length
+          ? `<br>אפשר לבחור יום אחר למעלה.`
+          : ""
+      }</div>`;
+
+  return `
+  <nav class="nav">
+    <a href="${base}?date=${shiftDay(dateString, -1)}">→ יום קודם</a>
+    <span class="month">יום ${fullDayName(dateString)} ${formatLongDate(dateString)}</span>
+    <a href="${base}?date=${shiftDay(dateString, 1)}">יום הבא ←</a>
+    ${dateString !== today ? `<a href="${base}?date=${today}">היום</a>` : ""}
+    <form class="pick" method="get" action="${base}">
+      <input type="date" name="date" value="${dateString}" aria-label="בחירת תאריך" onchange="this.form.submit()">
+      <button class="btn" type="submit">הצג</button>
+    </form>
+  </nav>
+  ${chips}
+  ${cards}`;
+}
+
 function renderAttendancePage({
   summary,
   monthLabel,
   yearMonth,
   token,
+  view = "month",
+  dateString = null,
   now = new Date(),
 }) {
   const previous = monthQuery(shiftMonth(yearMonth, -1));
   const next = monthQuery(shiftMonth(yearMonth, 1));
   const current = monthQuery(yearMonth);
   const base = `/attendance/${token}`;
+  const today = israelToday(now);
+  const isDayView = view === "day" && dateString;
+
+  /*
+   * מעבר מ"כל החודש" ל"לפי יום": היום, אם זה החודש הנוכחי;
+   * אחרת היום האחרון שיש בו דיווח באותו חודש.
+   */
+  const dayForMonth =
+    monthQuery(yearMonthOf(today)) === current
+      ? today
+      : [...summary.sessions.map((s) => s.date)].sort().pop() ||
+        `${current}-01`;
+
+  const tabs = `
+  <nav class="tabs">
+    <a class="tab${isDayView ? " on" : ""}" href="${base}?date=${isDayView ? dateString : dayForMonth}">לפי יום</a>
+    <a class="tab${isDayView ? "" : " on"}" href="${base}?view=month&month=${current}">כל החודש</a>
+  </nav>`;
 
   const summaryRows = summary.groups
     .map(
@@ -300,7 +506,7 @@ function renderAttendancePage({
     )
     .join("");
 
-  const body =
+  const monthBody =
     summary.sessions.length === 0
       ? `<div class="card empty">עדיין אין דיווחי נוכחות ב${escapeHtml(monthLabel)}.<br>הדף יתעדכן לבד כשיגיע הדיווח הראשון.</div>`
       : `
@@ -327,7 +533,7 @@ function renderAttendancePage({
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta http-equiv="refresh" content="${REFRESH_SECONDS}">
-<title>נוכחות – ${escapeHtml(monthLabel)}</title>
+<title>נוכחות – ${isDayView ? formatLongDate(dateString) : escapeHtml(monthLabel)}</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <style>${PAGE_STYLE}</style>
 </head>
@@ -337,13 +543,18 @@ function renderAttendancePage({
     <h1 class="brand"><img class="logo" src="/logo.png" alt="" width="64">נוכחות האקדמיה לטניס</h1>
     <span class="updated">עודכן ב-${formatUpdatedAt(now)} · מתעדכן לבד כל דקה</span>
   </header>
-  <nav class="nav">
-    <a href="${base}?month=${previous}">→ חודש קודם</a>
+  ${tabs}
+  ${
+    isDayView
+      ? renderDayView({ summary, dateString, base, today })
+      : `<nav class="nav">
+    <a href="${base}?view=month&month=${previous}">→ חודש קודם</a>
     <span class="month">${escapeHtml(monthLabel)}</span>
-    <a href="${base}?month=${next}">חודש הבא ←</a>
+    <a href="${base}?view=month&month=${next}">חודש הבא ←</a>
     <a class="btn primary" href="${base}/excel?month=${current}">⬇ הורד אקסל</a>
   </nav>
-  ${body}
+  ${monthBody}`
+  }
   <footer>הקישור הזה פרטי — אין להעביר אותו מחוץ לצוות האקדמיה.</footer>
 </div>
 </body>
@@ -369,7 +580,23 @@ async function handleAttendancePage(req, res) {
     return;
   }
 
-  const yearMonth = parseMonthQuery(req.query?.month);
+  /*
+   * ברירת מחדל: לפי יום (היום). "כל החודש" — view=month,
+   * וגם קישורים ישנים עם ?month= נשארים בתצוגת החודש.
+   */
+  const monthView =
+    req.query?.view === "month" ||
+    (req.query?.month && !req.query?.date);
+
+  const dateString = monthView
+    ? null
+    : isDateString(req.query?.date)
+      ? String(req.query.date)
+      : israelToday();
+
+  const yearMonth = monthView
+    ? parseMonthQuery(req.query?.month)
+    : yearMonthOf(dateString);
 
   const { summary, monthLabel } =
     await getMonthlyAttendanceSummary(yearMonth);
@@ -383,6 +610,8 @@ async function handleAttendancePage(req, res) {
         monthLabel,
         yearMonth,
         token: req.params.token,
+        view: monthView ? "month" : "day",
+        dateString,
       })
     );
 }

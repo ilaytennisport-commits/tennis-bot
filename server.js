@@ -66,6 +66,15 @@ app.use("/report", reportRouter);
 app.use("/league", leagueRouter);
 app.use("/tasks", tasksRouter);
 
+/*
+ * הלוגו של האקדמיה — לדפים של הבוט.
+ */
+app.get("/logo.png", (req, res) => {
+  res.sendFile(require("path").join(__dirname, "public", "logo.png"), {
+    maxAge: "7d",
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("🎾 Tennis Bot עובד!");
 });

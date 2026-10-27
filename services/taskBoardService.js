@@ -261,6 +261,8 @@ const STYLE = `
   h1 { margin:0; font-size:28px; color:var(--court); }
   .sub { color:var(--muted); margin:2px 0 0; }
   header { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .logo { width:84px; height:auto; flex-shrink:0; }
   .counts { display:flex; gap:8px; flex-wrap:wrap; }
   .count { font-size:14px; font-weight:700; padding:4px 10px; border-radius:999px; }
   .c-todo { background:var(--todo-bg); color:var(--todo); }
@@ -315,6 +317,7 @@ function page(body) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <title>משימות הטניס</title>
+<link rel="icon" type="image/png" href="/logo.png">
 <style>${STYLE}</style>
 </head>
 <body><div class="wrap">${body}</div></body>
@@ -489,9 +492,12 @@ function renderBoard({
 
   return page(`
     <header>
-      <div>
+      <div class="brand">
+        <img class="logo" src="/logo.png" alt="האקדמיה לטניס גלי הדר" width="84" height="66">
+        <div>
         <h1>משימות הטניס</h1>
         <p class="sub">משימות שוטפות של המועדון · שלום ${e(myName)}</p>
+        </div>
       </div>
       <div class="counts">
         <span class="count c-todo">${counts.todo} לא טופלו</span>

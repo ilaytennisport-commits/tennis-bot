@@ -765,3 +765,18 @@ test("דוח של מתאמן: כמה הגיע מתוך כמה, לפי תאריך
 
   assert.match(before, /הנוכחות נספרת מ-18\.10/);
 });
+
+test("הוספת כמה ילדים: פסיקים או שם בכל שורה", () => {
+  const { parseManagerCommand } = require("../utils/staffCommandParser");
+
+  assert.equal(
+    parseManagerCommand("תוסיף את שי-לי שושן, מילי מועלם לקבוצה א+ד 17:00 + ג 18:00 – עתודה").traineeName,
+    "שי-לי שושן, מילי מועלם"
+  );
+
+  const multiLine = parseManagerCommand("תוסיף לקבוצה א+ד 16:00:\nדני כהן\n- נועה\nיואב");
+
+  assert.equal(multiLine.type, "ADD_TRAINEE");
+  assert.equal(multiLine.groupName, "א+ד 16:00");
+  assert.equal(multiLine.traineeName, "דני כהן, נועה, יואב");
+});

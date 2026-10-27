@@ -618,6 +618,36 @@ function parseManagerCommand(
     return renameCommand;
   }
 
+  /*
+   * כמה ילדים, שם בכל שורה:
+   *   תוסיף לקבוצה עתודה:
+   *   שי-לי שושן
+   *   מילי מועלם
+   */
+  const addLines = String(message)
+    .split(/\r?\n/)
+    .map((line) => cleanStaffText(line))
+    .filter(Boolean);
+
+  const multiAdd =
+    addLines.length >= 2 &&
+    addLines[0].match(
+      /^(?:הוסף|תוסיף|להוסיף)\s+(?:את\s+)?(?:ה)?(?:ילדים\s+|מתאמנים\s+)?(?:לקבוצה\s+|לקבוצת\s+|ל)(.+?)\s*:?$/
+    );
+
+  if (multiAdd) {
+    return {
+      type: "ADD_TRAINEE",
+      groupName: cleanManagerPart(multiAdd[1]),
+      traineeName: addLines
+        .slice(1)
+        .map((line) => cleanAttendanceName(line))
+        .filter(Boolean)
+        .join(", "),
+      notes: null,
+    };
+  }
+
   if (/^(?:קבוצות|רשימת קבוצות|כל הקבוצות|מה הקבוצות)$/.test(text)) {
     return { type: "LIST_GROUPS" };
   }

@@ -444,6 +444,13 @@ function buildManagerAdminNotification({
  * =========================================================
  */
 
+function splitTraineeNames(value = "") {
+  return String(value)
+    .split(/\s*[,،;\n]\s*/)
+    .map((name) => name.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
 const ROSTER_ACTIONS = {
   ADD_TRAINEE: (command) =>
     addTrainee({
@@ -703,6 +710,62 @@ async function handleManagerCommand({
     if (ROSTER_ACTIONS[command.type]) {
       const resolvedCommand =
         await pickCommandCandidate(command);
+
+      /*
+       * כמה ילדים בפקודה אחת ("שי-לי, מילי, אריאל") — מוסיפים כל אחד בנפרד.
+       * הרבה מילים בלי פסיקים — כנראה כמה ילדים שנכתבו ברצף, ולא שם אחד.
+       */
+      if (command.type === "ADD_TRAINEE") {
+        const names = splitTraineeNames(resolvedCommand.traineeName);
+
+        if (names.length === 1 && names[0].split(" ").length > 3) {
+          await sendWhatsAppMessage(
+            userId,
+            [
+              `⚠️ "${names[0]}" נראה כמו כמה ילדים, ולא שם אחד, ולכן לא הוספתי.`,
+              "",
+              "כדי להוסיף כמה ילדים בבת אחת, מפרידים בפסיקים:",
+              `תוסיף את שי-לי שושן, מילי מועלם, אריאל דדי לקבוצה ${resolvedCommand.groupName}`,
+              "",
+              "או שם בכל שורה:",
+              `תוסיף לקבוצה ${resolvedCommand.groupName}:`,
+              "שי-לי שושן",
+              "מילי מועלם",
+            ].join("\n")
+          );
+
+          return true;
+        }
+
+        if (names.length > 1) {
+          const lines = [];
+
+          for (const name of names) {
+            const single = await addTrainee({
+              groupName: resolvedCommand.groupName,
+              traineeName: name,
+              notes: resolvedCommand.notes,
+            });
+
+            lines.push(single.message);
+
+            if (single.success) {
+              await sendToOtherManagers(
+                managerPhone,
+                buildManagerAdminNotification({
+                  action: "ADD_TRAINEE",
+                  result: single,
+                  managerPhone,
+                })
+              );
+            }
+          }
+
+          await sendWhatsAppMessage(userId, lines.join("\n"));
+
+          return true;
+        }
+      }
 
       const result =
         await ROSTER_ACTIONS[command.type](

@@ -198,3 +198,14 @@ test("מאמן שכותב \"משימות\" לא מקבל קישור ללוח", a
     /\/tasks\//
   );
 });
+
+test("הוספת כמה ילדים ברצף בלי פסיקים — לא נשמרים כילד אחד", async () => {
+  await processIncomingMessage(
+    textMessage(OWNER, "תוסיף את שי-לי מילי אריאל מיה אופק אמיר יובל יונתן איתן לקבוצה א+ד 17:00 + ג 18:00 – עתודה")
+  );
+
+  const reply = lastSentTo(state, OWNER);
+
+  assert.match(reply, /נראה כמו כמה ילדים/);
+  assert.match(reply, /מפרידים בפסיקים/);
+});

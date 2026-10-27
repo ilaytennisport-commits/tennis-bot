@@ -162,6 +162,16 @@ const {
 } = require("../services/workloadService");
 
 const {
+  extractSheetId,
+  resolveBranch,
+  setRegistrationSheet,
+  fetchRegistrationKids,
+  runRegistrationCheck,
+  getRegistrationCheckLink,
+  buildCheckMessage,
+} = require("../services/registrationCheckService");
+
+const {
   parseSupportNote,
   createSupportNote,
   listOpenSupportNotes,
@@ -273,6 +283,10 @@ function buildManagerCommandsHelp() {
     "📝 לוח משימות שוטפות למנהלים:",
     "משימות — הקישור האישי שלך",
     "משימות של אשר — הקישור שלו, כדי להעביר לו",
+    "",
+    "🧒 ילדים בבוט שלא נמצאים בגיליונות ההרשמה:",
+    "נוכחים לא רשומים",
+    "גיליון הרשמה גלי הדר <קישור> — הגדרת הגיליון של סניף",
     "",
     "🗂️ הטבלה של מיכל (תחומי עבודה וזמנים):",
     "קישור מיכל — הקישור, כדי להעביר למיכל",
@@ -1028,6 +1042,86 @@ async function handleStaffMessage({
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );
+
+    return true;
+  }
+
+  /*
+   * נוכחים לא רשומים — הילדים בבוט מול גיליונות ההרשמה.
+   * "גיליון הרשמה גלי הדר <קישור>" — הגדרת הגיליון של סניף.
+   */
+  const sheetSetupMatch = manager
+    ? String(userMessage)
+        .trim()
+        .match(/^(?:הגדר\s+)?(?:ה)?גיליון\s+(?:ה)?הרשמה\s+(?:של\s+|ל)?(.+?)\s*[:\-–]?\s*(https?:\/\/\S+)\s*$/)
+    : null;
+
+  if (sheetSetupMatch) {
+    const sheetId = extractSheetId(sheetSetupMatch[2]);
+    const branch = await resolveBranch(sheetSetupMatch[1]);
+
+    if (!sheetId || !branch) {
+      await sendWhatsAppMessage(
+        userId,
+        !sheetId
+          ? "❌ זה לא נראה כמו קישור לגיליון Google Sheets."
+          : `❌ לא מצאתי סניף בשם "${sheetSetupMatch[1].trim()}". למשל: גיליון הרשמה גלי הדר <קישור>`
+      );
+
+      return true;
+    }
+
+    let readable = true;
+
+    try {
+      await fetchRegistrationKids(sheetId);
+    } catch (error) {
+      readable = false;
+    }
+
+    if (readable) {
+      await setRegistrationSheet(branch, sheetId);
+    }
+
+    await sendWhatsAppMessage(
+      userId,
+      readable
+        ? [
+            `✅ גיליון ההרשמה של ${branch} נשמר.`,
+            'עכשיו אפשר לשלוח "נוכחים לא רשומים".',
+          ].join("\n")
+        : [
+            "❌ לא הצלחתי לקרוא את הגיליון, אז הוא לא נשמר.",
+            'בדקו שהשיתוף שלו הוא "כל מי שיש לו את הקישור – צופה", ושלחו שוב.',
+          ].join("\n")
+    );
+
+    return true;
+  }
+
+  if (
+    manager &&
+    /^(?:(?:ה)?נוכחים\s+(?:ש)?לא\s+רשומים|(?:ה)?ילדים\s+(?:ש)?לא\s+רשומים|לא\s+רשומים|בדיקת\s+(?:ה)?הרשמה|בדוק\s+(?:את\s+)?(?:ה)?הרשמה)$/.test(
+      linkText
+    )
+  ) {
+    let message;
+
+    try {
+      const report = await runRegistrationCheck();
+
+      message = buildCheckMessage(
+        report,
+        report.branches.length
+          ? await getRegistrationCheckLink(staffPhone, lastKnownHost)
+          : null
+      );
+    } catch (error) {
+      console.error("❌ בדיקת נוכחים לא רשומים נכשלה:", error.message);
+      message = "❌ הבדיקה נכשלה כרגע. נסו שוב בעוד כמה דקות.";
+    }
+
+    await sendWhatsAppMessage(userId, message);
 
     return true;
   }

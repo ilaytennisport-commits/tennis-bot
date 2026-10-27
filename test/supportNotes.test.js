@@ -242,3 +242,27 @@ test("מאמן שמבקש את הטבלה של מיכל לא מקבל קישור
     /\/w\//
   );
 });
+
+test("'נוכחים לא רשומים' בלי גיליונות — המנהל מקבל הסבר איך להגדיר", async () => {
+  await processIncomingMessage(textMessage(OWNER, "נוכחים לא רשומים"));
+
+  const reply = lastSentTo(state, OWNER);
+
+  assert.match(reply, /להגדיר את גיליונות ההרשמה/);
+  assert.match(reply, /גיליון הרשמה גלי הדר/);
+
+  await processIncomingMessage(
+    textMessage(OWNER, "גיליון הרשמה גלי הדר https://example.com/not-a-sheet")
+  );
+
+  assert.match(lastSentTo(state, OWNER), /לא נראה כמו קישור לגיליון/);
+});
+
+test("מאמן שכותב 'נוכחים לא רשומים' לא מקבל את הבדיקה", async () => {
+  await processIncomingMessage(textMessage(COACH, "נוכחים לא רשומים"));
+
+  assert.doesNotMatch(
+    sentTo(state, COACH).map((m) => m.body).join("\n"),
+    /גיליונות ההרשמה|\/c\//
+  );
+});

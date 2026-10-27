@@ -34,6 +34,7 @@ const reportRouter = require("./routes/report");
 const leagueRouter = require("./routes/league");
 const tasksRouter = require("./routes/tasks");
 const workloadRouter = require("./routes/workload");
+const registrationCheckRouter = require("./routes/registrationCheck");
 
 const {
   retryPendingLeads,
@@ -74,6 +75,7 @@ app.use("/r", reportRouter);
 app.use("/a", attendanceRouter);
 app.use("/t", tasksRouter);
 app.use("/w", workloadRouter);
+app.use("/c", registrationCheckRouter);
 
 /*
  * הלוגו של האקדמיה — לדפים של הבוט.

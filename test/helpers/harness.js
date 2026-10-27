@@ -228,6 +228,26 @@ function setupHarness(env = {}) {
       return { rows: [], rowCount: 1 };
     }
 
+    if (/^SELECT key, value FROM app_settings WHERE key LIKE/.test(text)) {
+      const prefix = String(params[0]).replace(/%$/, "");
+      const rows = [...state.settings.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, value]) => ({ key, value }));
+
+      return { rows, rowCount: rows.length };
+    }
+
+    /*
+     * בדיקת נוכחים לא רשומים: אין קבוצות או שיבוצים בסביבת הבדיקה.
+     */
+    if (
+      /^SELECT DISTINCT branch FROM training_groups/.test(text) ||
+      /^SELECT t\.name AS trainee/.test(text) ||
+      /^SELECT trainee_name AS trainee, branch, group_label/.test(text)
+    ) {
+      return { rows: [], rowCount: 0 };
+    }
+
     if (/^INSERT INTO scheduled_jobs/.test(text)) {
       if (state.jobs.has(params[0])) {
         return { rows: [], rowCount: 0 };

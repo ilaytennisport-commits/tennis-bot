@@ -157,6 +157,11 @@ const {
 } = require("../services/taskBoardService");
 
 const {
+  getWorkloadLink,
+  rotateWorkloadToken,
+} = require("../services/workloadService");
+
+const {
   parseSupportNote,
   createSupportNote,
   listOpenSupportNotes,
@@ -268,6 +273,10 @@ function buildManagerCommandsHelp() {
     "📝 לוח משימות שוטפות למנהלים:",
     "משימות — הקישור האישי שלך",
     "משימות של אשר — הקישור שלו, כדי להעביר לו",
+    "",
+    "🗂️ הטבלה של מיכל (תחומי עבודה וזמנים):",
+    "קישור מיכל — הקישור, כדי להעביר למיכל",
+    "החלף קישור מיכל — קישור חדש, הישן מפסיק לעבוד",
     "",
     "👟 מאמנים (מי יכול לקבל קישור דיווח):",
     "מאמנים — הרשימה",
@@ -1016,6 +1025,49 @@ async function handleStaffMessage({
             "",
             "💡 שמרו את ההודעה (⭐ סימון בכוכב) — הקישור לא משתנה.",
             "⚠️ הקישור אישי — לא להעביר לאחרים.",
+          ].join("\n")
+        : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+    );
+
+    return true;
+  }
+
+  /*
+   * הטבלה של מיכל (תחומי עבודה):
+   * "קישור מיכל" / "טבלת מיכל" / "תחומי עבודה" — הקישור, כדי להעביר למיכל.
+   * "החלף קישור מיכל" — קישור חדש, הישן מפסיק לעבוד.
+   */
+  const workloadText = linkText.replace(/^(?:שלח|תשלח|תן)\s+(?:לי\s+)?(?:את\s+)?/, "");
+  const wantsWorkloadLink =
+    manager &&
+    /^(?:(?:ה)?(?:קישור|לינק|דף|טבלה|טבלת)\s+)?(?:ל|של\s+)?(?:ה)?(?:(?:משימות|תחומי\s+(?:ה)?עבודה|תחומים)\s+(?:של\s+)?)?מיכל$|^(?:(?:ה)?(?:קישור|לינק|דף|טבלה|טבלת)\s+)?(?:ל)?(?:ה)?תחומי\s+(?:ה)?עבודה$/.test(
+      workloadText
+    );
+  const wantsNewWorkloadLink =
+    manager &&
+    /^(?:החלף|תחליף)\s+(?:את\s+)?(?:ה)?קישור\s+(?:של\s+|ל)?(?:מיכל|(?:ה)?תחומי\s+(?:ה)?עבודה)$/.test(
+      linkText
+    );
+
+  if (wantsWorkloadLink || wantsNewWorkloadLink) {
+    if (wantsNewWorkloadLink) {
+      await rotateWorkloadToken();
+    }
+
+    const workloadLink = await getWorkloadLink(lastKnownHost);
+
+    await sendWhatsAppMessage(
+      userId,
+      workloadLink
+        ? [
+            wantsNewWorkloadLink
+              ? "🔄 נוצר קישור חדש לטבלה של מיכל. הקישור הקודם כבר לא עובד."
+              : "🗂️ הטבלה של מיכל — תחומי עבודה וזמנים:",
+            "",
+            workloadLink,
+            "",
+            "אפשר להעביר את הקישור למיכל. לא צריך חשבון או סיסמה.",
+            'אם הקישור הגיע למישהו שלא צריך — שלחו "החלף קישור מיכל".',
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );

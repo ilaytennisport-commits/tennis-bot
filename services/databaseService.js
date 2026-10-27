@@ -504,6 +504,11 @@ async function initializeDatabase() {
   await require("./taskBoardService").createTasksTable(pool);
 
   /*
+   * תחומי העבודה של מיכל ("קישור מיכל" ב-WhatsApp).
+   */
+  await require("./workloadService").createWorkloadTable(pool);
+
+  /*
    * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
    */
   const staffDirectory = require("./attendanceService");

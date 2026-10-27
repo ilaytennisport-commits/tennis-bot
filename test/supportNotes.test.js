@@ -209,3 +209,36 @@ test("הוספת כמה ילדים ברצף בלי פסיקים — לא נשמ�
   assert.match(reply, /נראה כמו כמה ילדים/);
   assert.match(reply, /מפרידים בפסיקים/);
 });
+
+test("מנהל מבקש את הטבלה של מיכל — מקבל קישור /w, והחלפה יוצרת קישור חדש", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  let first = null;
+
+  for (const text of ["קישור מיכל", "טבלת מיכל", "תחומי עבודה", "שלח לי את הקישור של מיכל", "משימות מיכל"]) {
+    await processIncomingMessage(textMessage(OWNER, text));
+
+    const reply = lastSentTo(state, OWNER);
+    const match = reply.match(/https:\/\/bot\.example\.com\/w\/([2-9a-km-np-zA-HJ-NP-Z]{12})/);
+
+    assert.ok(match, text);
+    first = first || match[1];
+    assert.equal(match[1], first, text);
+  }
+
+  await processIncomingMessage(textMessage(OWNER, "החלף קישור מיכל"));
+
+  const reply = lastSentTo(state, OWNER);
+
+  assert.match(reply, /הקישור הקודם כבר לא עובד/);
+  assert.doesNotMatch(reply, new RegExp(first));
+});
+
+test("מאמן שמבקש את הטבלה של מיכל לא מקבל קישור", async () => {
+  await processIncomingMessage(textMessage(COACH, "קישור מיכל"));
+
+  assert.doesNotMatch(
+    sentTo(state, COACH).map((m) => m.body).join("\n"),
+    /\/w\//
+  );
+});

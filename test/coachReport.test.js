@@ -233,13 +233,45 @@ test("שמירה: נשמר במסד הנתונים, המנהל מקבל עדכו
     "אבי"
   );
 
-  assert.ok(
-    sent.some(
-      (message) =>
-        String(message.body).includes("דיווח נוכחות") &&
-        String(message.body).includes("אבי")
-    )
-  );
+  const managerMessage = sent
+    .map((message) => String(message.body))
+    .find((body) => body.includes("דיווח נוכחות") && body.includes("אבי"));
+
+  assert.ok(managerMessage);
+
+  /* גם מי שהגיע מופיע בשמו, ולפני מי שלא הגיע */
+  assert.match(managerMessage, /הגיעו:\n✅ (דני|יואב)\n✅ (דני|יואב)\n\nלא הגיעו:\n❌ נועה/);
+});
+
+test("הודעה למנהל: אם אף אחד לא הגיע — 'אף אחד', ואם כולם הגיעו — 'אין נעדרים'", () => {
+  const { buildManagerAttendanceMessage } = require("../services/staffNotifyService");
+
+  const base = {
+    group: { name: "א+ד 18:00 – בדיקה" },
+    session: { session_date: today },
+    submittedBy: "אבי",
+    total: 2,
+  };
+
+  const nobody = buildManagerAttendanceMessage({
+    ...base,
+    present: [],
+    absent: [{ name: "דני" }, { name: "נועה" }],
+    presentCount: 0,
+    absentCount: 2,
+  });
+
+  assert.match(nobody, /הגיעו:\nאף אחד\n\nלא הגיעו:\n❌ דני\n❌ נועה/);
+
+  const everyone = buildManagerAttendanceMessage({
+    ...base,
+    present: [{ name: "דני" }, { name: "נועה" }],
+    absent: [],
+    presentCount: 2,
+    absentCount: 0,
+  });
+
+  assert.match(everyone, /הגיעו:\n✅ דני\n✅ נועה\n\nלא הגיעו:\n✅ אין נעדרים/);
 });
 
 test("פתיחה מחדש: הסימונים מוצגים, ותיקון מחליף את הדיווח", async () => {

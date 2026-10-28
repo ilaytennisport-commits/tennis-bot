@@ -91,6 +91,13 @@ function formatAttendanceDate(value) {
 function buildManagerAttendanceMessage(
   result
 ) {
+  const presentLines =
+    result.present?.length > 0
+      ? result.present.map(
+          (trainee) => `✅ ${trainee.name}`
+        )
+      : ["אף אחד"];
+
   const absentLines =
     result.absent.length > 0
       ? result.absent.map(
@@ -115,6 +122,9 @@ function buildManagerAttendanceMessage(
     "",
     `✅ הגיעו: ${result.presentCount} מתוך ${result.total}`,
     `❌ נעדרו: ${result.absentCount}`,
+    "",
+    "הגיעו:",
+    ...presentLines,
     "",
     "לא הגיעו:",
     ...absentLines,

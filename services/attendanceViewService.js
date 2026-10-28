@@ -17,6 +17,12 @@ const {
   parseMonthSpec,
 } = require("../utils/months");
 
+const {
+  DASHBOARD_STYLE,
+  getDashboard,
+  renderDashboardBody,
+} = require("./attendanceDashboardService");
+
 /*
  * =========================================================
  * דף נוכחות חי — בקישור סודי
@@ -115,6 +121,12 @@ async function getViewLink(fallbackHost = null) {
   }
 
   return `${baseUrl}/a/${await getOrCreateViewToken()}`;
+}
+
+async function getDashboardLink(fallbackHost = null) {
+  const link = await getViewLink(fallbackHost);
+
+  return link ? `${link}?view=dashboard` : null;
 }
 
 /* ---------- בחירת חודש ---------- */
@@ -238,6 +250,7 @@ const PAGE_STYLE = `
   .names.a li { background: var(--absent); }
   .none { margin: 0; }
   @media (max-width: 600px) { .cols { grid-template-columns: 1fr; } }
+  ${DASHBOARD_STYLE}
   @media (max-width: 600px) {
     .hide-mobile { display: none; }
     .wrap { padding: 12px; }
@@ -466,6 +479,7 @@ function renderAttendancePage({
   token,
   view = "month",
   dateString = null,
+  dashboard = null,
   now = new Date(),
 }) {
   const previous = monthQuery(shiftMonth(yearMonth, -1));
@@ -474,6 +488,7 @@ function renderAttendancePage({
   const base = `/attendance/${token}`;
   const today = israelToday(now);
   const isDayView = view === "day" && dateString;
+  const isDashboard = view === "dashboard" && dashboard;
 
   /*
    * מעבר מ"כל החודש" ל"לפי יום": היום, אם זה החודש הנוכחי;
@@ -488,7 +503,8 @@ function renderAttendancePage({
   const tabs = `
   <nav class="tabs">
     <a class="tab${isDayView ? " on" : ""}" href="${base}?date=${isDayView ? dateString : dayForMonth}">לפי יום</a>
-    <a class="tab${isDayView ? "" : " on"}" href="${base}?view=month&month=${current}">כל החודש</a>
+    <a class="tab${isDayView || isDashboard ? "" : " on"}" href="${base}?view=month&month=${current}">כל החודש</a>
+    <a class="tab${isDashboard ? " on" : ""}" href="${base}?view=dashboard">דשבורד</a>
   </nav>`;
 
   const summaryRows = summary.groups
@@ -533,7 +549,7 @@ function renderAttendancePage({
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta http-equiv="refresh" content="${REFRESH_SECONDS}">
-<title>נוכחות – ${isDayView ? formatLongDate(dateString) : escapeHtml(monthLabel)}</title>
+<title>נוכחות – ${isDashboard ? "דשבורד" : isDayView ? formatLongDate(dateString) : escapeHtml(monthLabel)}</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <style>${PAGE_STYLE}</style>
 </head>
@@ -545,7 +561,9 @@ function renderAttendancePage({
   </header>
   ${tabs}
   ${
-    isDayView
+    isDashboard
+      ? renderDashboardBody({ dashboard, base, escapeHtml })
+      : isDayView
       ? renderDayView({ summary, dateString, base, today })
       : `<nav class="nav">
     <a href="${base}?view=month&month=${previous}">→ חודש קודם</a>
@@ -577,6 +595,29 @@ async function handleAttendancePage(req, res) {
 
   if (!(await isValidViewToken(req.params.token))) {
     res.status(404).send("Not found");
+    return;
+  }
+
+  if (req.query?.view === "dashboard") {
+    const today = israelToday();
+    const dashboard = await getDashboard({
+      today,
+      branch: req.query?.branch ? String(req.query.branch) : null,
+    });
+
+    res
+      .status(200)
+      .type("html")
+      .send(
+        renderAttendancePage({
+          summary: { groups: [], sessions: [] },
+          monthLabel: "",
+          yearMonth: yearMonthOf(today),
+          token: req.params.token,
+          view: "dashboard",
+          dashboard,
+        })
+      );
     return;
   }
 
@@ -653,6 +694,7 @@ module.exports = {
   isValidViewToken,
   getPublicBaseUrl,
   getViewLink,
+  getDashboardLink,
   parseMonthQuery,
   renderAttendancePage,
   escapeHtml,

@@ -238,6 +238,15 @@ function setupHarness(env = {}) {
     }
 
     /*
+     * דשבורד הנוכחות: הקבוצות הפתוחות ומתי דווחו לאחרונה.
+     */
+    if (/^SELECT g\.id, g\.name, g\.branch, TO_CHAR\(MAX/.test(text)) {
+      const rows = state.dashboardGroups || [];
+
+      return { rows, rowCount: rows.length };
+    }
+
+    /*
      * בדיקת נוכחים לא רשומים: אין קבוצות או שיבוצים בסביבת הבדיקה.
      */
     if (

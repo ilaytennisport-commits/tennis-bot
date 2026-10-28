@@ -33,6 +33,9 @@ function getSourceDisplayName(source = "") {
     case "freefit":
       return "FreeFit";
 
+    case "shikumi":
+      return "שיקומי";
+
     default:
       return null;
   }
@@ -43,6 +46,7 @@ function isSpecialSource(source = "") {
     "move",
     "amit",
     "freefit",
+    "shikumi",
   ].includes(normalizeSource(source));
 }
 
@@ -81,6 +85,8 @@ function isRegularProgramInterest(
     /\bfree fit\b/i,
     /(^|\s)פריפיט($|\s)/,
     /(^|\s)פרי פיט($|\s)/,
+    /שיקומי/,
+    /\bshikumi\b/i,
     /דרך הפלטפורמה/,
     /בפלטפורמה/,
   ];
@@ -277,7 +283,7 @@ function buildSpecialRulesMessage(source) {
 
 /*
  * FAQ ייעודי ללקוחות
- * MOVE / עמית / FreeFit.
+ * MOVE / עמית / FreeFit / שיקומי.
  */
 function getSpecialFaqReply(
   message = "",

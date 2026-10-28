@@ -124,6 +124,22 @@ function detectSpecialSource(message = "") {
     return "freefit";
   }
 
+  /*
+   * שיקומי
+   */
+  const shikumiPatterns = [
+    /(^|\s)(?:דרך\s+|ב|מ)?שיקומי($|\s)/,
+    /\bshikumi\b/i,
+  ];
+
+  if (
+    shikumiPatterns.some(
+      (pattern) => pattern.test(text)
+    )
+  ) {
+    return "shikumi";
+  }
+
   return null;
 }
 

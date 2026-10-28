@@ -122,6 +122,7 @@ const SOURCE_NAMES = {
   move: "MOVE",
   amit: "עמית",
   freefit: "FreeFit",
+  shikumi: "שיקומי",
 };
 
 function formatManagerLeadMessage({

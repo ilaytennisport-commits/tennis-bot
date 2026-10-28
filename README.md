@@ -11,7 +11,7 @@ Whapi → POST /webhook?token=... → controllers/webhookController.js
   ├─ הודעה שהצוות שלח ידנית → הבוט שותק מול הלקוח (HANDOFF_PAUSE_HOURS)
   ├─ מנהל / מאמן → נוכחות וניהול רשימות (services/attendanceService.js)
   └─ לקוח → "איך שמעתם עלינו?"
-        ├─ MOVE / עמית / FreeFit → מסלול מיוחד → ליד למנהל
+        ├─ MOVE / עמית / FreeFit / שיקומי → מסלול מיוחד → ליד למנהל
         └─ רגיל → services/messageRouter.js
               ליד / המלצה / FAQ / ציוד → OpenAI (רק כמוצא אחרון)
 ```

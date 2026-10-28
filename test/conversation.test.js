@@ -258,6 +258,30 @@ test("מסלול עמית: בסיום ההרשמה המנהל מקבל ליד", 
   assert.match(lastSentTo(state, MANAGER), /דרך עמית/);
 });
 
+test("מסלול שיקומי: אותה שיחה כמו בשאר הפלטפורמות, והמנהל מקבל ליד", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "היי");
+
+  const welcome = await say(chatId, "דרך שיקומי");
+
+  assert.match(welcome, /אשמח לעזור לכם עם ההצטרפות לאימוני הטניס דרך שיקומי/);
+  assert.match(welcome, /מה השם המלא של המתאמן/);
+  assert.equal(state.users.get(chatId).source, "shikumi");
+
+  await say(chatId, "דנה לוי");
+  await say(chatId, "40");
+  await say(chatId, "ראשון לציון");
+
+  const rules = await say(chatId, "ללא ניסיון");
+
+  assert.match(rules, /חשוב לדעת לגבי האימונים דרך שיקומי/);
+  assert.match(rules, /chat\.whatsapp\.com/);
+  assert.equal(state.leads.length, 1);
+  assert.equal(state.leads[0].kind, "special");
+  assert.match(lastSentTo(state, MANAGER), /שיקומי/);
+});
+
 test("ליד שנכשל בשליחה נשמר ונשלח שוב", async () => {
   state.failRecipients.add("972500000001");
 

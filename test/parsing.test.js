@@ -127,6 +127,10 @@ test("מקור הגעה: קופות חולים רק בהקשר ברור", () => 
   assert.equal(detectSpecialSource("דרך קופת חולים"), "move");
   assert.equal(detectSpecialSource("MOVE"), "move");
   assert.equal(detectSpecialSource("פריפיט"), "freefit");
+  assert.equal(detectSpecialSource("שיקומי"), "shikumi");
+  assert.equal(detectSpecialSource("דרך שיקומי"), "shikumi");
+  assert.equal(detectSpecialSource("בשיקומי"), "shikumi");
+  assert.equal(detectSpecialSource("הגעתי דרך שיקומי"), "shikumi");
   assert.equal(detectSpecialSource("פייסבוק"), null);
 });
 

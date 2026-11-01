@@ -22,8 +22,8 @@ Object.assign(process.env, {
 });
 
 delete process.env.REPORT_REMINDERS;
-delete process.env.COACH_REMINDER_HOUR;
-delete process.env.MANAGER_REMINDER_HOUR;
+delete process.env.COACH_REMINDER_TIME;
+delete process.env.MANAGER_REMINDER_TIME;
 
 const memoryDb = newDb();
 const { Pool } = memoryDb.adapters.createPg();
@@ -109,10 +109,10 @@ test.before(async () => {
   );
 });
 
-test("לפני 21:00 לא נשלח כלום", async () => {
+test("לפני 21:30 לא נשלח כלום", async () => {
   sent.length = 0;
 
-  const result = await reminders.runReportRemindersIfDue(at(20), pool);
+  const result = await reminders.runReportRemindersIfDue(at(21, 20), pool);
 
   assert.equal(result.ran, false);
   assert.equal(sent.length, 0);
@@ -128,10 +128,10 @@ test("מצב היום: מה דווח ומה לא, בלי קבוצות ריקות
   );
 });
 
-test("21:00 — כל מאמן מקבל תזכורת עם הקישור האישי שלו, פעם אחת ביום", async () => {
+test("21:30 — כל מאמן מקבל תזכורת עם הקישור האישי שלו, פעם אחת ביום", async () => {
   sent.length = 0;
 
-  await reminders.runReportRemindersIfDue(at(21), pool);
+  await reminders.runReportRemindersIfDue(at(21, 30), pool);
 
   const avi = to("0500000002");
   const dana = to("0500000004");
@@ -173,7 +173,7 @@ test("22:00 — המנהלים מקבלים מה עדיין לא דווח ומה
       "",
       "✅ דווחו: נבחרת צעירה",
       "",
-      "המאמנים קיבלו תזכורת ב-21:00.",
+      "המאמנים קיבלו תזכורת ב-21:30.",
     ].join("\n")
   );
 

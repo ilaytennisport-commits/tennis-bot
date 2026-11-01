@@ -18,7 +18,7 @@ const { maskId } = require("../utils/whatsappIds");
  * תזכורת על נוכחות שלא דווחה
  * =========================================================
  *
- * 21:00 (שעון ישראל) — לכל מאמן פעיל: אילו אימונים של היום עוד
+ * 21:30 (שעון ישראל) — לכל מאמן פעיל: אילו אימונים של היום עוד
  *                      לא דווחו, עם הקישור האישי שלו לדיווח.
  * 22:00              — למנהלים: מה עדיין לא דווח, ומה כן.
  *
@@ -27,7 +27,7 @@ const { maskId } = require("../utils/whatsappIds");
  * גם אם השרת מופעל מחדש.
  *
  * כיבוי: REPORT_REMINDERS=false
- * שעות: COACH_REMINDER_HOUR (21), MANAGER_REMINDER_HOUR (22)
+ * שעות: COACH_REMINDER_TIME ("21:30"), MANAGER_REMINDER_TIME ("22:00")
  */
 
 const DAY_NAMES = ["", "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -36,10 +36,21 @@ function isEnabled() {
   return String(process.env.REPORT_REMINDERS || "true").toLowerCase() !== "false";
 }
 
-function hourSetting(name, fallback) {
-  const value = Number(process.env[name]);
+/*
+ * שעה בפורמט "21:30" (או שעה עגולה "21"). מחזיר דקות מתחילת היום.
+ */
+function timeSetting(name, fallback) {
+  const match = String(process.env[name] || "").trim().match(/^(d{1,2})(?::(d{2}))?$/);
+  const hour = match ? Number(match[1]) : NaN;
+  const minute = match ? Number(match[2] || 0) : NaN;
 
-  return Number.isInteger(value) && value >= 0 && value <= 23 ? value : fallback;
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+    ? hour * 60 + minute
+    : fallback;
+}
+
+function formatTime(minutes) {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 function israelNow(now = new Date()) {
@@ -50,6 +61,7 @@ function israelNow(now = new Date()) {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
+      minute: "2-digit",
       hourCycle: "h23",
     })
       .formatToParts(now)
@@ -60,7 +72,7 @@ function israelNow(now = new Date()) {
 
   return {
     dateString,
-    hour: Number(parts.hour),
+    minutes: Number(parts.hour) * 60 + Number(parts.minute),
     dayOfWeek: attendance.getIsraelDayOfWeek(now),
   };
 }
@@ -164,7 +176,7 @@ function buildCoachReminder(status, link) {
   ].join("\n");
 }
 
-function buildManagerSummary(status, coachHour) {
+function buildManagerSummary(status, coachTime) {
   const lines = [
     `📋 נוכחות שלא דווחה היום – ${status.dayName} ${shortDate(status.dateString)}`,
   ];
@@ -192,7 +204,7 @@ function buildManagerSummary(status, coachHour) {
     }
   }
 
-  lines.push("", `המאמנים קיבלו תזכורת ב-${coachHour}:00.`);
+  lines.push("", `המאמנים קיבלו תזכורת ב-${coachTime}.`);
 
   return lines.join("\n");
 }
@@ -219,7 +231,7 @@ async function releaseJob(jobKey, db = pool) {
   await db.query(`DELETE FROM scheduled_jobs WHERE job_key = $1`, [jobKey]);
 }
 
-async function sendCoachReminders(status, coachHour) {
+async function sendCoachReminders(status) {
   const coaches = attendance.getCoachPhones();
   let sent = 0;
 
@@ -252,19 +264,19 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
     return { ran: false, reason: "disabled" };
   }
 
-  const coachHour = hourSetting("COACH_REMINDER_HOUR", 21);
-  const managerHour = hourSetting("MANAGER_REMINDER_HOUR", 22);
-  const { dateString, hour } = israelNow(now);
+  const coachAt = timeSetting("COACH_REMINDER_TIME", 21 * 60 + 30);
+  const managerAt = timeSetting("MANAGER_REMINDER_TIME", 22 * 60);
+  const { dateString, minutes } = israelNow(now);
   const results = {};
 
-  if (hour >= coachHour) {
+  if (minutes >= coachAt) {
     const key = `coach-report-reminder-${dateString}`;
 
     if (await claimJob(key, db)) {
       const status = await getTodayStatus(now, db);
 
       if (status.sessions.some((s) => !s.done)) {
-        const result = await sendCoachReminders(status, coachHour);
+        const result = await sendCoachReminders(status);
 
         /* אף מאמן לא קיבל — ננסה שוב בבדיקה הבאה */
         if (result.sent === 0 && result.total > 0) {
@@ -278,7 +290,7 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
     }
   }
 
-  if (hour >= managerHour) {
+  if (minutes >= managerAt) {
     const key = `manager-missing-report-${dateString}`;
 
     if (await claimJob(key, db)) {
@@ -287,7 +299,7 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
       if (status.sessions.some((s) => !s.done)) {
         const delivered = await sendToOtherManagers(
           "",
-          buildManagerSummary(status, coachHour)
+          buildManagerSummary(status, formatTime(coachAt))
         );
 
         results.managers = { sent: delivered };

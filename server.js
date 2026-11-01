@@ -56,6 +56,11 @@ const {
   runMonthlyReportIfDue,
 } = require("./services/attendanceReportService");
 
+const {
+  runReportRemindersIfDue,
+} = require("./services/reportReminderService");
+
+const REPORT_REMINDER_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const LEAD_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 const MONTHLY_REPORT_CHECK_INTERVAL_MS =
   60 * 60 * 1000;
@@ -156,6 +161,26 @@ function startBackgroundJobs() {
         );
       }
     }, MONTHLY_REPORT_CHECK_INTERVAL_MS)
+  );
+
+  /*
+   * תזכורת על נוכחות שלא דווחה — 21:00 למאמנים, 22:00 למנהלים.
+   */
+  timers.push(
+    setInterval(async () => {
+      try {
+        const result = await runReportRemindersIfDue();
+
+        if (result.ran) {
+          console.log("⏰ תזכורת דיווח נוכחות:", result);
+        }
+      } catch (error) {
+        console.error(
+          "❌ תזכורת דיווח נוכחות נכשלה:",
+          error.message
+        );
+      }
+    }, REPORT_REMINDER_CHECK_INTERVAL_MS)
   );
 
   timers.push(

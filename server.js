@@ -35,6 +35,7 @@ const leagueRouter = require("./routes/league");
 const tasksRouter = require("./routes/tasks");
 const workloadRouter = require("./routes/workload");
 const registrationCheckRouter = require("./routes/registrationCheck");
+const groupsRouter = require("./routes/groups");
 
 const {
   retryPendingLeads,
@@ -76,6 +77,7 @@ app.use("/a", attendanceRouter);
 app.use("/t", tasksRouter);
 app.use("/w", workloadRouter);
 app.use("/c", registrationCheckRouter);
+app.use("/g", groupsRouter);
 
 /*
  * הלוגו של האקדמיה — לדפים של הבוט.
@@ -192,6 +194,13 @@ async function shutdown(signal) {
     }
 
     await waitForQueues();
+
+    /*
+     * עדכוני שינויים בקבוצות שעוד לא נשלחו.
+     */
+    await require("./services/groupsManagerService")
+      .flushAllNotifications()
+      .catch(() => {});
     await pool.end();
   } finally {
     process.exit(0);

@@ -247,6 +247,13 @@ function setupHarness(env = {}) {
     }
 
     /*
+     * ימים שבהם ילד לא מגיע: אין כאלה בסביבת הבדיקה.
+     */
+    if (/^SELECT trainee_id FROM trainee_day_exclusions/.test(text)) {
+      return { rows: [], rowCount: 0 };
+    }
+
+    /*
      * בדיקת נוכחים לא רשומים: אין קבוצות או שיבוצים בסביבת הבדיקה.
      */
     if (

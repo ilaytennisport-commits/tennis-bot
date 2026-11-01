@@ -266,3 +266,15 @@ test("מאמן שכותב 'נוכחים לא רשומים' לא מקבל את ה
     /גיליונות ההרשמה|\/c\//
   );
 });
+
+test("מנהל כותב 'ניהול קבוצות' — מקבל קישור /g; מאמן לא", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  for (const text of ["ניהול קבוצות", "קישור לניהול קבוצות", "קישור קבוצות"]) {
+    await processIncomingMessage(textMessage(OWNER, text));
+    assert.match(lastSentTo(state, OWNER), /https:\/\/bot\.example\.com\/g\/[2-9a-km-np-zA-HJ-NP-Z]{12}/, text);
+  }
+
+  await processIncomingMessage(textMessage(COACH, "ניהול קבוצות"));
+  assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /\/g\//);
+});

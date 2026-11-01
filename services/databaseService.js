@@ -514,6 +514,11 @@ async function initializeDatabase() {
   const staffDirectory = require("./attendanceService");
 
   await staffDirectory.createStaffCoachesTable(pool);
+
+  /*
+   * ימים שבהם ילד לא מגיע לקבוצה קבועה (דף ניהול הקבוצות).
+   */
+  await staffDirectory.createDayExclusionsTable(pool);
   await staffDirectory.loadCoachOverrides(pool);
 
   console.log(

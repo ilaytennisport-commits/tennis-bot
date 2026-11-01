@@ -245,7 +245,14 @@ async function getSlotTimesForDay(dayOfWeek, db = pool) {
  * s:<שעה>  מפגש בגלי הדר לפי יום ושעה
  */
 async function getSessionsForDate(dateString) {
-  const dayOfWeek = dayOfWeekOf(dateString);
+  return getSessionsForDay(dayOfWeekOf(dateString));
+}
+
+/*
+ * האימונים של יום בשבוע (1 = ראשון). משמש גם את דף ניהול הקבוצות.
+ * לקבוצה רגילה מצורפים groupId ו-trainees (בלי מי שהוצא מהיום הזה).
+ */
+async function getSessionsForDay(dayOfWeek) {
   const groups = await attendance.getActiveGroups();
 
   const sessions = [];
@@ -264,10 +271,14 @@ async function getSessionsForDate(dateString) {
       continue;
     }
 
-    const trainees =
+    /*
+     * קבוצה ריקה לא מופיעה. בודקים לפי כל החברים בקבוצה, כדי
+     * שהוצאה של כולם מיום אחד לא תחשוף את השיבוצים של אותה שעה.
+     */
+    const members =
       await attendance.getActiveTraineesByGroupId(group.id);
 
-    if (trainees.length === 0) {
+    if (members.length === 0) {
       continue;
     }
 
@@ -275,12 +286,19 @@ async function getSessionsForDate(dateString) {
       coveredGaliHadarTimes.add(segment.start);
     }
 
+    const trainees = await attendance.getActiveTraineesForDay(
+      group.id,
+      dayOfWeek
+    );
+
     sessions.push({
       ref: `g:${group.id}`,
+      groupId: group.id,
       time: segment.start,
       title: group.name,
       branch: group.branch || "",
       count: trainees.length,
+      trainees,
     });
   }
 
@@ -418,8 +436,10 @@ async function resolveSessionRef(ref, dateString) {
     return {
       group,
       title: group.name,
-      trainees:
-        await attendance.getActiveTraineesByGroupId(group.id),
+      trainees: await attendance.getActiveTraineesForDay(
+        group.id,
+        dayOfWeek
+      ),
       slot: null,
       teamContext: null,
     };
@@ -985,6 +1005,7 @@ module.exports = {
   getAllowedDates,
   pickDate,
   getSessionsForDate,
+  getSessionsForDay,
   resolveSessionRef,
   saveReport,
   getAllSessionChoices,

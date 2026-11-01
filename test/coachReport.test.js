@@ -113,6 +113,7 @@ test.before(async () => {
   await pool.query(`CREATE TABLE trainee_group_profiles (id BIGSERIAL PRIMARY KEY, trainee_name TEXT NOT NULL, branch TEXT NOT NULL, group_label TEXT NOT NULL, notes TEXT, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(trainee_name, branch, group_label))`);
   await require("../services/pendingTraineeService").createPendingTraineesTable(pool);
   await require("../services/attendanceService").createStaffCoachesTable(pool);
+  await require("../services/attendanceService").createDayExclusionsTable(pool);
   await require("../services/attendanceService").loadCoachOverrides(pool);
 
   /*

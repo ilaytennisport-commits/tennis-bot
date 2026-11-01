@@ -1676,6 +1676,71 @@ async function getActiveTraineesByGroupId(
   return result.rows;
 }
 
+/*
+ * =========================================================
+ * ימים שבהם ילד לא מגיע לקבוצה קבועה
+ * =========================================================
+ *
+ * קבוצה כמו "א+ד 17:00 + ג 18:00 – עתודה" מתאמנת בכמה ימים.
+ * מדף ניהול הקבוצות אפשר להוריד ילד מיום אחד בלבד —
+ * הוא נשאר בקבוצה, ורק לא מופיע ברשימה של אותו יום.
+ */
+
+async function createDayExclusionsTable(db = pool) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS trainee_day_exclusions (
+      trainee_id BIGINT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (trainee_id, day_of_week)
+    )
+  `);
+}
+
+async function getExcludedTraineeIds(
+  traineeIds,
+  dayOfWeek,
+  db = pool
+) {
+  if (!dayOfWeek || traineeIds.length === 0) {
+    return new Set();
+  }
+
+  const result = await db.query(
+    `
+      SELECT trainee_id
+      FROM trainee_day_exclusions
+      WHERE day_of_week = $1
+        AND trainee_id = ANY($2::BIGINT[])
+    `,
+    [dayOfWeek, traineeIds]
+  );
+
+  return new Set(result.rows.map((row) => String(row.trainee_id)));
+}
+
+/*
+ * הילדים הפעילים בקבוצה ביום מסוים (בלי מי שהוצא מאותו יום).
+ */
+async function getActiveTraineesForDay(
+  groupId,
+  dayOfWeek,
+  db = pool
+) {
+  const trainees =
+    await getActiveTraineesByGroupId(groupId, db);
+
+  const excluded = await getExcludedTraineeIds(
+    trainees.map((trainee) => trainee.id),
+    dayOfWeek,
+    db
+  );
+
+  return excluded.size
+    ? trainees.filter((trainee) => !excluded.has(String(trainee.id)))
+    : trainees;
+}
+
 async function getAllTraineesByGroupId(
   groupId,
   db = pool
@@ -3652,8 +3717,9 @@ async function submitAttendance({
       group = resolution.group;
 
       trainees =
-        await getActiveTraineesByGroupId(
-          group.id
+        await getActiveTraineesForDay(
+          group.id,
+          sessionInfo.dayOfWeek
         );
     }
 
@@ -4158,6 +4224,8 @@ module.exports = {
   getActiveGroups,
 
   getActiveTraineesByGroupId,
+  getActiveTraineesForDay,
+  createDayExclusionsTable,
   getAllTraineesByGroupId,
 
   getGroupRoster,

@@ -812,4 +812,34 @@ test("הוספת כמה ילדים: פסיקים או שם בכל שורה", () 
   assert.equal(multiLine.type, "ADD_TRAINEE");
   assert.equal(multiLine.groupName, "א+ד 16:00");
   assert.equal(multiLine.traineeName, "דני כהן, נועה, יואב");
+
+  /* "את" בסוף השורה הראשונה אינו חלק משם הקבוצה */
+  const withEt = parseManagerCommand(
+    "תוסיף לקבוצה ג-ו מתחילים ומתקדמים 15:30 את\nשחר\nגל\nדביר אורפז"
+  );
+
+  assert.equal(withEt.groupName, "ג-ו מתחילים ומתקדמים 15:30");
+  assert.equal(withEt.traineeName, "שחר, גל, דביר אורפז");
+
+  assert.equal(
+    parseManagerCommand("תוסיף את הילדים הבאים לקבוצה א+ד 16:00:\nדני\nנועה").groupName,
+    "א+ד 16:00"
+  );
+});
+
+test("שם קבוצה במילים בסדר אחר — הקבוצה נמצאת", async () => {
+  await pool.query(
+    `INSERT INTO training_groups (name, branch) VALUES ('א+ד 15:30-16:30 – ג-ו מתחילים ומתקדמים', 'בית חשמונאי')`
+  );
+
+  const found = await attendance.resolveActiveGroup("ג-ו מתחילים ומתקדמים 15:30");
+
+  assert.equal(found.success, true);
+  assert.equal(found.group.name, "א+ד 15:30-16:30 – ג-ו מתחילים ומתקדמים");
+
+  const wrongTime = await attendance.resolveActiveGroup("ג-ו מתחילים ומתקדמים 17:00");
+
+  assert.equal(wrongTime.success, false);
+
+  await pool.query(`UPDATE training_groups SET active = FALSE WHERE name LIKE '%ג-ו מתחילים ומתקדמים'`);
 });

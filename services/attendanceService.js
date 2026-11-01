@@ -1335,6 +1335,28 @@ function getGroupMatchScore(
     return 70;
   }
 
+  /*
+   * אותן מילים בסדר אחר:
+   * "ג-ו מתחילים ומתקדמים 15:30" ↔ "א+ד 15:30-16:30 – ג-ו מתחילים ומתקדמים".
+   * כל מילה ושעה שנכתבו צריכות להופיע בשם הקבוצה, ולפחות מילה אחת אמיתית.
+   */
+  const toWords = (value) =>
+    String(value || "")
+      .split(/[\s\-–—]+/)
+      .filter(Boolean);
+
+  const inputWords = toWords(inputWithoutBranch);
+  const groupWords = new Set(toWords(normalizedGroup));
+
+  if (
+    inputWords.some(
+      (word) => word.length >= 3 && !/^\d/.test(word)
+    ) &&
+    inputWords.every((word) => groupWords.has(word))
+  ) {
+    return requestedBranch ? 68 : 65;
+  }
+
   return 0;
 }
 

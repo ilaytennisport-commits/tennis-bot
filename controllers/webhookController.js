@@ -804,6 +804,20 @@ async function handleManagerCommand({
               notes: resolvedCommand.notes,
             });
 
+            /*
+             * הקבוצה לא נמצאה — הודעה אחת, ולא אחת לכל ילד.
+             */
+            if (
+              ["GROUP_NOT_FOUND", "AMBIGUOUS_GROUP", "EMPTY_GROUP_NAME"].includes(
+                single.code
+              )
+            ) {
+              lines.length = 0;
+              lines.push(single.message);
+
+              break;
+            }
+
             lines.push(single.message);
 
             if (single.success) {

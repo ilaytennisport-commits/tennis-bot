@@ -282,6 +282,37 @@ test("מסלול שיקומי: אותה שיחה כמו בשאר הפלטפור�
   assert.match(lastSentTo(state, MANAGER), /שיקומי/);
 });
 
+test("השכרת מגרש מפלטפורמה: מפנים ללזוז, ולא שומרים את השאלה כשם", async () => {
+  /* בהודעה הראשונה */
+  const first = newCustomer();
+  const opening = await say(first, "היי, אפשר להשכיר מגרש דרך פריפיט?");
+
+  assert.match(opening, /השכרת מגרשים לא מתבצעת דרך FreeFit/);
+  assert.match(opening, /רק דרך אפליקציית לזוז/);
+  assert.match(opening, /מה השם המלא של המתאמן/);
+  assert.equal(state.users.get(first).source, "freefit");
+
+  /* באמצע איסוף הפרטים, בלי סימן שאלה */
+  const middle = newCustomer();
+
+  await say(middle, "היי");
+  await say(middle, "דרך מוב");
+
+  const reply = await say(middle, "רציתי להזמין מגרש לשבת");
+
+  assert.match(reply, /השכרת מגרשים לא מתבצעת דרך MOVE/);
+  assert.match(reply, /לזוז/);
+  assert.match(reply, /מה השם המלא של המתאמן/);
+  assert.ok(!state.users.get(middle).name);
+
+  /* שאלה על מגרש לפני שענו על "איך שמעתם עלינו" */
+  const pending = newCustomer();
+
+  await say(pending, "אפשר לשכור אצלכם מגרש?");
+
+  assert.match(await say(pending, "שיקומי"), /השכרת מגרשים לא מתבצעת דרך שיקומי/);
+});
+
 test("ליד שנכשל בשליחה נשמר ונשלח שוב", async () => {
   state.failRecipients.add("972500000001");
 

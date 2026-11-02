@@ -67,9 +67,21 @@ const {
   getQuestionForField,
   buildSpecialRulesMessage,
   getSpecialFaqReply,
+  isCourtRentalQuestion,
+  buildCourtRentalReply,
 } = require(
   "../services/specialSourceConversationService"
 );
+
+/*
+ * הודעת הפתיחה ללקוח מפלטפורמה — ואם שאל על השכרת מגרש,
+ * קודם מסבירים שזה רק דרך לזוז.
+ */
+function buildSpecialOpening(source, ...messages) {
+  return messages.some((message) => isCourtRentalQuestion(message))
+    ? buildCourtRentalReply(source, getQuestionForField("name"))
+    : buildSpecialWelcome(source);
+}
 
 const {
   normalizePhone,
@@ -1866,6 +1878,22 @@ async function handleSpecialSourceConversation({
   const missingField =
     getMissingSpecialField(currentUser);
 
+  /*
+   * השכרת מגרש — לא דרך הפלטפורמה, רק דרך לזוז.
+   * לא שומרים את ההודעה כפרט בהרשמה.
+   */
+  if (isCourtRentalQuestion(userMessage)) {
+    await replyToCustomer(
+      userId,
+      buildCourtRentalReply(
+        currentUser.source,
+        missingField ? getQuestionForField(missingField) : null
+      )
+    );
+
+    return true;
+  }
+
   if (!missingField) {
     await replyToCustomer(
       userId,
@@ -2099,7 +2127,7 @@ async function handleCustomerMessage({
 
       await replyToCustomer(
         userId,
-        buildSpecialWelcome(directSource)
+        buildSpecialOpening(directSource, userMessage)
       );
 
       return;
@@ -2150,7 +2178,11 @@ async function handleCustomerMessage({
 
       await replyToCustomer(
         userId,
-        buildSpecialWelcome(sourceResult.source)
+        buildSpecialOpening(
+          sourceResult.source,
+          userMessage,
+          currentUser.pending_message
+        )
       );
 
       return;

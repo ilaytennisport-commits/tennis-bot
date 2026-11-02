@@ -179,6 +179,53 @@ function isRegularProgramInterest(
 }
 
 /*
+ * =========================================================
+ * השכרת מגרש
+ * =========================================================
+ *
+ * דרך הפלטפורמות (MOVE / FreeFit / עמית / שיקומי) אי אפשר
+ * להשכיר מגרש — רק דרך אפליקציית לזוז.
+ */
+function isCourtRentalQuestion(message = "") {
+  const text = normalizeText(message);
+
+  if (!text) {
+    return false;
+  }
+
+  if (/השכרת\s+מגרש|מגרש(?:ים)?\s+להשכרה|לזוז/.test(text)) {
+    return true;
+  }
+
+  return (
+    /מגרש/.test(text) &&
+    /להשכיר|לשכור|השכר|שכירות|להזמין|הזמנת|הזמנה|לקבוע|לתפוס|פנוי|זמין|לשחק/.test(text)
+  );
+}
+
+function buildCourtRentalReply(source, nextQuestion = null) {
+  const sourceName = getSourceDisplayName(source) || "הפלטפורמה";
+
+  const lines = [
+    `השכרת מגרשים לא מתבצעת דרך ${sourceName} 🎾`,
+    "",
+    "את המגרשים אפשר להזמין רק דרך אפליקציית לזוז.",
+    "",
+    `דרך ${sourceName} אפשר להצטרף לאימוני הטניס הקבוצתיים שלנו.`,
+  ];
+
+  if (nextQuestion) {
+    lines.push(
+      "אם תרצו להצטרף לאימונים, אשמח לכמה פרטים:",
+      "",
+      nextQuestion
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/*
  * ההודעה הראשונה לאחר שזוהה
  * שהלקוח הגיע דרך אחת הפלטפורמות.
  */
@@ -294,6 +341,10 @@ function getSpecialFaqReply(
 
   const sourceName =
     getSourceDisplayName(source);
+
+  if (isCourtRentalQuestion(message)) {
+    return buildCourtRentalReply(source);
+  }
 
   /*
    * איפה מתקיימים האימונים.
@@ -486,4 +537,6 @@ module.exports = {
   getQuestionForField,
   buildSpecialRulesMessage,
   getSpecialFaqReply,
+  isCourtRentalQuestion,
+  buildCourtRentalReply,
 };

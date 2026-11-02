@@ -134,6 +134,29 @@ test("מקור הגעה: קופות חולים רק בהקשר ברור", () => 
   assert.equal(detectSpecialSource("פייסבוק"), null);
 });
 
+test("השכרת מגרש: מזהים שאלות על הזמנת מגרש, לא כל אזכור של מגרש", () => {
+  const {
+    isCourtRentalQuestion,
+    getSpecialFaqReply,
+  } = require("../services/specialSourceConversationService");
+
+  for (const text of [
+    "אפשר להשכיר מגרש?",
+    "השכרת מגרש דרך פריפיט",
+    "רוצה להזמין מגרש ליום שישי",
+    "יש מגרש פנוי מחר?",
+    "איך מזמינים בלזוז?",
+  ]) {
+    assert.equal(isCourtRentalQuestion(text), true, text);
+  }
+
+  for (const text of ["מה עושים באימון?", "התנועה במגרש חשובה", "כמה עולה חוג?"]) {
+    assert.equal(isCourtRentalQuestion(text), false, text);
+  }
+
+  assert.match(getSpecialFaqReply("אפשר לשכור מגרש?", "amit"), /דרך עמית[\s\S]*לזוז/);
+});
+
 test("מזהי WhatsApp: קבוצות לא נחשבות שיחה פרטית", () => {
   assert.equal(getChatKind("120363052512345678@g.us"), "group");
   assert.equal(isPrivateChat("120363052512345678@g.us"), false);

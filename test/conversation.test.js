@@ -313,6 +313,22 @@ test("השכרת מגרש מפלטפורמה: מפנים ללזוז, ולא שו
   assert.match(await say(pending, "שיקומי"), /השכרת מגרשים לא מתבצעת דרך שיקומי/);
 });
 
+test("השכרת מגרש מלקוח רגיל: מפנים ללזוז, בלי לפנות ל-OpenAI", async () => {
+  const chatId = await regularCustomer();
+  const calls = state.openaiCalls;
+
+  const reply = await say(chatId, "אפשר להזמין אצלכם מגרש למחר בערב?");
+
+  assert.match(reply, /רק דרך אפליקציית לזוז/);
+  assert.equal(state.openaiCalls, calls);
+
+  /* שאלה על מגרש כהודעה ראשונה, לפני "איך שמעתם עלינו" */
+  const first = newCustomer();
+
+  await say(first, "יש מגרש פנוי מחר?");
+  assert.match(await say(first, "מגוגל"), /רק דרך אפליקציית לזוז/);
+});
+
 test("ליד שנכשל בשליחה נשמר ונשלח שוב", async () => {
   state.failRecipients.add("972500000001");
 

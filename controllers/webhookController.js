@@ -2010,6 +2010,24 @@ async function handleRegularFlow({
 
   await addMessage(userId, "user", userMessage);
 
+  /*
+   * השכרת מגרש — רק דרך אפליקציית לזוז.
+   */
+  if (isCourtRentalQuestion(userMessage)) {
+    const courtReply = [
+      "את המגרשים אצלנו אפשר להזמין רק דרך אפליקציית לזוז 🎾",
+      "",
+      "אם מעניינים אתכם גם אימונים או חוגים טניס, אשמח לעזור.",
+    ].join("\n");
+
+    await replyToCustomer(
+      userId,
+      replyPrefix ? `${replyPrefix}\n\n${courtReply}` : courtReply
+    );
+
+    return;
+  }
+
   const conversationHistory =
     await getConversation(userId);
 

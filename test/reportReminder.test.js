@@ -73,6 +73,7 @@ test.before(async () => {
     CREATE TABLE attendance_sessions (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL, session_date DATE NOT NULL, submitted_by TEXT, UNIQUE(group_id, session_date));
     CREATE TABLE staff_links (phone TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, short_token TEXT UNIQUE, created_at TIMESTAMPTZ DEFAULT NOW());
     CREATE TABLE scheduled_jobs (job_key TEXT PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW());
+    CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW());
   `);
   await attendance.createStaffCoachesTable(pool);
   await attendance.createDayExclusionsTable(pool);
@@ -202,4 +203,40 @@ test("אפשר לכבות", async () => {
 
   assert.equal(result.reason, "disabled");
   delete process.env.REPORT_REMINDERS;
+});
+
+test("ביום גשם ('אין אימונים היום') לא נשלחת תזכורת, ו'יש אימונים' מחזיר אותה", async () => {
+  await pool.query(`DELETE FROM scheduled_jobs`);
+  await pool.query(`DELETE FROM attendance_sessions WHERE group_id = 1`);
+
+  await reminders.setTrainingDay(DATE, true, "אור", pool);
+
+  sent.length = 0;
+  const result = await reminders.runReportRemindersIfDue(at(22), pool);
+
+  assert.equal(result.reason, "no-training");
+  assert.equal(sent.length, 0);
+
+  await reminders.setTrainingDay(DATE, false, "אור", pool);
+  await reminders.runReportRemindersIfDue(at(22), pool);
+
+  assert.ok(sent.length > 0);
+});
+
+test("בחג (חנוכה, שלישי 8/12) לא נשלחת תזכורת — אלא אם סימנו 'יש אימונים'", async () => {
+  const hanukkah = new Date(Date.UTC(2026, 11, 8, 20, 0));
+
+  assert.equal(await reminders.getNoTrainingReason("2026-12-08", pool), "חנוכה");
+
+  sent.length = 0;
+  const result = await reminders.runReportRemindersIfDue(hanukkah, pool);
+
+  assert.equal(result.reason, "no-training");
+  assert.equal(result.day, "חנוכה");
+  assert.equal(sent.length, 0);
+
+  await reminders.setTrainingDay("2026-12-08", false, "אור", pool);
+  await reminders.runReportRemindersIfDue(hanukkah, pool);
+
+  assert.ok(sent.some((m) => /תזכורת דיווח נוכחות – יום שלישי 8\/12/.test(m.body)));
 });

@@ -278,3 +278,28 @@ test("מנהל כותב 'ניהול קבוצות' — מקבל קישור /g; מ
   await processIncomingMessage(textMessage(COACH, "ניהול קבוצות"));
   assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /\/g\//);
 });
+
+test("'אין אימונים היום' — נרשם, והמנהל השני מקבל עדכון; 'יש אימונים היום' מבטל", async () => {
+  state.sent.length = 0;
+
+  await processIncomingMessage(textMessage(OWNER, "אין אימונים היום בגלל גשם"));
+
+  const reply = lastSentTo(state, OWNER);
+  const key = [...state.settings.keys()].find((k) => k.startsWith("no_training:"));
+
+  assert.match(reply, /רשמתי: אין אימונים היום/);
+  assert.match(reply, /לא יקבלו תזכורת דיווח/);
+  assert.match(state.settings.get(key), /^cancelled/);
+  assert.match(lastSentTo(state, SECOND_MANAGER), /סימן\/ה: אין אימונים היום/);
+
+  await processIncomingMessage(textMessage(OWNER, "יש אימונים היום"));
+
+  assert.match(lastSentTo(state, OWNER), /רשמתי: יש אימונים היום/);
+  assert.equal(state.settings.get(key), "open");
+
+  await processIncomingMessage(textMessage(OWNER, "אין אימונים מחר"));
+  assert.match(lastSentTo(state, OWNER), /אין אימונים מחר/);
+
+  await processIncomingMessage(textMessage(COACH, "אין אימונים היום"));
+  assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /רשמתי/);
+});

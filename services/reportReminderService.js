@@ -13,6 +13,54 @@ const { sendToOtherManagers } = require("./staffNotifyService");
 
 const { maskId } = require("../utils/whatsappIds");
 
+const { getNoTrainingHoliday } = require("../utils/hebrewHolidays");
+
+/*
+ * =========================================================
+ * ימים בלי אימונים
+ * =========================================================
+ *
+ * חגים — לפי הלוח העברי (utils/hebrewHolidays).
+ * ביטול ידני (גשם וכו') — מנהל שולח "אין אימונים היום".
+ * "יש אימונים היום" מבטל את זה, וגם פותח יום חג אם בכל זאת מתאמנים.
+ */
+
+const NO_TRAINING_KEY = "no_training:";
+const OPEN_VALUE = "open";
+
+async function setTrainingDay(dateString, cancelled, byName, db = pool) {
+  await db.query(
+    `
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (key)
+      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `,
+    [NO_TRAINING_KEY + dateString, cancelled ? `cancelled:${byName || ""}` : OPEN_VALUE]
+  );
+}
+
+/*
+ * למה אין היום אימונים (שם החג / "בוטלו"), או null אם יש.
+ */
+async function getNoTrainingReason(dateString, db = pool) {
+  const row = (
+    await db.query(`SELECT value FROM app_settings WHERE key = $1`, [
+      NO_TRAINING_KEY + dateString,
+    ])
+  ).rows[0];
+
+  if (row?.value === OPEN_VALUE) {
+    return null;
+  }
+
+  if (row?.value?.startsWith("cancelled")) {
+    return "האימונים בוטלו";
+  }
+
+  return getNoTrainingHoliday(dateString);
+}
+
 /*
  * =========================================================
  * תזכורת על נוכחות שלא דווחה
@@ -270,6 +318,14 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
   const results = {};
 
   if (minutes >= coachAt) {
+    const reason = await getNoTrainingReason(dateString, db);
+
+    if (reason) {
+      return { ran: false, reason: "no-training", day: reason };
+    }
+  }
+
+  if (minutes >= coachAt) {
     const key = `coach-report-reminder-${dateString}`;
 
     if (await claimJob(key, db)) {
@@ -313,6 +369,9 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
 }
 
 module.exports = {
+  israelNow,
+  setTrainingDay,
+  getNoTrainingReason,
   getTodayStatus,
   buildCoachReminder,
   buildManagerSummary,

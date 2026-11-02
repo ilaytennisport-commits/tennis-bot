@@ -189,6 +189,23 @@ const {
 } = require("../services/groupsManagerService");
 
 const {
+  israelNow,
+  setTrainingDay,
+} = require("../services/reportReminderService");
+
+const {
+  getNoTrainingHoliday,
+} = require("../utils/hebrewHolidays");
+
+function shiftDateString(dateString, days) {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day + days, 12))
+    .toISOString()
+    .slice(0, 10);
+}
+
+const {
   parseSupportNote,
   createSupportNote,
   listOpenSupportNotes,
@@ -293,6 +310,10 @@ function buildManagerCommandsHelp() {
     "",
     "✅ דף דיווח נוכחות (סימון ✔ / ✘ לכל ילד):",
     "קישור דיווח",
+    "",
+    "🌧️ ביטול אימונים (גשם וכו') — בלי תזכורת דיווח באותו יום:",
+    "אין אימונים היום / אין אימונים מחר",
+    "יש אימונים היום — ביטול (גם בחג, אם בכל זאת מתאמנים)",
     "",
     "🌐 דף נוכחות חי (מתעדכן כל דקה):",
     "קישור נוכחות",
@@ -1101,6 +1122,75 @@ async function handleStaffMessage({
             "⚠️ הקישור אישי — לא להעביר לאחרים.",
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+    );
+
+    return true;
+  }
+
+  /*
+   * "אין אימונים היום / מחר" (גשם וכו') — לא נשלחת תזכורת דיווח.
+   * "יש אימונים היום" — מבטל, וגם פותח יום חג אם בכל זאת מתאמנים.
+   */
+  const trainingDayText = String(userMessage)
+    .trim()
+    .replace(/[!.?,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const cancelMatch = manager
+    ? trainingDayText.match(
+        /^(?:אין|לא\s+יהיו|לא\s+יהיה|בוטלו|ביטול|מבטלים|מבוטלים|לבטל)\s+(?:את\s+)?(?:כל\s+)?(?:ה)?(?:אימונים|אימון)\s+(?:ב)?(היום|מחר)(?:\s.*)?$/
+      )
+    : null;
+
+  const reopenMatch = manager
+    ? trainingDayText.match(
+        /^(?:יש|יהיו|כן\s+יש|כן\s+יהיו)\s+(?:ה)?(?:אימונים|אימון)\s+(?:ב)?(היום|מחר)$/
+      )
+    : null;
+
+  if (cancelMatch || reopenMatch) {
+    const whenWord = (cancelMatch || reopenMatch)[1];
+    const { dateString: today } = israelNow();
+    const dateString = whenWord === "מחר" ? shiftDateString(today, 1) : today;
+    const [year, month, day] = dateString.split("-").map(Number);
+    const weekdayName = [
+      "ראשון",
+      "שני",
+      "שלישי",
+      "רביעי",
+      "חמישי",
+      "שישי",
+      "שבת",
+    ][new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay()];
+    const dayLabel = `${whenWord} (${weekdayName} ${day}/${month})`;
+    const holiday = getNoTrainingHoliday(dateString);
+
+    await setTrainingDay(dateString, Boolean(cancelMatch), getStaffName(staffPhone));
+
+    await sendWhatsAppMessage(
+      userId,
+      cancelMatch
+        ? [
+            `🌧️ רשמתי: אין אימונים ${dayLabel}.`,
+            "המאמנים לא יקבלו תזכורת דיווח על היום הזה.",
+            "",
+            `אם בכל זאת מתאמנים: יש אימונים ${whenWord}`,
+          ].join("\n")
+        : [
+            `✅ רשמתי: יש אימונים ${dayLabel}.`,
+            holiday ? `(למרות ש${holiday} — בדרך כלל אין בו אימונים.)` : null,
+            "תזכורת הדיווח תישלח כרגיל.",
+          ]
+            .filter(Boolean)
+            .join("\n")
+    );
+
+    await sendToOtherManagers(
+      staffPhone,
+      `${cancelMatch ? "🌧️" : "✅"} ${getStaffName(staffPhone)} סימן/ה: ${
+        cancelMatch ? "אין" : "יש"
+      } אימונים ${dayLabel}.`
     );
 
     return true;

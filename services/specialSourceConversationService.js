@@ -183,9 +183,19 @@ function isRegularProgramInterest(
  * השכרת מגרש
  * =========================================================
  *
- * דרך הפלטפורמות (MOVE / FreeFit / עמית / שיקומי) אי אפשר
- * להשכיר מגרש — רק דרך אפליקציית לזוז.
+ * דרך הפלטפורמות (MOVE / FreeFit / עמית / שיקומי): ימים א׳–ה׳,
+ * 7:00–15:00. כדי להשלים את ההזמנה שולחים צילום מסך לאשר
+ * (קישור ישיר לוואטסאפ שלו, עם הודעה מוכנה) ומקבלים מספר מגרש.
+ * לקוחות רגילים — רק דרך אפליקציית לזוז.
  */
+
+const COURT_CONTACT_PHONE = "972533331510";
+
+const COURT_REGULAR_REPLY = [
+  "את המגרשים אצלנו אפשר להזמין רק דרך אפליקציית לזוז 🎾",
+  "",
+  "אם מעניינים אתכם גם אימונים או חוגים טניס, אשמח לעזור.",
+].join("\n");
 function isCourtRentalQuestion(message = "") {
   const text = normalizeText(message);
 
@@ -203,23 +213,37 @@ function isCourtRentalQuestion(message = "") {
   );
 }
 
-function buildCourtRentalReply(source, nextQuestion = null) {
+/*
+ * שתי הודעות נפרדות ללקוח מפלטפורמה.
+ */
+function buildCourtRentalMessages(source) {
   const sourceName = getSourceDisplayName(source) || "הפלטפורמה";
+  const prefilled = encodeURIComponent(
+    `היי אשר, מצרף צילום מסך של הזמנת מגרש דרך ${sourceName}`
+  );
 
-  const lines = [
-    `השכרת מגרשים לא מתבצעת דרך ${sourceName} 🎾`,
-    "",
-    "את המגרשים אפשר להזמין רק דרך אפליקציית לזוז.",
-    "",
-    `דרך ${sourceName} אפשר להצטרף לאימוני הטניס הקבוצתיים שלנו.`,
+  return [
+    [
+      `השכרת מגרש דרך ${sourceName} 🎾`,
+      "",
+      "ימים א׳–ה׳, בשעות הבוקר בלבד: 7:00–15:00",
+    ].join("\n"),
+    [
+      "על מנת להשלים את ההזמנה נדרש לשלוח צילום מסך של ההזמנה לאשר, לקבלת מספר מגרש:",
+      "",
+      `https://wa.me/${COURT_CONTACT_PHONE}?text=${prefilled}`,
+    ].join("\n"),
   ];
+}
+
+/*
+ * הודעה אחת (לשאלות נפוצות אחרי ההרשמה): שתי ההודעות יחד.
+ */
+function buildCourtRentalReply(source, nextQuestion = null) {
+  const lines = [buildCourtRentalMessages(source).join("\n\n")];
 
   if (nextQuestion) {
-    lines.push(
-      "אם תרצו להצטרף לאימונים, אשמח לכמה פרטים:",
-      "",
-      nextQuestion
-    );
+    lines.push("", "וכדי שנוכל להמשיך בהרשמה לאימונים:", nextQuestion);
   }
 
   return lines.join("\n");
@@ -539,4 +563,6 @@ module.exports = {
   getSpecialFaqReply,
   isCourtRentalQuestion,
   buildCourtRentalReply,
+  buildCourtRentalMessages,
+  COURT_REGULAR_REPLY,
 };

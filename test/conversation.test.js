@@ -282,17 +282,36 @@ test("מסלול שיקומי: אותה שיחה כמו בשאר הפלטפור�
   assert.match(lastSentTo(state, MANAGER), /שיקומי/);
 });
 
-test("השכרת מגרש מפלטפורמה: מפנים ללזוז, ולא שומרים את השאלה כשם", async () => {
+test("השכרת מגרש מפלטפורמה: שעות, קישור לאשר, התראה לאשר — ולא שומרים את השאלה כשם", async () => {
   /* בהודעה הראשונה */
   const first = newCustomer();
-  const opening = await say(first, "היי, אפשר להשכיר מגרש דרך פריפיט?");
+  const before = sentTo(state, first).length;
 
-  assert.match(opening, /השכרת מגרשים לא מתבצעת דרך FreeFit/);
-  assert.match(opening, /רק דרך אפליקציית לזוז/);
-  assert.match(opening, /מה השם המלא של המתאמן/);
+  await say(first, "היי, אפשר להשכיר מגרש דרך פריפיט?");
+
+  const toCustomer = sentTo(state, first).slice(before).map((m) => m.body);
+
+  assert.equal(toCustomer.length, 2);
+  assert.match(toCustomer[0], /^השכרת מגרש דרך FreeFit 🎾/);
+  assert.match(toCustomer[0], /ימים א׳–ה׳, בשעות הבוקר בלבד: 7:00–15:00/);
+  assert.match(toCustomer[1], /צילום מסך של ההזמנה לאשר, לקבלת מספר מגרש/);
+  assert.match(toCustomer[1], /https:\/\/wa\.me\/972533331510\?text=/);
+  assert.match(
+    decodeURIComponent(toCustomer[1].match(/text=(\S+)/)[1]),
+    /היי אשר, מצרף צילום מסך של הזמנת מגרש דרך FreeFit/
+  );
+  assert.doesNotMatch(toCustomer.join("\n"), /לזוז|השם המלא/);
   assert.equal(state.users.get(first).source, "freefit");
+  assert.match(lastSentTo(state, MANAGER), /לקוח מ-FreeFit שאל על השכרת מגרש/);
 
-  /* באמצע איסוף הפרטים, בלי סימן שאלה */
+  /* "תודה" אחרי זה לא נשמר כשם המתאמן */
+  await say(first, "תודה");
+  assert.ok(!state.users.get(first).name);
+
+  /* שאלה נוספת על מגרש — שוב התשובה של הפלטפורמה, לא לזוז */
+  assert.match(await say(first, "ואפשר להזמין מגרש גם לשישי?"), /wa.me/);
+
+  /* אחרי בחירת פלטפורמה, לפני שנתנו פרטים */
   const middle = newCustomer();
 
   await say(middle, "היי");
@@ -300,17 +319,29 @@ test("השכרת מגרש מפלטפורמה: מפנים ללזוז, ולא שו
 
   const reply = await say(middle, "רציתי להזמין מגרש לשבת");
 
-  assert.match(reply, /השכרת מגרשים לא מתבצעת דרך MOVE/);
-  assert.match(reply, /לזוז/);
-  assert.match(reply, /מה השם המלא של המתאמן/);
+  assert.match(reply, /wa.me/);
   assert.ok(!state.users.get(middle).name);
+
+  /* באמצע הרשמה לאימונים — ממשיכים מהשאלה שבה עצרו */
+  const registering = newCustomer();
+
+  await say(registering, "היי");
+  await say(registering, "דרך עמית");
+  await say(registering, "רון אברהם");
+
+  const resumed = await say(registering, "אפשר גם להזמין מגרש?");
+
+  assert.match(resumed, /להמשיך בהרשמה לאימונים:\nמה גיל המתאמן/);
 
   /* שאלה על מגרש לפני שענו על "איך שמעתם עלינו" */
   const pending = newCustomer();
 
   await say(pending, "אפשר לשכור אצלכם מגרש?");
+  await say(pending, "שיקומי");
 
-  assert.match(await say(pending, "שיקומי"), /השכרת מגרשים לא מתבצעת דרך שיקומי/);
+  assert.ok(
+    sentTo(state, pending).some((m) => /^השכרת מגרש דרך שיקומי/.test(m.body))
+  );
 });
 
 test("השכרת מגרש מלקוח רגיל: מפנים ללזוז, בלי לפנות ל-OpenAI", async () => {

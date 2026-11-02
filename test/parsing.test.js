@@ -154,7 +154,7 @@ test("השכרת מגרש: מזהים שאלות על הזמנת מגרש, לא 
     assert.equal(isCourtRentalQuestion(text), false, text);
   }
 
-  assert.match(getSpecialFaqReply("אפשר לשכור מגרש?", "amit"), /דרך עמית[\s\S]*לזוז/);
+  assert.match(getSpecialFaqReply("אפשר לשכור מגרש?", "amit"), /השכרת מגרש דרך עמית[\s\S]*wa\.me\/972533331510/);
 });
 
 test("מזהי WhatsApp: קבוצות לא נחשבות שיחה פרטית", () => {

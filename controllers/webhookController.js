@@ -68,19 +68,74 @@ const {
   buildSpecialRulesMessage,
   getSpecialFaqReply,
   isCourtRentalQuestion,
-  buildCourtRentalReply,
+  buildCourtRentalMessages,
+  getSourceDisplayName,
+  COURT_REGULAR_REPLY,
 } = require(
   "../services/specialSourceConversationService"
 );
 
 /*
- * הודעת הפתיחה ללקוח מפלטפורמה — ואם שאל על השכרת מגרש,
- * קודם מסבירים שזה רק דרך לזוז.
+ * =========================================================
+ * השכרת מגרש ללקוח מפלטפורמה
+ * =========================================================
+ *
+ * שתי הודעות (שעות + קישור לאשר), והתראה לאשר — פעם ביום ללקוח.
+ * מי שלא התחיל הרשמה לאימונים עובר לשיחה רגילה, כדי שתשובה
+ * כמו "תודה" לא תישמר כשם המתאמן.
  */
-function buildSpecialOpening(source, ...messages) {
-  return messages.some((message) => isCourtRentalQuestion(message))
-    ? buildCourtRentalReply(source, getQuestionForField("name"))
-    : buildSpecialWelcome(source);
+const courtAlertsSent = new Map();
+
+async function alertCourtContact(userId, user) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (courtAlertsSent.get(userId) === today) {
+    return;
+  }
+
+  courtAlertsSent.set(userId, today);
+
+  const phone = user.phone || whatsappIdToPhone(userId) || "";
+  const sourceName = getSourceDisplayName(user.source) || "פלטפורמה";
+  const message = [
+    `🎾 לקוח מ-${sourceName} שאל על השכרת מגרש`,
+    "",
+    phone ? `📞 ${phone}` : null,
+    user.name ? `👤 ${user.name}` : null,
+    "",
+    "הוא קיבל את שעות ההשכרה (א׳–ה׳ 7:00–15:00) ואת הקישור אליך לשליחת צילום מסך של ההזמנה.",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  try {
+    const contactPhone = findManagerPhoneByName("אשר");
+
+    if (contactPhone) {
+      await sendWhatsAppMessage(contactPhone, message);
+    } else {
+      await sendToOtherManagers("", message);
+    }
+  } catch (error) {
+    console.error("❌ התראה על השכרת מגרש נכשלה:", error.message);
+  }
+}
+
+async function replyPlatformCourtRental({ userId, user, nextQuestion = null }) {
+  for (const message of buildCourtRentalMessages(user.source)) {
+    await replyToCustomer(userId, message);
+  }
+
+  if (nextQuestion) {
+    await replyToCustomer(
+      userId,
+      `וכדי שנוכל להמשיך בהרשמה לאימונים:\n${nextQuestion}`
+    );
+  } else {
+    await saveUser(userId, { regular_flow_active: true });
+  }
+
+  await alertCourtContact(userId, user);
 }
 
 const {
@@ -1969,17 +2024,20 @@ async function handleSpecialSourceConversation({
     getMissingSpecialField(currentUser);
 
   /*
-   * השכרת מגרש — לא דרך הפלטפורמה, רק דרך לזוז.
-   * לא שומרים את ההודעה כפרט בהרשמה.
+   * השכרת מגרש — שעות + קישור לאשר. לא שומרים את ההודעה כפרט בהרשמה.
+   * מי שכבר באמצע הרשמה לאימונים ממשיך מהשאלה שבה עצר.
    */
   if (isCourtRentalQuestion(userMessage)) {
-    await replyToCustomer(
+    const inRegistration =
+      missingField && missingField !== "name";
+
+    await replyPlatformCourtRental({
       userId,
-      buildCourtRentalReply(
-        currentUser.source,
-        missingField ? getQuestionForField(missingField) : null
-      )
-    );
+      user: currentUser,
+      nextQuestion: inRegistration
+        ? getQuestionForField(missingField)
+        : null,
+    });
 
     return true;
   }
@@ -2101,18 +2159,21 @@ async function handleRegularFlow({
   await addMessage(userId, "user", userMessage);
 
   /*
-   * השכרת מגרש — רק דרך אפליקציית לזוז.
+   * השכרת מגרש: לקוח שהגיע מפלטפורמה (וחזר לשיחה רגילה) — שעות +
+   * קישור לאשר; לקוח רגיל — רק דרך אפליקציית לזוז.
    */
   if (isCourtRentalQuestion(userMessage)) {
-    const courtReply = [
-      "את המגרשים אצלנו אפשר להזמין רק דרך אפליקציית לזוז 🎾",
-      "",
-      "אם מעניינים אתכם גם אימונים או חוגים טניס, אשמח לעזור.",
-    ].join("\n");
+    if (isSpecialSource(updatedUser.source)) {
+      await replyPlatformCourtRental({ userId, user: updatedUser });
+
+      return;
+    }
 
     await replyToCustomer(
       userId,
-      replyPrefix ? `${replyPrefix}\n\n${courtReply}` : courtReply
+      replyPrefix
+        ? `${replyPrefix}\n\n${COURT_REGULAR_REPLY}`
+        : COURT_REGULAR_REPLY
     );
 
     return;
@@ -2233,10 +2294,17 @@ async function handleCustomerMessage({
         branch: SPECIAL_BRANCH,
       });
 
-      await replyToCustomer(
-        userId,
-        buildSpecialOpening(directSource, userMessage)
-      );
+      if (isCourtRentalQuestion(userMessage)) {
+        await replyPlatformCourtRental({
+          userId,
+          user: await getUser(userId),
+        });
+      } else {
+        await replyToCustomer(
+          userId,
+          buildSpecialWelcome(directSource)
+        );
+      }
 
       return;
     }
@@ -2284,14 +2352,20 @@ async function handleCustomerMessage({
 
       await addMessage(userId, "user", userMessage);
 
-      await replyToCustomer(
-        userId,
-        buildSpecialOpening(
-          sourceResult.source,
-          userMessage,
-          currentUser.pending_message
-        )
-      );
+      if (
+        isCourtRentalQuestion(userMessage) ||
+        isCourtRentalQuestion(currentUser.pending_message)
+      ) {
+        await replyPlatformCourtRental({
+          userId,
+          user: await getUser(userId),
+        });
+      } else {
+        await replyToCustomer(
+          userId,
+          buildSpecialWelcome(sourceResult.source)
+        );
+      }
 
       return;
     }

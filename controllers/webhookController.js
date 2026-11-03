@@ -246,6 +246,9 @@ const {
 const {
   israelNow,
   setTrainingDay,
+  parseCoachDays,
+  setCoachDays,
+  formatDays,
 } = require("../services/reportReminderService");
 
 const {
@@ -393,6 +396,7 @@ function buildManagerCommandsHelp() {
     "הוסף מאמן 0541234567 דנה",
     "הסר מאמן 0541234567",
     "קישור דיווח של דנה — הקישור שלה, כדי להעביר לה",
+    "ימי אימון דנה: שני, שלישי, חמישי — תזכורת דיווח רק בימים האלה",
     "שלח לי מדריך למדריכים — הסבר קצר להעתקה לקבוצת המאמנים",
     "",
     "👥 קבוצות:",
@@ -1177,6 +1181,63 @@ async function handleStaffMessage({
             "⚠️ הקישור אישי — לא להעביר לאחרים.",
           ].join("\n")
         : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+    );
+
+    return true;
+  }
+
+  /*
+   * ימי העבודה של מאמן — תזכורת דיווח רק בימים האלה:
+   * "ימי אימון נובל: שני, שלישי, חמישי"
+   * "נובל מאמנת רק בימים שני שלישי וחמישי"
+   * "ימי אימון נובל: כל הימים" — ביטול.
+   */
+  const coachDaysText = String(userMessage).trim().replace(/\s+/g, " ");
+  const coachDaysMatch = manager
+    ? coachDaysText.match(
+        /^ימי\s+(?:ה)?(?:אימון|אימונים|עבודה)\s+(?:של\s+)?(?:ה)?(?:מאמן\s+|מאמנת\s+)?(.+?)\s*[:\-–]\s*(.+)$/
+      ) ||
+      coachDaysText.match(
+        /^(?:ה)?(?:מאמן\s+|מאמנת\s+)?(.+?)\s+(?:מאמנת|מאמן|עובדת|עובד|מגיעה|מגיע)\s+(?:רק\s+)?(?:ב)?(?:ימים|ימי)?\s*((?:(?:ו|ב)?(?:ראשון|שני|שלישי|רביעי|חמישי|שישי)[\s,]*)+|כל\s+(?:ה)?ימים)$/
+      )
+    : null;
+
+  if (coachDaysMatch) {
+    const found = findCoach(coachDaysMatch[1]);
+    const allDays = /^כל\s+(?:ה)?ימים$/.test(coachDaysMatch[2].trim());
+    const days = allDays ? [] : parseCoachDays(coachDaysMatch[2]);
+
+    if (!found.success || !isCoachPhone(found.phone)) {
+      await sendWhatsAppMessage(
+        userId,
+        found.success ? `❌ ${found.phone} לא מוגדר כמאמן.` : found.message
+      );
+
+      return true;
+    }
+
+    if (!allDays && days.length === 0) {
+      await sendWhatsAppMessage(
+        userId,
+        "❌ לא זיהיתי ימים. למשל: ימי אימון נובל: שני, שלישי, חמישי"
+      );
+
+      return true;
+    }
+
+    await setCoachDays(found.phone, days);
+
+    const coachName = getStaffName(found.phone);
+
+    await sendWhatsAppMessage(
+      userId,
+      allDays
+        ? `✅ ${coachName} יקבל/תקבל תזכורת דיווח בכל יום שיש בו אימונים.`
+        : [
+            `✅ ${coachName} תקבל/יקבל תזכורת דיווח רק בימים: ${formatDays(days)}.`,
+            "",
+            `לביטול: ימי אימון ${coachName}: כל הימים`,
+          ].join("\n")
     );
 
     return true;

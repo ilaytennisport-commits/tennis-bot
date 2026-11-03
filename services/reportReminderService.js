@@ -25,6 +25,80 @@ const { getNoTrainingHoliday } = require("../utils/hebrewHolidays");
  * "יש אימונים היום" מבטל את זה, וגם פותח יום חג אם בכל זאת מתאמנים.
  */
 
+/*
+ * =========================================================
+ * ימי העבודה של כל מאמן
+ * =========================================================
+ *
+ * מאמן שהוגדרו לו ימים ("ימי אימון נובל: שני, שלישי, חמישי")
+ * מקבל תזכורת רק בימים האלה. בלי הגדרה — בכל יום שיש אימונים.
+ */
+
+const COACH_DAYS_KEY = "coach_days:";
+
+const DAY_WORDS = {
+  ראשון: 1, א: 1,
+  שני: 2, ב: 2,
+  שלישי: 3, ג: 3,
+  רביעי: 4, ד: 4,
+  חמישי: 5, ה: 5,
+  שישי: 6, ו: 6,
+};
+
+/*
+ * "שני, שלישי וחמישי" / "ב ג ה" / "ב+ג+ה" → [2, 3, 5]
+ */
+function parseCoachDays(text = "") {
+  const days = new Set();
+
+  for (const raw of String(text).split(/[\s,+،/]+/)) {
+    /* "ובחמישי" / "בשני" / "וחמישי" → היום עצמו */
+    const word = raw
+      .replace(/[׳'"״.]/g, "")
+      .replace(/^(?:ו|ב|וב)(?=(?:ראשון|שני|שלישי|רביעי|חמישי|שישי)$)/, "")
+      .replace(/^ימי?$/, "");
+
+    if (DAY_WORDS[word]) {
+      days.add(DAY_WORDS[word]);
+    }
+  }
+
+  return [...days].sort();
+}
+
+async function setCoachDays(phone, days, db = pool) {
+  const key = COACH_DAYS_KEY + attendance.normalizePhone(phone);
+
+  if (!days || days.length === 0) {
+    await db.query(`DELETE FROM app_settings WHERE key = $1`, [key]);
+    return;
+  }
+
+  await db.query(
+    `
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (key)
+      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `,
+    [key, days.join(",")]
+  );
+}
+
+async function getCoachDays(phone, db = pool) {
+  const row = (
+    await db.query(`SELECT value FROM app_settings WHERE key = $1`, [
+      COACH_DAYS_KEY + attendance.normalizePhone(phone),
+    ])
+  ).rows[0];
+
+  return row?.value ? row.value.split(",").map(Number) : null;
+}
+
+function formatDays(days) {
+  return days.map((day) => DAY_NAMES[day]).join(", ");
+}
+
 const NO_TRAINING_KEY = "no_training:";
 const OPEN_VALUE = "open";
 
@@ -279,8 +353,18 @@ async function releaseJob(jobKey, db = pool) {
   await db.query(`DELETE FROM scheduled_jobs WHERE job_key = $1`, [jobKey]);
 }
 
-async function sendCoachReminders(status) {
-  const coaches = attendance.getCoachPhones();
+async function sendCoachReminders(status, db = pool) {
+  const coaches = [];
+
+  /* רק מאמנים שעובדים היום (או שלא הוגדרו להם ימים) */
+  for (const phone of attendance.getCoachPhones()) {
+    const days = await getCoachDays(phone, db);
+
+    if (!days || days.includes(status.dayOfWeek)) {
+      coaches.push(phone);
+    }
+  }
+
   let sent = 0;
 
   for (const phone of coaches) {
@@ -332,7 +416,7 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
       const status = await getTodayStatus(now, db);
 
       if (status.sessions.some((s) => !s.done)) {
-        const result = await sendCoachReminders(status);
+        const result = await sendCoachReminders(status, db);
 
         /* אף מאמן לא קיבל — ננסה שוב בבדיקה הבאה */
         if (result.sent === 0 && result.total > 0) {
@@ -370,6 +454,10 @@ async function runReportRemindersIfDue(now = new Date(), db = pool) {
 
 module.exports = {
   israelNow,
+  parseCoachDays,
+  setCoachDays,
+  getCoachDays,
+  formatDays,
   setTrainingDay,
   getNoTrainingReason,
   getTodayStatus,

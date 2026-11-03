@@ -240,3 +240,24 @@ test("בחג (חנוכה, שלישי 8/12) לא נשלחת תזכורת — אל
 
   assert.ok(sent.some((m) => /תזכורת דיווח נוכחות – יום שלישי 8\/12/.test(m.body)));
 });
+
+test("מאמנת שעובדת רק בשני וחמישי לא מקבלת תזכורת ביום שלישי", async () => {
+  await pool.query(`DELETE FROM scheduled_jobs`);
+  await pool.query(`DELETE FROM app_settings`);
+  await pool.query(`DELETE FROM attendance_sessions WHERE group_id = 1`);
+
+  assert.deepEqual(reminders.parseCoachDays("שני ובחמישי"), [2, 5]);
+
+  await reminders.setCoachDays("0500000004", [2, 5], pool);
+  assert.deepEqual(await reminders.getCoachDays("0500000004", pool), [2, 5]);
+
+  sent.length = 0;
+  await reminders.runReportRemindersIfDue(at(21, 40), pool);
+
+  assert.equal(to("0500000002").length, 1);
+  assert.equal(to("0500000004").length, 0);
+
+  /* ביטול ההגדרה — שוב מקבלת בכל יום */
+  await reminders.setCoachDays("0500000004", [], pool);
+  assert.equal(await reminders.getCoachDays("0500000004", pool), null);
+});

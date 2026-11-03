@@ -228,6 +228,12 @@ function setupHarness(env = {}) {
       return { rows: [], rowCount: 1 };
     }
 
+    if (/^DELETE FROM app_settings WHERE key/.test(text)) {
+      state.settings.delete(params[0]);
+
+      return { rows: [], rowCount: 1 };
+    }
+
     if (/^SELECT key, value FROM app_settings WHERE key LIKE/.test(text)) {
       const prefix = String(params[0]).replace(/%$/, "");
       const rows = [...state.settings.entries()]

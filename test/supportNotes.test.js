@@ -303,3 +303,20 @@ test("'אין אימונים היום' — נרשם, והמנהל השני מק�
   await processIncomingMessage(textMessage(COACH, "אין אימונים היום"));
   assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /רשמתי/);
 });
+
+test("ימי אימון של מאמן: הגדרה בשני ניסוחים, וביטול", async () => {
+  await processIncomingMessage(textMessage(OWNER, "ימי אימון אבי: שני, שלישי, חמישי"));
+
+  assert.match(lastSentTo(state, OWNER), /אבי תקבל\/יקבל תזכורת דיווח רק בימים: שני, שלישי, חמישי/);
+  assert.equal(state.settings.get("coach_days:0500000002"), "2,3,5");
+
+  await processIncomingMessage(textMessage(OWNER, "אבי מאמן רק בימים שני וחמישי"));
+  assert.equal(state.settings.get("coach_days:0500000002"), "2,5");
+
+  await processIncomingMessage(textMessage(OWNER, "ימי אימון אבי: כל הימים"));
+  assert.match(lastSentTo(state, OWNER), /בכל יום שיש בו אימונים/);
+  assert.equal(state.settings.has("coach_days:0500000002"), false);
+
+  await processIncomingMessage(textMessage(OWNER, "ימי אימון מישהו: שני"));
+  assert.match(lastSentTo(state, OWNER), /לא מצאתי מאמן/);
+});

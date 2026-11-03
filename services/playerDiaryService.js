@@ -22,19 +22,27 @@ const {
  * =========================================================
  *
  * לכל שחקן קישור קבוע (מנהל שולח לבוט "אדל" או "יומן אדל").
- * אחרי כל אימון השחקן מדרג 9 סעיפים מ-1 (הכי טוב) עד 5,
+ * אחרי כל אימון השחקן מדרג 10 סעיפים מ-1 (הכי טוב) עד 5,
  * ורואה סיכום לפי תקופה או לפי תאריך.
  */
 
-const ITEM_KEYS = ["fh", "bh", "fw", "mt", "vo", "sv", "rt", "tb", "ro"];
+const ITEM_KEYS = ["fh", "bh", "fw", "mt", "vo", "sv", "rt", "tb", "ro", "pt"];
 const MAX_NOTE = 1000;
 const MAX_NAME = 60;
 const HISTORY_DAYS = 400;
 
-const TEMPLATE = fs.readFileSync(
-  path.join(__dirname, "..", "views", "playerDiary.html"),
-  "utf8"
-);
+/*
+ * הקוד של הדף נשמר בדפדפן — מספר גרסה בקישור, כדי שעדכון ייטען מיד.
+ */
+const SCRIPT_VERSION = require("crypto")
+  .createHash("sha1")
+  .update(fs.readFileSync(path.join(__dirname, "..", "public", "diary.js")))
+  .digest("hex")
+  .slice(0, 10);
+
+const TEMPLATE = fs
+  .readFileSync(path.join(__dirname, "..", "views", "playerDiary.html"), "utf8")
+  .replace('src="/diary.js"', `src="/diary.js?v=${SCRIPT_VERSION}"`);
 
 /* =========================================================
  * מסד נתונים
@@ -175,16 +183,31 @@ async function listEntries(diaryId, today, db = pool) {
   }));
 }
 
+/*
+ * דירוג שנשמר: מחזירים כל סעיף תקין שיש בו. דירוג ישן, מלפני
+ * שנוסף סעיף, מוצג בלי הסעיף החדש.
+ */
 function safeRatings(text) {
   try {
-    return cleanRatings(JSON.parse(text)) || {};
+    const value = JSON.parse(text) || {};
+    const ratings = {};
+
+    for (const key of ITEM_KEYS) {
+      const number = Number(value[key]);
+
+      if (Number.isInteger(number) && number >= 1 && number <= 5) {
+        ratings[key] = number;
+      }
+    }
+
+    return ratings;
   } catch {
     return {};
   }
 }
 
 /*
- * כל 9 הסעיפים, כל אחד מספר שלם 1–5. אחרת null.
+ * כל הסעיפים, כל אחד מספר שלם 1–5. אחרת null.
  */
 function cleanRatings(value) {
   if (!value || typeof value !== "object") {

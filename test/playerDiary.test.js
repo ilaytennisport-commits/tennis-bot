@@ -34,7 +34,7 @@ require.cache[dbPath] = {
 const diaryService = require("../services/playerDiaryService");
 const attendance = require("../services/attendanceService");
 
-const FULL = { fh: 2, bh: 3, fw: 2, mt: 1, vo: 3, sv: 2, rt: 4, tb: 3, ro: 1 };
+const FULL = { fh: 2, bh: 3, fw: 2, mt: 1, vo: 3, sv: 2, rt: 4, tb: 3, ro: 1, pt: 2 };
 
 function res() {
   return {
@@ -110,7 +110,7 @@ test("הדף: שם השחקן, הנתונים, ולא מריץ קוד שהוזן
   assert.equal(page.statusCode, 200);
   assert.equal(page.headers["Cache-Control"], "no-store");
   assert.match(page.body, /<title>יומן אימון – אדל שלומון<\/title>/);
-  assert.match(page.body, /<script src="\/diary\.js"><\/script>/);
+  assert.match(page.body, /<script src="\/diary\.js\?v=[a-f0-9]{10}"><\/script>/);
   assert.doesNotMatch(page.body, /<\/script><script>alert/);
 
   const data = JSON.parse(page.body.match(/<script type="application\/json" id="data">([\s\S]*?)<\/script>/)[1]);
@@ -146,4 +146,23 @@ test("החלפת קישור: הישן מפסיק לעבוד", async () => {
 
   assert.equal(await diaryService.getDiaryByToken(diary.token, pool), null);
   assert.equal((await diaryService.getDiaryByToken(fresh, pool)).name, "אדל שלומון");
+});
+
+test("סעיף 10 (תחרויות נקודות): חובה בשמירה חדשה, ודירוג ישן בלי הסעיף עדיין מוצג", async () => {
+  const { ro, pt, ...nine } = FULL;
+  const old = (await diaryService.getOrCreateDiary("נועה כהן", pool)).diary;
+
+  assert.equal(await diaryService.saveEntry({ diaryId: old.id, date: "2026-11-01", ratings: { ...nine, ro } }, pool), false);
+
+  /* דירוג ישן מלפני שנוסף הסעיף, שנשמר ישירות במסד הנתונים */
+  await pool.query(
+    `INSERT INTO diary_entries (diary_id, entry_date, ratings) VALUES ($1, '2026-11-01', $2)`,
+    [old.id, JSON.stringify({ ...nine, ro })]
+  );
+
+  const [entry] = await diaryService.listEntries(old.id, "2026-11-03", pool);
+
+  assert.equal(entry.ratings.fh, 2);
+  assert.equal(entry.ratings.ro, 1);
+  assert.equal(entry.ratings.pt, undefined);
 });

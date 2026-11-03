@@ -320,3 +320,25 @@ test("ימי אימון של מאמן: הגדרה בשני ניסוחים, וב�
   await processIncomingMessage(textMessage(OWNER, "ימי אימון מישהו: שני"));
   assert.match(lastSentTo(state, OWNER), /לא מצאתי מאמן/);
 });
+
+test("יומן אימון: 'יומן אדל' פותח ושולח קישור; 'אדל' שולח את אותו קישור; מאמן לא מקבל", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  await processIncomingMessage(textMessage(OWNER, "יומן אדל"));
+
+  const opened = lastSentTo(state, OWNER);
+  const link = opened.match(/https:\/\/bot\.example\.com\/d\/[2-9a-km-np-zA-HJ-NP-Z]{12}/)[0];
+
+  assert.match(opened, /נפתח יומן אימון לאדל/);
+
+  await processIncomingMessage(textMessage(OWNER, "אדל"));
+  assert.match(lastSentTo(state, OWNER), /יומן האימון של אדל/);
+  assert.ok(lastSentTo(state, OWNER).includes(link));
+
+  await processIncomingMessage(textMessage(OWNER, "החלף קישור יומן אדל"));
+  assert.match(lastSentTo(state, OWNER), /הקישור הקודם כבר לא עובד/);
+  assert.ok(!lastSentTo(state, OWNER).includes(link));
+
+  await processIncomingMessage(textMessage(COACH, "יומן אדל"));
+  assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /\/d\//);
+});

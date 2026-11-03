@@ -244,6 +244,13 @@ const {
 } = require("../services/groupsManagerService");
 
 const {
+  findDiaryByName,
+  getOrCreateDiary,
+  rotateDiaryToken,
+  getDiaryLink,
+} = require("../services/playerDiaryService");
+
+const {
   israelNow,
   setTrainingDay,
   parseCoachDays,
@@ -382,6 +389,10 @@ function buildManagerCommandsHelp() {
     "📝 לוח משימות שוטפות למנהלים:",
     "משימות — הקישור האישי שלך",
     "משימות של אשר — הקישור שלו, כדי להעביר לו",
+    "",
+    "📒 יומן אימון לשחקן (קישור קבוע לשלוח לו):",
+    "יומן אדל — פותח יומן ושולח את הקישור",
+    "אדל — הקישור של יומן שכבר קיים",
     "",
     "🧒 ילדים בבוט שלא נמצאים בגיליונות ההרשמה:",
     "נוכחים לא רשומים",
@@ -1310,6 +1321,81 @@ async function handleStaffMessage({
     );
 
     return true;
+  }
+
+  /*
+   * יומן אימון של שחקן:
+   * "יומן אדל" — פותח יומן (אם אין) ושולח את הקישור הקבוע שלו.
+   * "אדל" — שם של שחקן שכבר יש לו יומן → הקישור.
+   * "החלף קישור יומן אדל" — קישור חדש, הישן מפסיק לעבוד.
+   */
+  if (manager) {
+    const diaryRotate = linkText.match(
+      /^(?:החלף|תחליף)\s+(?:את\s+)?(?:ה)?קישור\s+(?:ל)?(?:ה)?יומן\s+(?:(?:ה)?אימון\s+)?(?:של\s+)?(.+)$/
+    );
+    const diaryNamed = diaryRotate
+      ? null
+      : linkText.match(
+          /^(?:(?:ה)?(?:קישור|לינק)\s+(?:ל)?)?(?:ה)?יומן\s+(?:(?:ה)?אימון\s+)?(?:של\s+|ל)?(.+)$/
+        );
+
+    let diary = null;
+    let created = false;
+
+    if (diaryRotate) {
+      diary = await findDiaryByName(diaryRotate[1]);
+    } else if (diaryNamed) {
+      ({ diary, created } = await getOrCreateDiary(diaryNamed[1]));
+    } else if (
+      linkText.length <= 30 &&
+      !/\d/.test(linkText) &&
+      linkText.split(" ").length <= 3
+    ) {
+      /* בדיקה שקטה — תקלה כאן לא חוסמת את שאר הפקודות */
+      diary = await findDiaryByName(linkText).catch(() => null);
+    }
+
+    if (diaryRotate && !diary) {
+      await sendWhatsAppMessage(
+        userId,
+        `❌ לא מצאתי יומן בשם "${diaryRotate[1].trim()}".`
+      );
+
+      return true;
+    }
+
+    if (diary) {
+      if (diaryRotate) {
+        diary = { ...diary, token: await rotateDiaryToken(diary.id) };
+      }
+
+      const diaryLink = getDiaryLink(diary, lastKnownHost);
+      const firstName = diary.name.split(" ")[0];
+
+      await sendWhatsAppMessage(
+        userId,
+        diaryLink
+          ? [
+              diaryRotate
+                ? `🔄 נוצר קישור חדש ליומן של ${diary.name}. הקישור הקודם כבר לא עובד.`
+                : created
+                  ? `🆕 נפתח יומן אימון ל${diary.name}:`
+                  : `📒 יומן האימון של ${diary.name}:`,
+              "",
+              diaryLink,
+              "",
+              `אפשר להעביר את הקישור ל${firstName} (או להורים).`,
+              "• אחרי כל אימון נכנסים, מדרגים 9 סעיפים מ-1 (הכי טוב) עד 5 ושומרים",
+              "• למטה יש סיכום לפי שבוע, חודש או תאריך מסוים",
+              "",
+              "💡 הקישור קבוע — אפשר לשמור אותו.",
+              "⚠️ מי שיש לו את הקישור יכול לראות ולמלא את היומן.",
+            ].join("\n")
+          : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
+      );
+
+      return true;
+    }
   }
 
   /*

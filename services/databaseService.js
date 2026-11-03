@@ -509,6 +509,11 @@ async function initializeDatabase() {
   await require("./workloadService").createWorkloadTable(pool);
 
   /*
+   * יומני אימון של שחקנים ("אדל" / "יומן אדל" ב-WhatsApp).
+   */
+  await require("./playerDiaryService").createDiaryTables(pool);
+
+  /*
    * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
    */
   const staffDirectory = require("./attendanceService");

@@ -253,6 +253,33 @@ function setupHarness(env = {}) {
     }
 
     /*
+     * יומני אימון: נשמרים בזיכרון.
+     */
+    if (/^SELECT id, name, token FROM player_diaries ORDER BY name/.test(text)) {
+      const rows = [...(state.diaries || [])].sort((a, b) => a.name.localeCompare(b.name));
+
+      return { rows, rowCount: rows.length };
+    }
+
+    if (/^INSERT INTO player_diaries/.test(text)) {
+      state.diaries = state.diaries || [];
+
+      const row = { id: String(state.diaries.length + 1), name: params[0], token: params[1] };
+
+      state.diaries.push(row);
+
+      return { rows: [row], rowCount: 1 };
+    }
+
+    if (/^UPDATE player_diaries SET token/.test(text)) {
+      const row = (state.diaries || []).find((d) => d.id === String(params[0]));
+
+      if (row) row.token = params[1];
+
+      return { rows: [], rowCount: row ? 1 : 0 };
+    }
+
+    /*
      * ימים שבהם ילד לא מגיע: אין כאלה בסביבת הבדיקה.
      */
     if (/^SELECT trainee_id FROM trainee_day_exclusions/.test(text)) {

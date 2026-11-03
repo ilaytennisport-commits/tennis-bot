@@ -36,6 +36,7 @@ const tasksRouter = require("./routes/tasks");
 const workloadRouter = require("./routes/workload");
 const registrationCheckRouter = require("./routes/registrationCheck");
 const groupsRouter = require("./routes/groups");
+const diaryRouter = require("./routes/diary");
 
 const {
   retryPendingLeads,
@@ -83,6 +84,7 @@ app.use("/t", tasksRouter);
 app.use("/w", workloadRouter);
 app.use("/c", registrationCheckRouter);
 app.use("/g", groupsRouter);
+app.use("/d", diaryRouter);
 
 /*
  * הלוגו של האקדמיה — לדפים של הבוט.
@@ -90,6 +92,15 @@ app.use("/g", groupsRouter);
 app.get("/logo.png", (req, res) => {
   res.sendFile(require("path").join(__dirname, "public", "logo.png"), {
     maxAge: "7d",
+  });
+});
+
+/*
+ * הקוד של דף יומן האימון.
+ */
+app.get("/diary.js", (req, res) => {
+  res.sendFile(require("path").join(__dirname, "public", "diary.js"), {
+    maxAge: "1h",
   });
 });
 

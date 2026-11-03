@@ -16,6 +16,8 @@ const {
   escapeHtml,
 } = require("./attendanceViewService");
 
+const { sendToOtherManagers } = require("./staffNotifyService");
+
 /*
  * =========================================================
  * יומן אימון של שחקן
@@ -331,6 +333,20 @@ async function handleSave(req, res) {
   }
 
   res.json({ ok: true });
+
+  /* התראה קצרה למנהלים, עם קישור ליומן */
+  try {
+    const link = getDiaryLink(diary);
+
+    await sendToOtherManagers(
+      "",
+      [`📒 הדירוג היומי של ${diary.name} עודכן`, link ? `\n${link}` : null]
+        .filter(Boolean)
+        .join("\n")
+    );
+  } catch (error) {
+    console.error("❌ התראה על עדכון יומן אימון נכשלה:", error.message);
+  }
 }
 
 module.exports = {

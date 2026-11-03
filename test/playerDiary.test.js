@@ -14,7 +14,7 @@ Object.assign(process.env, {
   DATABASE_URL: "postgres://mem",
   OPENAI_API_KEY: "test",
   WHAPI_TOKEN: "test",
-  MANAGER_PHONES: "0500000001",
+  MANAGER_PHONES: "0500000001,0500000003",
   RAILWAY_PUBLIC_DOMAIN: "bot.example.com",
 });
 
@@ -29,6 +29,21 @@ require.cache[dbPath] = {
   filename: dbPath,
   loaded: true,
   exports: { pool, initializeDatabase: async () => {} },
+};
+
+const sent = [];
+const axiosPath = require.resolve("axios", { paths: [ROOT] });
+
+require.cache[axiosPath] = {
+  id: axiosPath,
+  filename: axiosPath,
+  loaded: true,
+  exports: {
+    post: async (url, payload) => {
+      sent.push(payload);
+      return { status: 200, data: { message: { id: `m${sent.length}` } } };
+    },
+  },
 };
 
 const diaryService = require("../services/playerDiaryService");
@@ -128,13 +143,21 @@ test("הדף: שם השחקן, הנתונים, ולא מריץ קוד שהוזן
 test("שמירה מהדף, וקוד הדף תקין", async () => {
   const ok = res();
 
+  sent.length = 0;
   await diaryService.handleSave({ params: { token: diary.token }, body: { ratings: FULL, note: "יופי" } }, ok);
   assert.deepEqual(ok.data, { ok: true });
 
+  /* שני המנהלים מקבלים התראה קצרה עם קישור, בלי הדירוגים */
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].body, /^📒 הדירוג היומי של אדל שלומון עודכן\n\nhttps:\/\/bot\.example\.com\/d\/[2-9a-km-np-zA-HJ-NP-Z]{12}$/);
+  assert.doesNotMatch(sent[0].body, /פורהאנד|יופי/);
+
   const bad = res();
 
+  sent.length = 0;
   await diaryService.handleSave({ params: { token: diary.token }, body: { ratings: { fh: 2 } } }, bad);
   assert.equal(bad.statusCode, 400);
+  assert.equal(sent.length, 0);
 
   const script = fs.readFileSync(path.join(ROOT, "public", "diary.js"), "utf8");
 

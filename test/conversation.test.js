@@ -360,6 +360,59 @@ test("השכרת מגרש מלקוח רגיל: מפנים ללזוז, בלי ל�
   assert.match(await say(first, "מגוגל"), /רק דרך אפליקציית לזוז/);
 });
 
+test("לקוח מפלטפורמה ששולח שוב את הודעת הפתיחה — לא נשמרת כשם, והליד לא יוצא", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "שלום! הגעתי אליך דרך move ויש לי שאלה");
+
+  const again = await say(chatId, "שלום! הגעתי אליך דרך move ויש לי שאלה");
+
+  assert.match(again, /צריך קודם את השם המלא/);
+  assert.ok(!state.users.get(chatId).name);
+
+  for (const notName of ["היי, רציתי לשאול", "תודה רבה", "אני מעוניינת להירשם לאימונים בקרוב"]) {
+    await say(chatId, notName);
+    assert.ok(!state.users.get(chatId).name, notName);
+  }
+
+  assert.equal(state.leads.filter((l) => l.user_id === chatId).length, 0);
+});
+
+test("שם מלא: על שם פרטי בלבד הבוט שואל על שם המשפחה ומחבר", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "היי");
+  await say(chatId, "דרך מוב");
+
+  const asked = await say(chatId, "דנה");
+
+  assert.match(asked, /ומה שם המשפחה של דנה/);
+  assert.ok(!state.users.get(chatId).name);
+
+  assert.match(await say(chatId, "כהן"), /מה גיל המתאמן/);
+  assert.equal(state.users.get(chatId).name, "דנה כהן");
+
+  /* שם מלא מההתחלה — בלי שאלה נוספת */
+  const full = newCustomer();
+
+  await say(full, "היי");
+  await say(full, "דרך מוב");
+  assert.match(await say(full, "רון אברהם"), /מה גיל המתאמן/);
+});
+
+test("'יש ניסיון' מתקבל כתשובה על הניסיון", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "היי");
+  await say(chatId, "דרך מוב");
+  await say(chatId, "רון אברהם");
+  await say(chatId, "22");
+  await say(chatId, "נס ציונה");
+
+  assert.match(await say(chatId, "יש ניסיון"), /חשוב לדעת לגבי האימונים דרך MOVE/);
+  assert.equal(state.users.get(chatId).experience, "יש ניסיון");
+});
+
 test("ליד שנכשל בשליחה נשמר ונשלח שוב", async () => {
   state.failRecipients.add("972500000001");
 

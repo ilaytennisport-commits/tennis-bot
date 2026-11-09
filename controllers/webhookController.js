@@ -1985,6 +1985,18 @@ function extractSpecialAge(message = "") {
   return age;
 }
 
+/*
+ * "יש ניסיון" / "שיחקתי שנתיים" הם תשובה על הניסיון, לא שאלה.
+ */
+function isExperienceAnswer(text = "") {
+  return (
+    !/\?/.test(text) &&
+    /ניסיון|נסיון|שנים|שנה|שנתיים|חודשים|שיחקתי|שיחק|שיחקה|מתחיל|מתחילה|התאמנתי|התאמן|התאמנה/.test(
+      text
+    )
+  );
+}
+
 function buildSpecialFieldUpdate(
   field,
   userMessage
@@ -1999,11 +2011,19 @@ function buildSpecialFieldUpdate(
 
   switch (field) {
     case "name":
+      /*
+       * לא שם: שאלה, ברכה, הודעת פתיחה של פלטפורמה
+       * ("שלום! הגעתי אליך דרך move ויש לי שאלה"), או משפט ארוך.
+       */
       if (
         looksLikeQuestion(text) ||
         text.length < 2 ||
-        text.length > 80 ||
-        /\d/.test(text)
+        text.length > 60 ||
+        /\d/.test(text) ||
+        /[!?]/.test(text) ||
+        text.split(" ").length > 4 ||
+        detectSpecialSource(text) ||
+        /(?:^|\s)(?:שלום|היי|הי|הייי|בוקר טוב|ערב טוב|הגעתי|שאלה|שאלות|רוצה|מעוניין|מעוניינת|אשמח|תודה|להירשם|להרשם|מגרש)(?:\s|$|[,.])/.test(text)
       ) {
         return null;
       }
@@ -2037,7 +2057,7 @@ function buildSpecialFieldUpdate(
 
     case "experience":
       if (
-        looksLikeQuestion(text) ||
+        (looksLikeQuestion(text) && !isExperienceAnswer(text)) ||
         text.length < 2 ||
         text.length > 500
       ) {
@@ -2064,8 +2084,8 @@ function buildInvalidSpecialFieldReply(
   switch (field) {
     case "name":
       return [
-        "בשמחה 😊",
-        "כדי שאוכל להמשיך, צריך קודם את השם המלא של המתאמן או המתאמנת.",
+        "אשמח לעזור 😊",
+        "כדי שאוכל להמשיך, צריך קודם את השם המלא של המתאמן או המתאמנת (שם פרטי ושם משפחה).",
       ].join("\n");
 
     case "age":
@@ -2201,7 +2221,10 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
-  if (looksLikeQuestion(userMessage)) {
+  const answersExperience =
+    missingField === "experience" && isExperienceAnswer(userMessage);
+
+  if (looksLikeQuestion(userMessage) && !answersExperience) {
     await replyToCustomer(
       userId,
       [
@@ -2218,11 +2241,44 @@ async function handleSpecialSourceConversation({
     return true;
   }
 
-  const fieldUpdate =
+  let fieldUpdate =
     buildSpecialFieldUpdate(
       missingField,
       userMessage
     );
+
+  /*
+   * שם מלא: על שם פרטי בלבד שואלים פעם אחת על שם המשפחה,
+   * ומחברים את שתי התשובות ("דנה" + "כהן" → "דנה כהן").
+   */
+  if (fieldUpdate?.name && !fieldUpdate.name.includes(" ")) {
+    const history = await getConversation(userId);
+    const lastAssistant = [...history]
+      .reverse()
+      .find((message) => message.role === "assistant")?.content || "";
+
+    if (!/שם המשפחה/.test(lastAssistant)) {
+      await replyToCustomer(
+        userId,
+        [
+          `ומה שם המשפחה של ${fieldUpdate.name}? 😊`,
+          "אשמח לשם המלא, למשל: דנה כהן",
+        ].join("\n")
+      );
+
+      return true;
+    }
+
+    const userMessages = history.filter((message) => message.role === "user");
+    const firstName = buildSpecialFieldUpdate(
+      "name",
+      userMessages[userMessages.length - 2]?.content || ""
+    )?.name;
+
+    if (firstName && !firstName.includes(" ")) {
+      fieldUpdate = { name: `${firstName} ${fieldUpdate.name}` };
+    }
+  }
 
   if (!fieldUpdate) {
     await replyToCustomer(

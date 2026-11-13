@@ -251,6 +251,10 @@ const {
 } = require("../services/playerDiaryService");
 
 const {
+  getCourtsBoardLink,
+} = require("../services/courtsBoardService");
+
+const {
   israelNow,
   setTrainingDay,
   parseCoachDays,
@@ -389,6 +393,9 @@ function buildManagerCommandsHelp() {
     "📝 לוח משימות שוטפות למנהלים:",
     "משימות — הקישור האישי שלך",
     "משימות של אשר — הקישור שלו, כדי להעביר לו",
+    "",
+    "🎾 לוח מגרשים (מי באיזה מגרש, מאמנים, השכרות):",
+    "לוח מגרשים",
     "",
     "📒 יומן אימון לשחקן (קישור קבוע לשלוח לו):",
     "יומן אדל — פותח יומן ושולח את הקישור",
@@ -1318,6 +1325,38 @@ async function handleStaffMessage({
       `${cancelMatch ? "🌧️" : "✅"} ${getStaffName(staffPhone)} סימן/ה: ${
         cancelMatch ? "אין" : "יש"
       } אימונים ${dayLabel}.`
+    );
+
+    return true;
+  }
+
+  /*
+   * לוח מגרשים — "לוח מגרשים" / "מגרשים" / "קישור מגרשים".
+   */
+  if (
+    manager &&
+    /^(?:(?:שלח|תשלח|תן)\s+(?:לי\s+)?)?(?:את\s+)?(?:ה)?(?:(?:קישור|לינק|דף)\s+(?:ל)?(?:ה)?)?(?:לוח\s+(?:ה)?)?מגרשים$/.test(
+      linkText
+    )
+  ) {
+    const courtsLink = await getCourtsBoardLink(staffPhone, lastKnownHost);
+
+    await sendWhatsAppMessage(
+      userId,
+      courtsLink
+        ? [
+            "🎾 לוח המגרשים – גלי הדר:",
+            "",
+            courtsLink,
+            "",
+            "• לכל יום: איזו קבוצה באיזה מגרש, מי מאמן ומי המתאמנים",
+            "• לוחצים על משבצת כדי לשבץ, לסמן השכרה או לפנות",
+            "• \"העתק מהשבוע שעבר\" חוסך בנייה מחדש כל שבוע",
+            "",
+            "💡 שמרו את ההודעה (⭐) — הקישור לא משתנה.",
+            "⚠️ הקישור אישי — לא להעביר לאחרים.",
+          ].join("\n")
+        : "❌ לא הצלחתי ליצור קישור כרגע. נסו שוב בעוד כמה דקות."
     );
 
     return true;

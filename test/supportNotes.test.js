@@ -342,3 +342,15 @@ test("יומן אימון: 'יומן אדל' פותח ושולח קישור; 'א
   await processIncomingMessage(textMessage(COACH, "יומן אדל"));
   assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /\/d\//);
 });
+
+test("'לוח מגרשים' — מנהל מקבל קישור /m; מאמן לא", async () => {
+  process.env.RAILWAY_PUBLIC_DOMAIN = "bot.example.com";
+
+  for (const text of ["לוח מגרשים", "מגרשים", "קישור ללוח המגרשים"]) {
+    await processIncomingMessage(textMessage(OWNER, text));
+    assert.match(lastSentTo(state, OWNER), /https:\/\/bot\.example\.com\/m\/[2-9a-km-np-zA-HJ-NP-Z]{12}/, text);
+  }
+
+  await processIncomingMessage(textMessage(COACH, "לוח מגרשים"));
+  assert.doesNotMatch(sentTo(state, COACH).map((m) => m.body).join("\n"), /\/m\//);
+});

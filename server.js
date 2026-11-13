@@ -37,6 +37,7 @@ const workloadRouter = require("./routes/workload");
 const registrationCheckRouter = require("./routes/registrationCheck");
 const groupsRouter = require("./routes/groups");
 const diaryRouter = require("./routes/diary");
+const courtsRouter = require("./routes/courts");
 
 const {
   retryPendingLeads,
@@ -85,6 +86,7 @@ app.use("/w", workloadRouter);
 app.use("/c", registrationCheckRouter);
 app.use("/g", groupsRouter);
 app.use("/d", diaryRouter);
+app.use("/m", courtsRouter);
 
 /*
  * הלוגו של האקדמיה — לדפים של הבוט.
@@ -100,6 +102,15 @@ app.get("/logo.png", (req, res) => {
  */
 app.get("/diary.js", (req, res) => {
   res.sendFile(require("path").join(__dirname, "public", "diary.js"), {
+    maxAge: "1h",
+  });
+});
+
+/*
+ * הקוד של לוח המגרשים.
+ */
+app.get("/courts.js", (req, res) => {
+  res.sendFile(require("path").join(__dirname, "public", "courts.js"), {
     maxAge: "1h",
   });
 });

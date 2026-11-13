@@ -514,6 +514,11 @@ async function initializeDatabase() {
   await require("./playerDiaryService").createDiaryTables(pool);
 
   /*
+   * לוח מגרשים ("לוח מגרשים" ב-WhatsApp).
+   */
+  await require("./courtsBoardService").createCourtsTable(pool);
+
+  /*
    * מאמנים שמנהל הוסיף / הסיר ב-WhatsApp ("הוסף מאמן ...").
    */
   const staffDirectory = require("./attendanceService");

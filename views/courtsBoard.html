@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>לוח מגרשים</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap">
+<style>
+/* Layout: phone-first. Court-green header with logo, a week strip, a one-line day summary,
+   then a timetable: one row per start time, three court columns. Tapping a slot opens a bottom sheet. */
+:root{
+  --bg:#eef4f1; --surface:#ffffff; --fg:#14261d; --muted:#5f7068; --line:#dbe6e0;
+  --court:#1f6f5c; --court-2:#2a8a72; --court-line:rgba(255,255,255,.5); --ball:#d6ea4a; --ball-ink:#2c3a07;
+  --young:#1f6fb2; --young-bg:#e3eef9; --senior:#7a3fb0; --senior-bg:#efe6f8;
+  --reserve:#b35a00; --reserve-bg:#fdeedd; --group:#2f6b4f; --group-bg:#e2f1e8;
+  --rent:#8a6a00; --rent-bg:#fff4c7; --warn:#c2410c; --warn-bg:#ffedd5;
+  --font:"Rubik","Segoe UI",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1714; --surface:#15221d; --fg:#e6efea; --muted:#9db0a6; --line:#283a33;
+  --court:#164f42; --court-2:#1d6655; --court-line:rgba(255,255,255,.3);
+  --young:#7fb2e5; --young-bg:#1a2838; --senior:#c49be8; --senior-bg:#2a1f36; --reserve:#f0a85a; --reserve-bg:#3a2a15;
+  --group:#7fd1a6; --group-bg:#173327; --rent:#f2cf55; --rent-bg:#3a3110; --warn:#fb923c; --warn-bg:#3b2414; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1714; --surface:#15221d; --fg:#e6efea; --muted:#9db0a6; --line:#283a33;
+  --court:#164f42; --court-2:#1d6655; --court-line:rgba(255,255,255,.3);
+  --young:#7fb2e5; --young-bg:#1a2838; --senior:#c49be8; --senior-bg:#2a1f36; --reserve:#f0a85a; --reserve-bg:#3a2a15;
+  --group:#7fd1a6; --group-bg:#173327; --rent:#f2cf55; --rent-bg:#3a3110; --warn:#fb923c; --warn-bg:#3b2414; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 var(--font)}
+.wrap{max-width:640px;margin:0 auto;padding-block:12px 90px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+
+.hero{position:relative;overflow:hidden;border-radius:20px;color:#fff;padding:14px 16px;background:linear-gradient(160deg,var(--court-2),var(--court))}
+.hero::before{content:"";position:absolute;inset:10px;border:2px solid var(--court-line);border-radius:6px;pointer-events:none}
+.hero-in{position:relative;display:flex;align-items:center;gap:12px}
+.logo{width:58px;height:auto;background:#fff;border-radius:50%;padding:3px;flex-shrink:0}
+.hero h1{margin:0;font-size:22px;font-weight:800}
+.hero p{margin:0;font-size:13px;opacity:.9}
+
+.week{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.week button{font:inherit;cursor:pointer;border:1.5px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:6px 0;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.week b{font-size:16px;font-weight:700}
+.week small{font-size:11px;color:var(--muted)}
+.week button[aria-pressed="true"]{background:var(--court);border-color:var(--court);color:#fff}
+.week button[aria-pressed="true"] small{color:#d8efe6}
+.week button:focus-visible,.slot:focus-visible{outline:3px solid var(--ball);outline-offset:2px}
+
+.daybar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.daybar h2{margin:0;font-size:19px;font-weight:700}
+.stats{display:flex;gap:6px;flex-wrap:wrap}
+.stats span{font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--surface);border:1px solid var(--line)}
+.warnbox{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:8px 12px;font-weight:700;font-size:14px}
+
+.grid{display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr));gap:6px}
+.hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:2;background:var(--bg);padding-block:4px}
+.hdr div{text-align:center;font-size:13px;font-weight:700;color:var(--court);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:5px 0}
+.hdr.corner div{visibility:hidden}
+.section{grid-column:1/-1;font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.3px;margin-top:6px}
+.time{font-size:13px;font-weight:700;color:var(--muted);padding-top:9px;text-align:center;font-variant-numeric:tabular-nums}
+.slot{font:inherit;text-align:right;cursor:pointer;min-height:64px;border-radius:12px;padding:7px 8px;display:flex;flex-direction:column;gap:2px;border:1.5px solid transparent;min-width:0}
+.slot .t{font-size:11px;font-weight:500;opacity:.85;font-variant-numeric:tabular-nums}
+.slot .g{font-size:13.5px;font-weight:700;line-height:1.25;overflow-wrap:anywhere}
+.slot .c{font-size:12px;font-weight:500;display:flex;align-items:center;gap:4px}
+.slot.empty{background:transparent;border:1.5px dashed var(--line);color:var(--muted);align-items:center;justify-content:center;font-size:13px}
+.slot.kind-young{background:var(--young-bg);color:var(--young);border-color:color-mix(in srgb,var(--young) 35%,transparent)}
+.slot.kind-senior{background:var(--senior-bg);color:var(--senior);border-color:color-mix(in srgb,var(--senior) 35%,transparent)}
+.slot.kind-reserve{background:var(--reserve-bg);color:var(--reserve);border-color:color-mix(in srgb,var(--reserve) 35%,transparent)}
+.slot.kind-group{background:var(--group-bg);color:var(--group);border-color:color-mix(in srgb,var(--group) 35%,transparent)}
+.slot.kind-rent{background:repeating-linear-gradient(135deg,var(--rent-bg),var(--rent-bg) 8px,color-mix(in srgb,var(--rent-bg) 70%,var(--surface)) 8px,color-mix(in srgb,var(--rent-bg) 70%,var(--surface)) 16px);color:var(--rent);border-color:color-mix(in srgb,var(--rent) 40%,transparent)}
+.slot.clash{box-shadow:0 0 0 2px var(--warn)}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:4px;vertical-align:middle}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.ghost{font:inherit;font-size:14px;cursor:pointer;border:1.5px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:8px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--court);color:#fff;padding:9px 16px;border-radius:12px;font-weight:700;font-size:14px;max-width:calc(100% - 32px);z-index:30}
+
+/* bottom sheet */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--surface);border-radius:20px 20px 0 0;max-height:85%;overflow:auto;
+  padding-block:10px calc(16px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+.sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);align-self:center}
+.sheet h3{margin:0;font-size:18px}
+.sheet .sub{color:var(--muted);font-size:13px;margin-top:-8px}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tabs button,.chips button{font:inherit;cursor:pointer;border:1.5px solid var(--line);background:var(--bg);color:var(--fg);border-radius:10px;padding:8px 6px;font-size:14px}
+.tabs button[aria-pressed="true"],.chips button[aria-pressed="true"]{background:var(--court);border-color:var(--court);color:#fff;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border-radius:99px;padding:6px 12px}
+label.lbl{font-size:13px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+input,select{font:inherit;font-size:16px;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+.primary{font:inherit;font-weight:800;font-size:17px;cursor:pointer;border:0;border-radius:14px;padding:13px;background:var(--ball);color:var(--ball-ink)}
+.hint{color:var(--muted);font-size:13px;margin:0}
+.stack{display:flex;flex-direction:column;gap:12px}
+.free{margin-top:8px;font-size:15px;border-style:dashed}
+.players{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.players-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.opt{font-weight:400;color:var(--muted)}
+.mini{font:inherit;font-size:13px;cursor:pointer;border:1.5px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:5px 10px;white-space:nowrap}
+.mini.solid{background:var(--court);border-color:var(--court);color:#fff;font-weight:700}
+#player-list{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+#player-list li{display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:3px 4px 3px 10px;font-size:14px}
+#player-list li button{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px}
+#player-list .none{color:var(--muted);font-size:13px;background:none;border:0;padding:0}
+.add-player{display:flex;gap:6px}
+.add-player input{flex:1;min-width:0}
+.slot .p{font-size:11.5px;font-weight:500;opacity:.9}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}}
+
+.weeknav{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.weeknav span{font-size:14px;font-weight:700;color:var(--muted)}
+.loading{color:var(--muted);text-align:center;padding:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-in">
+      <img class="logo" src="/logo.png" alt="האקדמיה לטניס גלי הדר" width="58">
+      <div>
+        <h1>לוח מגרשים</h1>
+        <p>גלי הדר · מי משחק באיזה מגרש, ומי מאמן</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="weeknav"><button class="ghost" type="button" id="prev-week">→ שבוע קודם</button><span id="week-label"></span><button class="ghost" type="button" id="next-week">שבוע הבא ←</button></div>
+  <nav class="week" id="week" aria-label="ימי השבוע"></nav>
+
+  <div class="daybar">
+    <h2 id="day-title"></h2>
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="warnbox" id="warn" hidden></div>
+
+  <div class="legend">
+    <span><i style="background:var(--young)"></i>נבחרת צעירה</span>
+    <span><i style="background:var(--senior)"></i>נבחרת בוגרת</span>
+    <span><i style="background:var(--reserve)"></i>עתודה</span>
+    <span><i style="background:var(--group)"></i>קבוצות</span>
+    <span><i style="background:var(--rent)"></i>מושכר</span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="actions">
+    <button class="ghost" type="button" id="copy-week">📋 העתק מהשבוע שעבר</button>
+    <button class="ghost" type="button" id="add-row">➕ שעה נוספת</button>
+  </div>
+  <p class="hint">לוחצים על משבצת כדי לשבץ קבוצה ומאמן (מהרשימה או בכתיבה חופשית), להוסיף שמות מתאמנים, לסמן השכרה או לפנות את המגרש.</p>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+  <div class="grab"></div>
+  <h3 id="sheet-title"></h3>
+  <div class="sub" id="sheet-sub"></div>
+  <div class="tabs" role="group" aria-label="מה במגרש">
+    <button type="button" data-mode="group" aria-pressed="true">🎾 קבוצה</button>
+    <button type="button" data-mode="rent" aria-pressed="false">🔑 השכרה</button>
+    <button type="button" data-mode="free" aria-pressed="false">⬜ פנוי</button>
+  </div>
+
+  <div id="mode-group" class="stack">
+    <div>
+      <label class="lbl">קבוצה</label>
+      <div class="chips" id="group-chips"></div>
+      <input id="group-free" class="free" placeholder="✏️ או לכתוב בחופשיות: אימון פרטי, קבוצה חדשה…" aria-label="שם קבוצה בכתיבה חופשית">
+    </div>
+    <div>
+      <label class="lbl">מאמן/ת</label>
+      <div class="chips" id="coach-chips"></div>
+      <input id="coach-free" class="free" placeholder="✏️ או לכתוב שם מאמן/ת" aria-label="שם מאמן בכתיבה חופשית">
+    </div>
+    <div class="players">
+      <div class="players-head">
+        <label class="lbl" style="margin:0">👥 מתאמנים <span class="opt">(אם רוצים)</span></label>
+        <button type="button" class="mini" id="load-roster">📋 טען מהקבוצה</button>
+      </div>
+      <ul id="player-list"></ul>
+      <div class="add-player">
+        <input id="player-name" placeholder="שם מתאמן/ת" aria-label="שם מתאמן להוספה">
+        <button type="button" class="mini solid" id="player-add">הוסף</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mode-rent" hidden>
+    <div class="row2">
+      <div><label class="lbl" for="rent-name">שם השוכר</label><input id="rent-name" placeholder="למשל: דנה כהן"></div>
+      <div><label class="lbl" for="rent-via">דרך</label>
+        <select id="rent-via"><option>פרטי</option><option>MOVE</option><option>FreeFit</option><option>עמית</option><option>שיקומי</option></select></div>
+    </div>
+  </div>
+
+  <div class="row2" id="times">
+    <div><label class="lbl" for="t-from">משעה</label><input id="t-from" type="time"></div>
+    <div><label class="lbl" for="t-to">עד שעה</label><input id="t-to" type="time"></div>
+  </div>
+
+  <button class="primary" type="button" id="sheet-save">שמירה</button>
+  <button class="ghost" type="button" id="sheet-cancel">ביטול</button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="application/json" id="data">__DATA_JSON__</script>
+<script src="/courts.js?v=__SCRIPT_VERSION__"></script>
+</body>
+</html>

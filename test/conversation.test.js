@@ -413,6 +413,34 @@ test("'יש ניסיון' מתקבל כתשובה על הניסיון", async ()
   assert.equal(state.users.get(chatId).experience, "יש ניסיון");
 });
 
+test("ליד: קישור שפותח שיחה עם הלקוח עם סיכום הפנייה מוכן", async () => {
+  const chatId = newCustomer();
+
+  await say(chatId, "היי");
+  await say(chatId, "דרך מוב");
+  await say(chatId, "רון אברהם");
+  await say(chatId, "כמה משתתפים יש בקבוצה?");
+  await say(chatId, "35");
+  await say(chatId, "ראשון לציון");
+  await say(chatId, "ללא ניסיון");
+
+  const lead = lastSentTo(state, MANAGER);
+  const match = lead.match(/כולל סיכום הפנייה:\n(https:\/\/wa\.me\/(\d+)\?text=(\S+))/);
+
+  assert.ok(match, "summary link in lead");
+  assert.equal(match[2], chatId.split("@")[0]);
+  assert.match(lead, /📲 שיחה בלי סיכום:\nhttps:\/\/wa\.me\/\d+$/);
+
+  const text = decodeURIComponent(match[3]);
+
+  assert.match(text, /^היי, כאן .*מהאקדמיה לטניס גלי הדר 🎾/);
+  assert.match(text, /• מתאמן\/ת: רון אברהם/);
+  assert.match(text, /• גיל: 35/);
+  assert.match(text, /• הגעת דרך: MOVE/);
+  assert.match(text, /• שאלת: כמה משתתפים יש בקבוצה\?/);
+  assert.match(text, /אשמח לעזור, מתי נוח לדבר\?$/);
+});
+
 test("ליד שנכשל בשליחה נשמר ונשלח שוב", async () => {
   state.failRecipients.add("972500000001");
 

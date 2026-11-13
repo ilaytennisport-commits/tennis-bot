@@ -6,9 +6,10 @@ const {
 
 const {
   getManagerPhones,
+  getStaffName,
 } = require("./attendanceService");
 
-const { hasValue } = require("../utils/text");
+const { hasValue, looksLikeQuestion } = require("../utils/text");
 
 const {
   isLeadComplete,
@@ -125,6 +126,73 @@ const SOURCE_NAMES = {
   shikumi: "שיקומי",
 };
 
+/*
+ * =========================================================
+ * סיכום הפנייה — הודעה מוכנה שהמנהל שולח ללקוח
+ * =========================================================
+ *
+ * בוואטסאפ אין הערה פרטית בתוך צ'אט, ולכן הסיכום נכנס לשיחה של
+ * המנהל עם הלקוח כהודעה אליו: קישור wa.me עם טקסט מוכן לעריכה.
+ */
+
+const MAX_QUESTION_CHARS = 90;
+
+function customerQuestions(conversationHistory = []) {
+  return conversationHistory
+    .filter(
+      (message) =>
+        message?.role === "user" &&
+        typeof message.content === "string" &&
+        looksLikeQuestion(message.content)
+    )
+    .map((message) => message.content.replace(/\s+/g, " ").trim())
+    .filter((text) => text.length >= 4)
+    .slice(-2)
+    .map((text) =>
+      text.length > MAX_QUESTION_CHARS
+        ? `${text.slice(0, MAX_QUESTION_CHARS - 1)}…`
+        : text
+    );
+}
+
+function buildLeadIntroText({
+  user,
+  kind = "regular",
+  conversationHistory = [],
+  senderName = null,
+}) {
+  const isSpecial = kind === "special";
+  const sender = senderName && senderName !== "מנהל" ? `כאן ${senderName} ` : "כאן ";
+
+  const details = [
+    user.name ? `• מתאמן/ת: ${user.name}` : null,
+    user.age ? `• גיל: ${user.age}` : null,
+    isSpecial && user.city ? `• עיר: ${user.city}` : null,
+    !isSpecial && user.branch ? `• סניף: ${user.branch}` : null,
+    isSpecial ? `• הגעת דרך: ${SOURCE_NAMES[user.source] || user.source}` : null,
+    isSpecial && user.experience ? `• ניסיון: ${user.experience}` : null,
+    !isSpecial && user.goal ? `• תחום התעניינות: ${user.goal}` : null,
+    ...customerQuestions(conversationHistory).map((question) => `• שאלת: ${question}`),
+  ].filter(Boolean);
+
+  return [
+    `היי, ${sender}מהאקדמיה לטניס גלי הדר 🎾`,
+    "",
+    "קיבלתי את הפנייה שלך:",
+    ...details,
+    "",
+    "אשמח לעזור, מתי נוח לדבר?",
+  ].join("\n");
+}
+
+function toWhatsAppLinkWithText(phone = "", text = "") {
+  const link = toWhatsAppLink(phone);
+
+  return link.startsWith("https://")
+    ? `${link}?text=${encodeURIComponent(text)}`
+    : null;
+}
+
 function formatManagerLeadMessage({
   user,
   kind = "regular",
@@ -138,6 +206,17 @@ function formatManagerLeadMessage({
   const title = isSpecial
     ? `🎾 נרשם/ה חדש/ה דרך ${SOURCE_NAMES[user.source] || user.source}`
     : "🎾 ליד חדש מהבוט";
+
+  const leadRecipient = getLeadRecipients()[0];
+  const summaryLink = toWhatsAppLinkWithText(
+    user.phone,
+    buildLeadIntroText({
+      user,
+      kind,
+      conversationHistory,
+      senderName: leadRecipient ? getStaffName(leadRecipient) : null,
+    })
+  );
 
   const detailLines = isSpecial
     ? [
@@ -173,7 +252,10 @@ function formatManagerLeadMessage({
     "",
     divider,
     "",
-    "📲 לפתיחת שיחה עם הלקוח:",
+    ...(summaryLink
+      ? ["💬 לפתיחת שיחה עם הלקוח כולל סיכום הפנייה:", summaryLink, ""]
+      : []),
+    summaryLink ? "📲 שיחה בלי סיכום:" : "📲 לפתיחת שיחה עם הלקוח:",
     toWhatsAppLink(user.phone),
   ].join("\n");
 }
@@ -339,6 +421,7 @@ module.exports = {
   isLeadReadyToSend,
   getLeadRecipients,
   formatManagerLeadMessage,
+  buildLeadIntroText,
   formatConversation,
   createLead,
   retryPendingLeads,

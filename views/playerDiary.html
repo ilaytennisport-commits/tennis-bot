@@ -33,6 +33,10 @@
   --r1:#4ade80; --r1bg:#123524; --r2:#a3e635; --r2bg:#24331a; --r3:#facc15; --r3bg:#3a3110; --r4:#fb923c; --r4bg:#3b2414; --r5:#f87171; --r5bg:#3d1b1b;
   color-scheme:dark}
 *{box-sizing:border-box}
+/* כמו בהדמיה: חלונות ורכיבים מוסתרים לא מופיעים, ותמונות לא חורגות */
+[hidden]{display:none!important}
+img{max-width:100%}
+html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 var(--font)}
 .wrap{max-width:620px;margin:0 auto;padding-block:14px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
 

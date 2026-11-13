@@ -215,6 +215,11 @@
     $("t-to").value = s ? s.to : addHour(t);
     setMode(s ? s.kind : "group");
 
+    /* מחיקה — רק במשבצת שכבר קיימת, עם שאלת אישור */
+    $("delete-box").hidden = !s;
+    $("sheet-delete").hidden = false;
+    $("delete-confirm").hidden = true;
+
     $("scrim").hidden = false;
     $("sheet").hidden = false;
   }
@@ -264,6 +269,28 @@
       toast("✓ " + (mode === "rent" ? COURTS[e.court] + " מושכר" : body.title + " ב" + COURTS[e.court]));
       closeSheet(); render();
     }).catch(function () { toast("השינוי לא נשמר. נסו שוב.", true); })
+      .then(function () { button.disabled = false; });
+  };
+
+  $("sheet-delete").onclick = function () {
+    $("sheet-delete").hidden = true;
+    $("delete-confirm").hidden = false;
+  };
+  $("delete-no").onclick = function () {
+    $("sheet-delete").hidden = false;
+    $("delete-confirm").hidden = true;
+  };
+  $("delete-yes").onclick = function () {
+    var e = editing;
+    var old = e && e.slot;
+    if (!old) return;
+    var button = $("delete-yes");
+    button.disabled = true;
+    post("/slot/" + old.id + "/delete").then(function () {
+      replaceSlot(old.id, null);
+      toast("🗑️ " + old.title + " נמחק מ" + COURTS[e.court]);
+      closeSheet(); render();
+    }).catch(function () { toast("המחיקה לא הצליחה. נסו שוב.", true); })
       .then(function () { button.disabled = false; });
   };
 

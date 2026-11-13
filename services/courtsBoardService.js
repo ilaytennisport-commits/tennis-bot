@@ -280,15 +280,24 @@ async function getGroupsForWeek(week) {
   return byDay;
 }
 
+/*
+ * המאמנים בלוח: המאמנים מהבוט, בלי אור, ועם אשר.
+ */
+const COURT_COACHES_EXCLUDE = ["אור"];
+const COURT_COACHES_EXTRA = ["אשר"];
+
 function getCoachNames() {
   return [
-    ...new Set(
-      attendance
+    ...new Set([
+      ...attendance
         .getCoachPhones()
         .map((phone) => attendance.getStaffName(phone))
-        .filter((name) => name && name !== "מאמן")
-    ),
-  ].sort((a, b) => a.localeCompare(b, "he"));
+        .filter((name) => name && name !== "מאמן"),
+      ...COURT_COACHES_EXTRA,
+    ]),
+  ]
+    .filter((name) => !COURT_COACHES_EXCLUDE.includes(name))
+    .sort((a, b) => a.localeCompare(b, "he"));
 }
 
 /* =========================================================

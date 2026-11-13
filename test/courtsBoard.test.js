@@ -15,7 +15,7 @@ Object.assign(process.env, {
   OPENAI_API_KEY: "test",
   WHAPI_TOKEN: "test",
   MANAGER_PHONES: "0500000001",
-  COACH_PHONES: "0500000002,0500000004",
+  COACH_PHONES: "0500000002,0500000004,0500000001",
   STAFF_NAMES: "0500000001:אור,0500000002:אבי,0500000004:נובל",
   RAILWAY_PUBLIC_DOMAIN: "bot.example.com",
 });
@@ -142,7 +142,8 @@ test("הדף: רק מנהל; קבוצות היום מהבוט עם הילדים,
   const data = JSON.parse(page.body.match(/<script type="application\/json" id="data">([\s\S]*?)<\/script>/)[1]);
 
   assert.equal(data.week[0], "2026-11-08");
-  assert.deepEqual(data.coaches, ["אבי", "נובל"]);
+  /* אור לא ברשימה, אשר כן */
+  assert.deepEqual(data.coaches, ["אבי", "אשר", "נובל"]);
 
   const tuesday = data.groups["2026-11-10"].map((g) => g.label).sort();
 
